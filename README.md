@@ -77,9 +77,7 @@ manifest:
 sha256sum --check --ignore-missing SHA256SUMS.txt
 ```
 
-> **Note on integrity vs. authenticity.** `SHA256SUMS.txt` is a *checksum*, not
-> a cryptographic *signature*. It lets you detect accidental corruption of a
-> download, but because the manifest is published alongside the artifacts,
+> **Note on integrity vs. authenticity.** `SHA256SUMS.txt` is a *checksum*, not a cryptographic *signature*. 
+> It lets you detect accidental corruption of a download, but because the manifest is published alongside the artifacts,
 > it does not by itself prove the artifacts were produced by this project.
-> Tamper-evident signing (for example, Sigstore `cosign` keyless signing or
-> GitHub build-provenance attestations) is a planned enhancement.
+> We are using GitHub build-provenance attestation as a tamper-evident signing.
