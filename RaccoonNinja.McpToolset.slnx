@@ -1,0 +1,19 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/General Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/MCP git-ops/">
+    <File Path="src/RaccoonNinja.McpToolset.Server.GitOps/README.md" />
+    <Project Path="src/RaccoonNinja.McpToolset.Server.GitOps/RaccoonNinja.McpToolset.Server.GitOps.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Server.GitOps.Tests/RaccoonNinja.McpToolset.Server.GitOps.Tests.csproj" />
+  </Folder>
+</Solution>
