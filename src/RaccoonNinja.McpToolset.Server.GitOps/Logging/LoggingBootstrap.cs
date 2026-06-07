@@ -1,4 +1,3 @@
-using System.Reflection;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.LogFileValidatorExceptions;
 using Serilog;
 using Serilog.Core;
@@ -66,15 +65,12 @@ public static class LoggingBootstrap
     }
 
     /// <summary>Compute the default log path: <c>&lt;executable-dir&gt;/mcp-gitops.log</c>.</summary>
+    /// <remarks>
+    /// Uses <see cref="AppContext.BaseDirectory"/> because it resolves correctly in
+    /// single-file published apps, where <c>Assembly.Location</c> returns an empty string.
+    /// </remarks>
     public static string DefaultLogPath()
-    {
-        var assemblyDir = AppContext.BaseDirectory;
-        if (string.IsNullOrEmpty(assemblyDir))
-        {
-            assemblyDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-        }
-        return Path.Combine(assemblyDir ?? string.Empty, "mcp-gitops.log");
-    }
+        => Path.Combine(AppContext.BaseDirectory, "mcp-gitops.log");
 
     private static void ConfigureFile(LoggerConfiguration configuration, string path)
     {

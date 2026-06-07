@@ -88,7 +88,6 @@ jobs:
               -p:PublishSingleFile=true \
               -p:DebugType=none \
               -p:DebugSymbols=false \
-              -p:GenerateDocumentationFile=false \
               -p:Version="$VERSION" \
               -p:ContinuousIntegrationBuild=true \
               --output "$outdir"
@@ -96,7 +95,8 @@ jobs:
 
             zipname="${name}-${VERSION}-${RID}.zip"
             # -X strips extra file attributes for reproducible archives.
-            ( cd "$outdir" && zip -r -X "${staging}/${zipname}" . )
+            # The XML doc file is a build by-product, not a shipped asset.
+            ( cd "$outdir" && zip -r -X "${staging}/${zipname}" . -x '*.xml' )
           done
 
           if [ "$found" -eq 0 ]; then
