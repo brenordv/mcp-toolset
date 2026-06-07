@@ -1,0 +1,82 @@
+# Quality assurance: verifies formatting, compiles, and runs the unit tests.
+# Runs on every pull request (to any branch) and on pushes to master, and is
+# reusable (workflow_call) so the publish pipeline can gate releases on it.
+name: QA
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_call:
+
+# Deny-all by default; each job opts in to the minimum it needs.
+permissions: {}
+
+# Collapse superseded runs for the same ref, but only for pull requests:
+# pushes to master and reusable-workflow gate runs always run to completion.
+concurrency:
+  group: qa-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quality:
+    name: Format, build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies
+        run: dotnet restore RaccoonNinja.McpToolset.slnx
+
+      - name: Verify code formatting
+        id: format
+        run: dotnet format RaccoonNinja.McpToolset.slnx --verify-no-changes --no-restore
+
+      - name: Build solution
+        id: build
+        run: dotnet build RaccoonNinja.McpToolset.slnx --configuration Release --no-restore
+
+      - name: Run unit tests
+        id: test
+        run: >-
+          dotnet test RaccoonNinja.McpToolset.slnx
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory "${{ runner.temp }}/test-results"
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results
+          path: ${{ runner.temp }}/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Write QA summary
+        if: always()
+        env:
+          FORMAT_OUTCOME: ${{ steps.format.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          TEST_OUTCOME: ${{ steps.test.outcome }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## QA results"
+            echo ""
+            echo "| Check | Result |"
+            echo "| ----- | ------ |"
+            echo "| Formatting (dotnet format) | ${FORMAT_OUTCOME} |"
+            echo "| Build (warnings as errors) | ${BUILD_OUTCOME} |"
+            echo "| Unit tests | ${TEST_OUTCOME} |"
+          } >> "$GITHUB_STEP_SUMMARY"

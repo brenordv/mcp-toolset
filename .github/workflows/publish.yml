@@ -1,0 +1,175 @@
+# Release pipeline: triggered by pushing a tag like `release/v1.0.0`.
+# It re-runs the QA workflow as a hard gate, then cross-compiles a
+# self-contained single-file binary of every MCP server for each supported
+# OS/architecture, and packages each as a named zip. It publishes them together
+# with a SHA256SUMS manifest in a single atomic GitHub release.
+name: Publish
+
+run-name: Publish ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - 'release/v*'
+
+# Deny-all by default; each job opts in to the minimum it needs.
+permissions: {}
+
+# One release run per tag, and never cancel a release mid-flight.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Gate: the release only proceeds if formatting, build and tests pass.
+  qa:
+    name: Quality gate
+    uses: ./.github/workflows/qa.yml
+    permissions:
+      contents: read
+
+  build:
+    name: Build ${{ matrix.rid }}
+    needs: qa
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      # All-or-nothing: a failed target must not yield a partial release.
+      fail-fast: true
+      matrix:
+        rid: [win-x64, linux-x64, osx-x64, osx-arm64]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          global-json-file: global.json
+
+      - name: Derive release version from tag
+        id: version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # release/v1.2.3 -> 1.2.3
+          version="${TAG_NAME#release/v}"
+          if [ -z "$version" ] || [ "$version" = "$TAG_NAME" ]; then
+            echo "Tag '${TAG_NAME}' does not match the expected 'release/vX.Y.Z' format." >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish and package MCP servers
+        env:
+          RID: ${{ matrix.rid }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          staging="${RUNNER_TEMP}/staging"
+          mkdir -p "$staging"
+
+          found=0
+          # MCP servers follow the convention src/<...>.Server.<Name>/.
+          for csproj in src/*.Server.*/*.csproj; do
+            found=1
+            name="$(basename "$(dirname "$csproj")")"
+            outdir="${RUNNER_TEMP}/publish/${name}/${RID}"
+
+            echo "::group::Publishing ${name} for ${RID}"
+            dotnet publish "$csproj" \
+              --configuration Release \
+              --runtime "$RID" \
+              --self-contained true \
+              -p:PublishSingleFile=true \
+              -p:DebugType=none \
+              -p:DebugSymbols=false \
+              -p:GenerateDocumentationFile=false \
+              -p:Version="$VERSION" \
+              -p:ContinuousIntegrationBuild=true \
+              --output "$outdir"
+            echo "::endgroup::"
+
+            zipname="${name}-${VERSION}-${RID}.zip"
+            # -X strips extra file attributes for reproducible archives.
+            ( cd "$outdir" && zip -r -X "${staging}/${zipname}" . )
+          done
+
+          if [ "$found" -eq 0 ]; then
+            echo "No MCP server projects found under src/*.Server.*/." >&2
+            exit 1
+          fi
+          ls -l "$staging"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: artifacts-${{ matrix.rid }}
+          path: ${{ runner.temp }}/staging/*.zip
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/dist
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        env:
+          DIST_DIR: ${{ runner.temp }}/dist
+        run: |
+          set -euo pipefail
+          cd "$DIST_DIR"
+          sha256sum *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create release with artifacts and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+          DIST_DIR: ${{ runner.temp }}/dist
+        run: |
+          set -euo pipefail
+          version="${TAG_NAME#release/v}"
+          # A single atomic create with every asset attached. This is
+          # compatible with GitHub immutable releases, which forbid mutating a
+          # release after publication; we never draft-then-append or clobber.
+          gh release create "$TAG_NAME" \
+            --title "v${version}" \
+            --generate-notes \
+            "$DIST_DIR"/*.zip \
+            "$DIST_DIR/SHA256SUMS.txt"
+
+      - name: Write release summary
+        if: always()
+        env:
+          DIST_DIR: ${{ runner.temp }}/dist
+        run: |
+          set -euo pipefail
+          {
+            echo "## Release ${GITHUB_REF_NAME}"
+            echo ""
+            if [ -f "$DIST_DIR/SHA256SUMS.txt" ]; then
+              echo "### SHA-256 checksums"
+              echo ""
+              echo '```'
+              cat "$DIST_DIR/SHA256SUMS.txt"
+              echo '```'
+            else
+              echo "_No checksum manifest was produced._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
