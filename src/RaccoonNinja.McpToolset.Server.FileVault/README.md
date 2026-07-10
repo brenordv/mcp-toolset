@@ -207,3 +207,7 @@ or via `claude mcp add`). On Windows:
 ```
 
 The server identifies itself as `vault-mcp` in the MCP handshake, matching the Rust server it replaces.
+
+## Example of instructions to use this MCP
+
+You can check [this repo](https://github.com/brenordv/claude-skill-set/blob/master/skills/brain/knowledge/vault-operations.md) to see an example of prompt structure to tell your agent to use this MCP server.
