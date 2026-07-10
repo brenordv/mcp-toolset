@@ -28,7 +28,7 @@ public sealed class FileStore
     /// <summary>
     /// Atomically write <paramref name="bytes"/> to the snapshot at <paramref name="relPath"/>
     /// and return their blake3 hash. If the destination already exists (a prior crash left the
-    /// file, or an identical racing write won), the write is treated as satisfied — snapshot
+    /// file, or an identical racing write won), the write is treated as satisfied: snapshot
     /// paths embed the content hash, so an existing target holds the same bytes.
     /// </summary>
     /// <param name="relPath">The <c>/</c>-separated path relative to the store root.</param>

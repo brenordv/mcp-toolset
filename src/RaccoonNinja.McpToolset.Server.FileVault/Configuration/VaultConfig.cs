@@ -40,7 +40,7 @@ public sealed record VaultConfig
 
     /// <summary>
     /// Committed-content length (UTF-16 code units) above which write results carry an advisory
-    /// split hint. <c>0</c> disables the hint. Advisory only — never rejects a write.
+    /// split hint. <c>0</c> disables the hint. Advisory only; it never rejects a write.
     /// </summary>
     public int SplitHintChars { get; init; }
 

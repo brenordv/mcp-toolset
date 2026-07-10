@@ -57,6 +57,37 @@ public class VaultFormatTests
         Assert.Equal(VaultErrorCode.InvalidFormat, exception.Code);
     }
 
+    [Fact]
+    public void ParseOptionalVaultFormat_Null_ReturnsNull()
+    {
+        // Act
+        var format = VaultFormatExtensions.ParseOptionalVaultFormat(null);
+
+        // Assert
+        Assert.Null(format);
+    }
+
+    [Fact]
+    public void ParseOptionalVaultFormat_KnownAlias_DelegatesToParse()
+    {
+        // Act
+        var format = VaultFormatExtensions.ParseOptionalVaultFormat("md");
+
+        // Assert
+        Assert.Equal(VaultFormat.Markdown, format);
+    }
+
+    [Fact]
+    public void ParseOptionalVaultFormat_UnknownFormat_ThrowsInvalidFormat()
+    {
+        // Act
+        Action act = () => VaultFormatExtensions.ParseOptionalVaultFormat("toml");
+
+        // Assert
+        var exception = Assert.Throws<VaultException>(act);
+        Assert.Equal(VaultErrorCode.InvalidFormat, exception.Code);
+    }
+
     [Theory]
     [InlineData(VaultFormat.Text, "txt")]
     [InlineData(VaultFormat.Markdown, "md")]

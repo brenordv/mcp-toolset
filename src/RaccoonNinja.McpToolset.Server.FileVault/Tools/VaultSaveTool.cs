@@ -14,7 +14,7 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Tools;
 public sealed class VaultSaveTool(ToolCommon common, VaultService service, ProjectResolver resolver)
 {
     [McpServerTool(Name = "vault_save", UseStructuredContent = true)]
-    [Description("Save content under a flat name, creating a new immutable version. Omit `base_version` only for the first-ever save of a name; otherwise pass the version you last read so stale writes are rejected as conflicts. To change only the summary, tags, or parent of an existing note, use `vault_set_meta` instead — you do not need to resend `content`. Keep large notes as a summary + index and put the detail in child notes (linked via `parent`); the result carries a `hint` when a note grows past the configured size.")]
+    [Description("Save content under a flat name, creating a new immutable version. Omit `base_version` only for the first-ever save of a name; otherwise pass the version you last read so stale writes are rejected as conflicts. To change only the summary, tags, or parent of an existing note, use `vault_set_meta` instead; you do not need to resend `content`. Keep large notes as a summary + index and put the detail in child notes (linked via `parent`); the result carries a `hint` when a note grows past the configured size.")]
     public SaveResult Invoke(
         [Description("The flat name to save under (e.g. `draft-letter`). No paths.")]
         string name,
@@ -28,7 +28,7 @@ public sealed class VaultSaveTool(ToolCommon common, VaultService service, Proje
         string project = null,
         [Description("Optional tags for filtering and grouping.")]
         string[] tags = null,
-        [Description("Content format: one of `text`, `markdown`, `json`, `yaml`. Defaults to `text`.")]
+        [Description("Content format: one of `text`, `markdown`, `json`, `yaml`. Defaults to `text` on the first save; when omitted on a later save, the note keeps its current format.")]
         string format = null,
         [Description("Optional parent file name (same project) to link this note under. To change only the parent of an existing note (or to detach one), use `vault_set_meta` instead.")]
         string parent = null)
@@ -51,7 +51,7 @@ public sealed class VaultSaveTool(ToolCommon common, VaultService service, Proje
                 summary,
                 base_version,
                 tags,
-                VaultFormatExtensions.ParseVaultFormat(format),
+                VaultFormatExtensions.ParseOptionalVaultFormat(format),
                 parentUpdate);
 
             info.CommittedChars = committed.ContentChars;

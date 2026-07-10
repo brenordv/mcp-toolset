@@ -14,7 +14,7 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Services;
 public static class KeyEditor
 {
     // Rust-parity output shape: the relaxed encoder emits non-ASCII (and HTML-sensitive)
-    // characters raw and NewLine pins LF, matching serde_json on every OS — the default encoder
+    // characters raw and NewLine pins LF, matching serde_json on every OS; the default encoder
     // would rewrite every non-ASCII byte to a \uXXXX escape, and the default newline would make
     // the same edit produce different snapshot bytes (and blake3 hashes) on Windows vs Linux.
     // The output is a local plain-text snapshot, never embedded in HTML.

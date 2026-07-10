@@ -13,7 +13,7 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Services;
 /// The domain core: every vault operation on top of the storage layer with optimistic
 /// concurrency. All mutations funnel through <see cref="CommitWrite"/>, the single OCC write
 /// path. Ordering there is load-bearing: the immutable snapshot is written to disk first, then
-/// the database row commits — a crash in between leaves a harmless orphan file, never a dangling
+/// the database row commits; a crash in between leaves a harmless orphan file, never a dangling
 /// pointer.
 /// </summary>
 public sealed class VaultService(IVaultRepository repository, FileStore files, VaultConfig config)
@@ -41,7 +41,7 @@ public sealed class VaultService(IVaultRepository repository, FileStore files, V
     /// <param name="summary">The one-line summary (always replaces on save).</param>
     /// <param name="baseVersion">The version being overwritten; omit only for the first-ever save.</param>
     /// <param name="tags">Non-null replaces the tag set; null keeps existing tags.</param>
-    /// <param name="format">The content format.</param>
+    /// <param name="format">The content format; null inherits the file's stored format on an update and falls back to <see cref="VaultFormat.Text"/> on a first save.</param>
     /// <param name="parent">The parent-link change (save produces leave/set only).</param>
     /// <returns>The committed version and hash.</returns>
     public Committed Save(
@@ -51,13 +51,30 @@ public sealed class VaultService(IVaultRepository repository, FileStore files, V
         string summary,
         int? baseVersion,
         IReadOnlyList<string> tags,
-        VaultFormat format,
+        VaultFormat? format,
         ParentUpdate parent)
     {
         ValidateMetadata(summary, tags);
-        return CommitWrite(project, name, content ?? string.Empty, format, summary ?? string.Empty, tags, baseVersion,
-            VaultOp.Save, parent);
+        var effectiveFormat = format ?? InheritedFormat(project, name, baseVersion);
+        return CommitWrite(project, name, content ?? string.Empty, effectiveFormat, summary ?? string.Empty, tags,
+            baseVersion, VaultOp.Save, parent);
     }
+
+    /// <summary>
+    /// The format applied when a save omits one: on an update, the file's stored format (so an
+    /// omitted optional argument can never downgrade a markdown/json/yaml note to text and cost it
+    /// structure-aware editability), and <see cref="VaultFormat.Text"/> on a first save, where
+    /// there is nothing to inherit. (The Rust server resets omitted formats to text on every save;
+    /// this inherit-on-update behavior is a deliberate deviation.)
+    /// </summary>
+    /// <param name="project">The resolved project.</param>
+    /// <param name="name">The validated file name.</param>
+    /// <param name="baseVersion">The version being overwritten; null for a first save.</param>
+    /// <returns>The format to commit.</returns>
+    private VaultFormat InheritedFormat(ProjectName project, FileName name, int? baseVersion)
+        => baseVersion is null
+            ? VaultFormat.Text
+            : repository.GetCurrent(project.Value, name.Value).Format;
 
     /// <summary>Append content to the current version, producing the next version.</summary>
     /// <param name="project">The resolved project.</param>
@@ -258,7 +275,7 @@ public sealed class VaultService(IVaultRepository repository, FileStore files, V
             // A Clear has nothing to clear on a brand-new file, so only Set carries a name.
             // If the named parent does not exist, CreateFirst rejects the write after the
             // snapshot was already written; that leaves only a harmless orphan snapshot,
-            // never a dangling DB row — the same trade-off as the crash window.
+            // never a dangling DB row, the same trade-off as the crash window.
             var committed = baseVersion is null
                 ? repository.CreateFirst(new NewFile
                 {
@@ -301,8 +318,8 @@ public sealed class VaultService(IVaultRepository repository, FileStore files, V
     /// <summary>
     /// Compose the advisory split hint for a committed write, or null when the content is at
     /// or under <see cref="VaultConfig.SplitHintChars"/> (or the feature is disabled via 0). The
-    /// sentence is built only from the server-measured length — never from content, summaries,
-    /// tags, or names — and must stay that way.
+    /// sentence is built only from the server-measured length (never from content, summaries,
+    /// tags, or names) and must stay that way.
     /// </summary>
     private string ComposeSplitHint(int contentChars)
         => config.SplitHintChars > 0 && contentChars > config.SplitHintChars

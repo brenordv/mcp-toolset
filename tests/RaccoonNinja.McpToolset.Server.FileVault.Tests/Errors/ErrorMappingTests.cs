@@ -31,7 +31,7 @@ public class ErrorMappingTests
     public void ToWireCode_CoversEveryEnumValue()
     {
         // Act + Assert: a newly added enum value without a wire string would fall through to
-        // "internal", which the theory above cannot see — this guard makes the gap loud.
+        // "internal", which the theory above cannot see; this guard makes the gap loud.
         foreach (var code in Enum.GetValues<VaultErrorCode>())
         {
             // Every domain code needs its own wire string.

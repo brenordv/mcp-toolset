@@ -29,7 +29,7 @@ public sealed class SqliteVaultRepository(SqliteConnectionFactory factory) : IVa
         using var transaction = connection.BeginTransaction();
 
         // A brand-new file cannot yet be anyone's parent, so a parent link at creation only needs
-        // the target to exist in the same project — no self/cycle check is possible or required.
+        // the target to exist in the same project; no self/cycle check is possible or required.
         long? parentId = file.Parent is null
             ? null
             : ResolveParentTarget(connection, transaction, file.Project, file.Parent);

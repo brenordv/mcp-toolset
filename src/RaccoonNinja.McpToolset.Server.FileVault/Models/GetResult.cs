@@ -29,7 +29,7 @@ public sealed record GetResult
     [JsonPropertyName("content_hash")]
     public string ContentHash { get; init; }
 
-    /// <summary>The file's current version — pass this back as <c>base_version</c> on your next write.</summary>
+    /// <summary>The file's current version; pass this back as <c>base_version</c> on your next write.</summary>
     [JsonPropertyName("current_version")]
     public int CurrentVersion { get; init; }
 

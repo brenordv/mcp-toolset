@@ -8,7 +8,7 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Storage;
 /// <summary>
 /// Opens configured SQLite connections against the vault database. <c>Foreign Keys=True</c> rides
 /// the connection string (the driver re-applies it per physical open, pool-safe); WAL journal
-/// mode, NORMAL synchronous, and the busy timeout are asserted per open — re-asserting is
+/// mode, NORMAL synchronous, and the busy timeout are asserted per open; re-asserting is
 /// harmless and keeps behavior explicit across pooled reuse.
 /// </summary>
 public sealed class SqliteConnectionFactory

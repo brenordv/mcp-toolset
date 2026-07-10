@@ -6,7 +6,7 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Tests.Domain;
 public class ContentHashTests
 {
     // Reference digests produced by the Rust vault-mcp binary (the official blake3 crate) while
-    // generating Fixtures/rust-store — the store-compat contract is agreement with that
+    // generating Fixtures/rust-store; the store-compat contract is agreement with that
     // implementation, and these pin it at the unit level.
     private const string AlphaLineHex = "ac678d92b3d739773d18cd952cfcea443fa4a5a98ffc9554b66795bb22d5532d";
 

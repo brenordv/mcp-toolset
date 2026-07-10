@@ -12,7 +12,7 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Tools;
 public sealed class VaultAppendTool(ToolCommon common, VaultService service, ProjectResolver resolver)
 {
     [McpServerTool(Name = "vault_append", UseStructuredContent = true)]
-    [Description("Append content to the end of a file as a new version. Distinct from save — for logs, running notes, and lists. The result carries a `hint` when the note grows past the configured size; prefer a summary + index note with detail in children (linked via `parent`).")]
+    [Description("Append content to the end of a file as a new version. Distinct from save; intended for logs, running notes, and lists. The result carries a `hint` when the note grows past the configured size; prefer a summary + index note with detail in children (linked via `parent`).")]
     public SaveResult Invoke(
         [Description("The file name to append to.")]
         string name,

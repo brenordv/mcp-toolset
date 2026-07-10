@@ -3,8 +3,8 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Logging;
 /// <summary>
 /// The fixed field allowlist defined by the vault logging contract. Loggable fields are validated
 /// identifiers and system data (project, name, paths, versions, sizes, counts, durations, error
-/// codes, exception types); all free text — content, summaries, tags, diffs, headings, key paths,
-/// FTS queries — is never loggable. Any key not named here is dropped at format time so a future
+/// codes, exception types); all free text (content, summaries, tags, diffs, headings, key paths,
+/// FTS queries) is never loggable. Any key not named here is dropped at format time so a future
 /// bug cannot silently leak a redacted value.
 /// </summary>
 public static class LogFields

@@ -9,7 +9,7 @@
 #   2. Starts the Rust binary (c:\path\to\the\rust\mcp-vault\vault-mcp.exe)
 #      with VAULT_MCP_HOME pointed at that folder.
 #   3. Sends JSON-RPC tool calls over stdin, PACED (one every 300 ms) so the server never
-#      handles two writes concurrently — piping them all at once made racing tool calls fight
+#      handles two writes concurrently; piping them all at once made racing tool calls fight
 #      for the store's write lock ("database is locked").
 #   4. Closes stdin so the server checkpoints WAL and shuts down cleanly, then prints the
 #      responses and the fixture tree.

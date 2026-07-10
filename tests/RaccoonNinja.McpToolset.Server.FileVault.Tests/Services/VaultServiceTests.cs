@@ -546,6 +546,63 @@ public sealed class VaultServiceTests : IDisposable
         Assert.NotNull(committed.SplitHint);
     }
 
+    [Fact]
+    public void Save_FirstSaveWithOmittedFormat_DefaultsToText()
+    {
+        // Act
+        _service.Save(Project, Name, "hello", "s", null, null, null, ParentUpdate.Leave);
+
+        // Assert
+        var (record, _, _) = _service.Get(Project, Name, version: null);
+        Assert.Equal(VaultFormat.Text, record.Format);
+        Assert.EndsWith(".txt", record.RelPath);
+    }
+
+    [Fact]
+    public void Save_UpdateWithOmittedFormat_KeepsStoredFormat()
+    {
+        // Arrange
+        _service.Save(Project, Name, "# Title\nbody", "s", null, null, VaultFormat.Markdown, ParentUpdate.Leave);
+
+        // Act
+        _service.Save(Project, Name, "# Title\nnew body", "s", 1, null, null, ParentUpdate.Leave);
+
+        // Assert
+        var (record, _, _) = _service.Get(Project, Name, version: null);
+        Assert.Equal(VaultFormat.Markdown, record.Format);
+        Assert.EndsWith(".md", record.RelPath);
+    }
+
+    [Fact]
+    public void Save_UpdateWithOmittedFormat_KeepsSectionEditability()
+    {
+        // Arrange
+        _service.Save(Project, Name, "# Target\nold", "s", null, null, VaultFormat.Markdown, ParentUpdate.Leave);
+        _service.Save(Project, Name, "# Target\nresaved", "s", 1, null, null, ParentUpdate.Leave);
+
+        // Act
+        _service.EditSection(Project, Name, "Target", "edited", baseVersion: 2);
+
+        // Assert
+        var (_, content, _) = _service.Get(Project, Name, version: null);
+        Assert.Equal("# Target\nedited\n", content);
+    }
+
+    [Fact]
+    public void Save_UpdateWithExplicitFormat_ChangesStoredFormat()
+    {
+        // Arrange
+        _service.Save(Project, Name, "# Title\nbody", "s", null, null, VaultFormat.Markdown, ParentUpdate.Leave);
+
+        // Act
+        _service.Save(Project, Name, "plain now", "s", 1, null, VaultFormat.Text, ParentUpdate.Leave);
+
+        // Assert
+        var (record, _, _) = _service.Get(Project, Name, version: null);
+        Assert.Equal(VaultFormat.Text, record.Format);
+        Assert.EndsWith(".txt", record.RelPath);
+    }
+
     private void UseSplitHintThreshold(int chars)
         => _service = new VaultService(
             new SqliteVaultRepository(_factory), _files, _config with { SplitHintChars = chars });

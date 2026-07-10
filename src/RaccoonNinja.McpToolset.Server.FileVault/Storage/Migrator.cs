@@ -73,7 +73,7 @@ public static class Migrator
         }
         catch (SqliteException)
         {
-            // The meta table does not exist yet — a brand-new database.
+            // The meta table does not exist yet: a brand-new database.
             return 0;
         }
     }

@@ -11,7 +11,7 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Tools;
 public sealed class VaultPurgeTool(ToolCommon common, VaultService service, ProjectResolver resolver)
 {
     [McpServerTool(Name = "vault_purge", UseStructuredContent = true)]
-    [Description("Permanently delete a file and all its versions. Irreversible — requires `confirm: true`.")]
+    [Description("Permanently delete a file and all its versions. Irreversible; requires `confirm: true`.")]
     public StatusResult Invoke(
         [Description("The file name to purge.")]
         string name,

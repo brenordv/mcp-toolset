@@ -12,7 +12,7 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Tools;
 public sealed class VaultSetMetaTool(ToolCommon common, VaultService service, ProjectResolver resolver)
 {
     [McpServerTool(Name = "vault_set_meta", UseStructuredContent = true)]
-    [Description("Update only a note's metadata — `summary`, `tags`, and/or `parent` — without resending or changing its content. This does **not** create a new version. Provide at least one of `summary`, `tags`, or a parent change. Set `clear_parent: true` to detach a note from its parent (top-level); otherwise `parent` links it under the named note in the same project.")]
+    [Description("Update only a note's metadata (`summary`, `tags`, and/or `parent`) without resending or changing its content. This does **not** create a new version. Provide at least one of `summary`, `tags`, or a parent change. Set `clear_parent: true` to detach a note from its parent (top-level); otherwise `parent` links it under the named note in the same project.")]
     public SetMetaResult Invoke(
         [Description("The file whose metadata to update.")]
         string name,

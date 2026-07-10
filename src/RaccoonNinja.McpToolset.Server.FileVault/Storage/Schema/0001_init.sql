@@ -1,4 +1,4 @@
--- Vault MCP — initial schema (migration 0001).
+-- Vault MCP: initial schema (migration 0001).
 --
 -- SQLite is the source of truth for mapping/metadata/versions. Content lives as
 -- immutable plain-text snapshots on disk; `versions.rel_path` points at each one.

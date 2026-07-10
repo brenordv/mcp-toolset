@@ -445,12 +445,12 @@ TODO: Add instructions to build on Windows, macOS, and Linux.
 
 ## Requirements
 
-- **`git` on `PATH`** — required. This server runs your system `git` for every call; without it, tools fail with a
+- **`git` on `PATH`**: required. This server runs your system `git` for every call; without it, tools fail with a
   `GitNotInstalled` error. Any reasonably recent `git` works.
-- **.NET runtime** — *not* needed for the released binaries. Each release ships a self-contained, single-file
+- **.NET runtime**: *not* needed for the released binaries. Each release ships a self-contained, single-file
   executable per platform ([Releases and verification](../../README.md#releases-and-verification)), so there's nothing
   extra to install to run it.
-- **Building from source** — the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+- **Building from source**: the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 ---
 

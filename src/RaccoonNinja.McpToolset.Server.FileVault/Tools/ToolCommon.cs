@@ -22,7 +22,7 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
     /// Run <paramref name="body"/> under the standard per-call contract: one structured log
     /// record per call (tool, project, name, duration, outcome), one metrics sample, and the
     /// domain-error translation. A <see cref="VaultException"/> is never logged as an exception
-    /// object — only its code is recorded.
+    /// object; only its code is recorded.
     /// </summary>
     /// <typeparam name="T">The tool's typed result.</typeparam>
     /// <param name="tool">The tool name.</param>

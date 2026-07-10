@@ -50,17 +50,17 @@ dotnet test  RaccoonNinja.McpToolset.slnx
 
 Two GitHub Actions workflows live under [`.github/workflows`](.github/workflows):
 
-- **QA** (`qa.yml`) — runs on every pull request and on pushes to `master`. It
+- **QA** (`qa.yml`): runs on every pull request and on pushes to `master`. It
   verifies formatting (`dotnet format --verify-no-changes`), builds with
   warnings treated as errors, and runs the unit tests. The build fails if any
   of these fail. It is also a reusable workflow, so the release pipeline can
   reuse it as a gate.
-- **Publish** (`publish.yml`) — triggered by pushing a tag of the form
+- **Publish** (`publish.yml`): triggered by pushing a tag of the form
   `release/vX.Y.Z` (for example `release/v1.0.0`). It first re-runs QA as a
   hard gate, then cross-compiles a self-contained, single-file binary of each
   MCP server for `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`, packages
-  each as a named zip, and publishes them — together with a `SHA256SUMS.txt`
-  manifest — in a single atomic GitHub release.
+  each as a named zip, and publishes them, together with a `SHA256SUMS.txt`
+  manifest, in a single atomic GitHub release.
 
 ## Releases and verification
 

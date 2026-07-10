@@ -3,7 +3,7 @@ using RaccoonNinja.McpToolset.Server.FileVault.Domain;
 namespace RaccoonNinja.McpToolset.Server.FileVault.Storage;
 
 /// <summary>
-/// A fully resolved view of one version of a file (metadata only — the caller reads the bytes
+/// A fully resolved view of one version of a file (metadata only; the caller reads the bytes
 /// from the <see cref="FileStore"/> using <see cref="RelPath"/>).
 /// </summary>
 public sealed record FileRecord

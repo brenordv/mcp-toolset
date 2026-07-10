@@ -18,7 +18,7 @@ public sealed class ProjectResolver(VaultConfig config, string cwd)
 
     /// <summary>
     /// The cwd derivation is pure for the process lifetime (the cwd never changes), so it is
-    /// computed once on first use — without this, every tool call that omits `project` would
+    /// computed once on first use; without this, every tool call that omits `project` would
     /// re-probe the filesystem and re-spawn the git subprocess.
     /// </summary>
     private readonly Lazy<string> _derivedProject = new(() => DeriveFromCwd(cwd));
@@ -197,7 +197,7 @@ public sealed class ProjectResolver(VaultConfig config, string cwd)
     /// <summary>
     /// Best-effort <c>git rev-parse --show-toplevel</c> run from <paramref name="cwd"/>. Returns
     /// <c>null</c> if git is not installed, the cwd is not inside a work tree, or the command
-    /// fails or times out — every such case falls back to the directory name, so git is a bonus
+    /// fails or times out; every such case falls back to the directory name, so git is a bonus
     /// signal, never a hard dependency. The child runs with the hardened allowlist environment
     /// and a kill-on-timeout guard.
     /// </summary>

@@ -22,7 +22,7 @@ public static class LineDiff
     /// <returns>The rendered diff.</returns>
     /// <remarks>
     /// The LCS table is O(baseLines * currentLines) in memory; callers must gate invocation by
-    /// line-count product — this method does not guard itself, matching the Rust
+    /// line-count product; this method does not guard itself, matching the Rust
     /// helper's contract.
     /// </remarks>
     public static string Compute(string baseText, string currentText, int maxLines)

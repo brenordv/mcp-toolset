@@ -9,7 +9,7 @@ using RaccoonNinja.McpToolset.Server.FileVault.Services;
 namespace RaccoonNinja.McpToolset.Server.FileVault.Tools;
 
 /// <summary>
-/// The <c>vault_list</c> tool. An omitted <c>project</c> means "across ALL projects" — no cwd/env
+/// The <c>vault_list</c> tool. An omitted <c>project</c> means "across ALL projects": no cwd/env
 /// inference happens for listings (Rust parity, load-bearing for cross-project namespaces like
 /// <c>lessons</c>). An explicit empty string still goes through the resolve chain.
 /// </summary>

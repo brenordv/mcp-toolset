@@ -74,8 +74,8 @@ public interface IVaultRepository
 
     /// <summary>
     /// Return the subset of <paramref name="relPaths"/> referenced by any live version row,
-    /// compared case-insensitively — the recheck run just before unlinking, so a purge can
-    /// never delete a snapshot another file's version still points at.
+    /// compared case-insensitively. This is the recheck run just before unlinking, so a purge
+    /// can never delete a snapshot another file's version still points at.
     /// </summary>
     /// <param name="relPaths">Candidate snapshot paths.</param>
     /// <returns>The still-referenced paths as stored in the database.</returns>

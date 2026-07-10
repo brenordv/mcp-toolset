@@ -9,7 +9,7 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Errors;
 /// <remarks>
 /// The <see cref="Exception.Message"/> mirrors the Rust server's <c>Display</c> wording and is
 /// client-visible by design; it may embed user-supplied text (heading, key path, name). For that
-/// reason a <see cref="VaultException"/> must never be logged as an exception object — the
+/// reason a <see cref="VaultException"/> must never be logged as an exception object; the
 /// logging layer records only <see cref="Code"/>.
 /// </remarks>
 public sealed class VaultException : Exception

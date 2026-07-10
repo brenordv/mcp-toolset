@@ -109,6 +109,6 @@ public static class ServerEventLog
             .ForContext(LogFields.HomePath, homePath)
             .Warning(
                 "the vault store appears to be on a network or synced drive; SQLite's cross-process "
-                + "locking is unreliable there — move VAULT_MCP_HOME to a local disk if you see corruption");
+                + "locking is unreliable there; move VAULT_MCP_HOME to a local disk if you see corruption");
     }
 }

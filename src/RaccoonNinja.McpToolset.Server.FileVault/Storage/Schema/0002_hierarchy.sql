@@ -1,4 +1,4 @@
--- Vault MCP — single-parent hierarchy (migration 0002).
+-- Vault MCP: single-parent hierarchy (migration 0002).
 --
 -- Each file may reference one parent file. `parent_id` is nullable (top-level notes have no parent);
 -- existing rows migrate forward as top-level. Same-project integrity is enforced in the service

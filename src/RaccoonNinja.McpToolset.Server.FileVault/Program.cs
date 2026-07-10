@@ -32,7 +32,7 @@ public static class Program
         "A personal, cross-conversation file vault. Save content by name with a one-line "
         + "summary; retrieve, list, version, and edit it from any chat. Writes use optimistic "
         + "concurrency: pass the `base_version` you read, and re-read on a conflict. To change "
-        + "only a note's summary, tags, or parent, use `vault_set_meta` — you never need to "
+        + "only a note's summary, tags, or parent, use `vault_set_meta`; you never need to "
         + "resend content. Notes can be organized hierarchically: link a child note under a "
         + "main note via `parent`, and `vault_get` returns a note's parent and children so you "
         + "can split a large note into smaller related ones.";

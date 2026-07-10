@@ -30,25 +30,32 @@ public static class VaultFormatExtensions
             _ => "text",
         };
 
+    /// <summary>
+    /// Parse an optional format string, keeping <c>null</c> as <c>null</c> so the caller decides
+    /// what an omitted format means (first saves default to text; updates inherit the stored format).
+    /// </summary>
+    /// <param name="value">The raw format string, or <c>null</c> when the caller omitted it.</param>
+    /// <returns>The parsed format, or <c>null</c> for <c>null</c> input.</returns>
+    /// <exception cref="VaultException">Thrown with <see cref="VaultErrorCode.InvalidFormat"/> for an unknown format.</exception>
+    public static VaultFormat? ParseOptionalVaultFormat(string value)
+        => value is null ? null : ParseVaultFormat(value);
+
     /// <summary>Parse a format string, accepting the Rust server's aliases case-insensitively.</summary>
     /// <param name="value">The raw format string; <c>null</c> defaults to <see cref="VaultFormat.Text"/>.</param>
     /// <returns>The parsed format.</returns>
     /// <exception cref="VaultException">Thrown with <see cref="VaultErrorCode.InvalidFormat"/> for an unknown format.</exception>
     public static VaultFormat ParseVaultFormat(string value)
     {
-        if (value is null)
-        {
-            return VaultFormat.Text;
-        }
-
-        return value.ToLowerInvariant() switch
-        {
-            "text" or "txt" or "plain" => VaultFormat.Text,
-            "markdown" or "md" => VaultFormat.Markdown,
-            "json" => VaultFormat.Json,
-            "yaml" or "yml" => VaultFormat.Yaml,
-            var other => throw VaultException.InvalidFormat(
-                $"unknown format '{other}' (expected one of: text, markdown, json, yaml)"),
-        };
+        return value is null
+            ? VaultFormat.Text
+            : value.ToLowerInvariant() switch
+            {
+                "text" or "txt" or "plain" => VaultFormat.Text,
+                "markdown" or "md" => VaultFormat.Markdown,
+                "json" => VaultFormat.Json,
+                "yaml" or "yml" => VaultFormat.Yaml,
+                var other => throw VaultException.InvalidFormat(
+                    $"unknown format '{other}' (expected one of: text, markdown, json, yaml)"),
+            };
     }
 }

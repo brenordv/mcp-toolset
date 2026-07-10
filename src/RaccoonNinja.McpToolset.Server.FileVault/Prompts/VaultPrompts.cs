@@ -57,7 +57,7 @@ public sealed class VaultPrompts(VaultService service, ProjectResolver resolver)
     {
         try
         {
-            // Like vault_list, an omitted project means "across ALL projects" — no inference.
+            // Like vault_list, an omitted project means "across ALL projects"; no inference.
             var resolvedProject = project is null ? null : resolver.Resolve(project);
             var items = service.List(resolvedProject, tags: null, query: null);
 
