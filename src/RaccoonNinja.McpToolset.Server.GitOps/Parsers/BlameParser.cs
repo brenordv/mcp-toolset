@@ -12,7 +12,7 @@ public static class BlameParser
     public static IReadOnlyList<BlameLine> Parse(byte[] raw)
     {
         var text = TextDecoding.Decode(raw);
-        if (string.IsNullOrEmpty(text)) return Array.Empty<BlameLine>();
+        if (string.IsNullOrWhiteSpace(text)) return Array.Empty<BlameLine>();
 
         var lines = text.Split('\n');
         var commitMeta = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
@@ -45,7 +45,7 @@ public static class BlameParser
     {
         sha = null;
         finalLine = 0;
-        if (string.IsNullOrEmpty(line)) return false;
+        if (string.IsNullOrWhiteSpace(line)) return false;
 
         var parts = line.Split(' ');
         if (parts.Length < 3 || parts[0].Length != 40) return false;

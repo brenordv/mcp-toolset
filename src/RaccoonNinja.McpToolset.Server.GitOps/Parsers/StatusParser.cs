@@ -15,7 +15,7 @@ public static class StatusParser
         while (i < tokens.Length)
         {
             var line = tokens[i++];
-            if (string.IsNullOrEmpty(line)) continue;
+            if (string.IsNullOrWhiteSpace(line)) continue;
 
             if (line.StartsWith("# ", StringComparison.Ordinal))
                 ApplyBranchHeader(line[2..], state);
@@ -105,7 +105,7 @@ public static class StatusParser
             StagedStatus = xy[0].ToString(),
             UnstagedStatus = xy[1].ToString(),
             IsRenamed = origPath != null,
-            OrigPath = string.IsNullOrEmpty(origPath) ? null : origPath,
+            OrigPath = string.IsNullOrWhiteSpace(origPath) ? null : origPath,
         };
         Classify(entry, xy[0], xy[1], state);
     }

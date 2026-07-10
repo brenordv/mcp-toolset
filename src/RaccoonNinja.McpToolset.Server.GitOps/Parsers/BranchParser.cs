@@ -14,7 +14,7 @@ public static class BranchParser
         var result = new List<Branch>();
         foreach (var line in text.Split('\n'))
         {
-            if (string.IsNullOrEmpty(line)) continue;
+            if (string.IsNullOrWhiteSpace(line)) continue;
             var parts = line.Split('\x1f');
             if (parts.Length < 5) continue;
             var refname = parts[0];
@@ -35,9 +35,9 @@ public static class BranchParser
                 Name = name,
                 IsCurrent = headMarker == "*",
                 IsRemote = isRemote,
-                Upstream = string.IsNullOrEmpty(upstream) ? null : upstream,
+                Upstream = string.IsNullOrWhiteSpace(upstream) ? null : upstream,
                 TipHash = oid,
-                Subject = string.IsNullOrEmpty(subject) ? null : subject,
+                Subject = string.IsNullOrWhiteSpace(subject) ? null : subject,
             });
         }
         return result;

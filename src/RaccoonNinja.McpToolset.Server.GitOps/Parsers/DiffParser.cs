@@ -20,7 +20,7 @@ public static class DiffParser
         while (i < tokens.Length)
         {
             var chunk = tokens[i++];
-            if (string.IsNullOrEmpty(chunk)) continue;
+            if (string.IsNullOrWhiteSpace(chunk)) continue;
 
             var parts = chunk.Split('\t');
             if (parts.Length < 2) continue;
@@ -52,7 +52,7 @@ public static class DiffParser
     /// </summary>
     private static bool TryResolvePath(string[] parts, string[] tokens, ref int i, out string path)
     {
-        if (parts.Length >= 3 && !string.IsNullOrEmpty(parts[2]))
+        if (parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[2]))
         {
             path = parts[2];
             return true;
@@ -82,9 +82,9 @@ public static class DiffParser
         while (i < tokens.Length)
         {
             var status = tokens[i++];
-            if (string.IsNullOrEmpty(status)) continue;
+            if (string.IsNullOrWhiteSpace(status)) continue;
 
-            if (TryResolveStatusPath(status, tokens, ref i, out var path) && !string.IsNullOrEmpty(path))
+            if (TryResolveStatusPath(status, tokens, ref i, out var path) && !string.IsNullOrWhiteSpace(path))
             {
                 result[path] = MapStatus(status[0]);
             }
@@ -141,7 +141,7 @@ public static class DiffParser
     public static IReadOnlyList<FileDiff> ParseUnified(byte[] raw)
     {
         var text = TextDecoding.Decode(raw);
-        if (string.IsNullOrEmpty(text)) return Array.Empty<FileDiff>();
+        if (string.IsNullOrWhiteSpace(text)) return Array.Empty<FileDiff>();
 
         return new UnifiedDiffReader().Read(text);
     }

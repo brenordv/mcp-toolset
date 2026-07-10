@@ -32,7 +32,7 @@ public static class LogParser
     public static IReadOnlyList<Commit> Parse(byte[] raw)
     {
         var text = TextDecoding.Decode(raw);
-        if (string.IsNullOrEmpty(text)) return [];
+        if (string.IsNullOrWhiteSpace(text)) return [];
 
         var result = new List<Commit>();
         foreach (var rawRecord in text.Split(RecordSeparator))
@@ -57,7 +57,7 @@ public static class LogParser
             var authored = DateTimeOffset.FromUnixTimeSeconds(authoredUnix);
             var committed = DateTimeOffset.FromUnixTimeSeconds(committedUnix);
             var bodyRaw = fields[8].TrimEnd('\n');
-            var body = string.IsNullOrEmpty(bodyRaw) ? null : bodyRaw;
+            var body = string.IsNullOrWhiteSpace(bodyRaw) ? null : bodyRaw;
 
             result.Add(new Commit
             {

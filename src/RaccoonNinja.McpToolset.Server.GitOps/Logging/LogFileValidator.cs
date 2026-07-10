@@ -72,7 +72,7 @@ public static class LogFileValidator
     private static string ExtractParent(string candidate)
     {
         var parent = Path.GetDirectoryName(candidate);
-        return string.IsNullOrEmpty(parent) || !Directory.Exists(parent)
+        return string.IsNullOrWhiteSpace(parent) || !Directory.Exists(parent)
             ? throw new LogPathRejectedException("parent directory does not exist")
             : parent;
     }
@@ -141,7 +141,7 @@ public static class LogFileValidator
     private static void ValidateWindowsDrive(string candidate)
     {
         var root = Path.GetPathRoot(candidate);
-        if (string.IsNullOrEmpty(root))
+        if (string.IsNullOrWhiteSpace(root))
             return;
         try
         {

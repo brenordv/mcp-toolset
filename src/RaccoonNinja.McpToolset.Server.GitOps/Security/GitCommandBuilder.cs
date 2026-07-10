@@ -78,7 +78,7 @@ public static class GitCommandBuilder
 
         // 4. Subcommand + optional sub-subcommand.
         argv.Add(intent.Subcommand);
-        if (!string.IsNullOrEmpty(intent.SubSubcommand))
+        if (!string.IsNullOrWhiteSpace(intent.SubSubcommand))
         {
             argv.Add(intent.SubSubcommand);
         }

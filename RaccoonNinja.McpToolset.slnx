@@ -22,4 +22,9 @@
     <Project Path="src/RaccoonNinja.McpToolset.Server.GitOps/RaccoonNinja.McpToolset.Server.GitOps.csproj" />
     <Project Path="tests/RaccoonNinja.McpToolset.Server.GitOps.Tests/RaccoonNinja.McpToolset.Server.GitOps.Tests.csproj" />
   </Folder>
+  <Folder Name="/MCP file-vault/">
+    <File Path="src/RaccoonNinja.McpToolset.Server.FileVault/README.md" />
+    <Project Path="src/RaccoonNinja.McpToolset.Server.FileVault/RaccoonNinja.McpToolset.Server.FileVault.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Server.FileVault.Tests/RaccoonNinja.McpToolset.Server.FileVault.Tests.csproj" />
+  </Folder>
 </Solution>

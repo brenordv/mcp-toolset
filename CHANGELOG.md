@@ -1,4 +1,8 @@
-# Changelog
+# Toolset Changelog
 
-## v1.0.0
-- Initial release of the project.
+# v2
+- Added new MCP: `file-vault`.
+
+
+# v1
+- Initial release of `git-ops`.

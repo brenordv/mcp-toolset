@@ -31,7 +31,7 @@ public static class RefVerifierExtensions
 
         foreach (var reference in references)
         {
-            if (string.IsNullOrEmpty(reference))
+            if (string.IsNullOrWhiteSpace(reference))
             {
                 continue;
             }

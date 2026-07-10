@@ -29,7 +29,7 @@ public sealed class FiltersAppliedBuilder
     /// <returns>This builder, for chaining.</returns>
     public FiltersAppliedBuilder Redact(string key, string value)
     {
-        if (!string.IsNullOrEmpty(value))
+        if (!string.IsNullOrWhiteSpace(value))
         {
             _filters[key] = RedactedToken;
         }

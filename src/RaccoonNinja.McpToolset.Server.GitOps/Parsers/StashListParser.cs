@@ -11,7 +11,7 @@ public static class StashListParser
         var result = new List<StashEntry>();
         foreach (var line in text.Split('\n'))
         {
-            if (string.IsNullOrEmpty(line)) continue;
+            if (string.IsNullOrWhiteSpace(line)) continue;
             var parts = line.Split('\x1f');
             if (parts.Length < 3) continue;
             var refStr = parts[0];
