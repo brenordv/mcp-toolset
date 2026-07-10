@@ -443,9 +443,21 @@ TODO: Add instructions to build on Windows, macOS, and Linux.
 
 ---
 
+## Requirements
+
+- **`git` on `PATH`** — required. This server runs your system `git` for every call; without it, tools fail with a
+  `GitNotInstalled` error. Any reasonably recent `git` works.
+- **.NET runtime** — *not* needed for the released binaries. Each release ships a self-contained, single-file
+  executable per platform ([Releases and verification](../../README.md#releases-and-verification)), so there's nothing
+  extra to install to run it.
+- **Building from source** — the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+
+---
+
 ## Adding this server to Claude Code
 
-The server is a .NET console app that speaks MCP over stdio. It needs `git` and the .NET 10 SDK/runtime on `PATH`.
+The server is a .NET console app that speaks MCP over stdio. It needs `git` on `PATH`; the released binary is
+self-contained, so no separate .NET runtime is required (see [Requirements](#requirements)).
 
 Add an entry to your MCP configuration (e.g. `.mcp.json` at your project root, or via `claude mcp add`). On Windows:
 

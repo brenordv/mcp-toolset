@@ -29,7 +29,7 @@ public static class LogScrubbing
     /// <summary>Cap and strip the <c>.gitattributes</c> driver name.</summary>
     public static string ScrubDriverName(string raw)
     {
-        if (string.IsNullOrEmpty(raw))
+        if (string.IsNullOrWhiteSpace(raw))
             return string.Empty;
 
         var bytes = Encoding.UTF8.GetBytes(raw);
@@ -57,7 +57,7 @@ public static class LogScrubbing
 
     private static string StripControls(string text)
     {
-        if (string.IsNullOrEmpty(text)) return text ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text)) return text ?? string.Empty;
         var builder = new StringBuilder(text.Length);
         foreach (var ch in text)
         {

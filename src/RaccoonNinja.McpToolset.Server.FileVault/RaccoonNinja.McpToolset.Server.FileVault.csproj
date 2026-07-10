@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>RaccoonNinja.McpToolset.Server.FileVault</RootNamespace>
+    <AssemblyName>file-vault</AssemblyName>
+    <Description>Local stdio MCP server: a personal, cross-conversation file vault with immutable versioning, conflict detection, and structure-aware editing.</Description>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- CA1707: MCP tool input schemas take their property names verbatim from C# method
+         parameter names, and the wire contract of the original Rust server uses snake_case
+         (base_version, key_path, clear_parent, ...). Scoped to this project only. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+    <Version>2.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Storage\Schema\0001_init.sql" />
+    <EmbeddedResource Include="Storage\Schema\0002_hierarchy.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The test project unit-tests internal helpers (FTS query builder, cwd derivation). -->
+    <InternalsVisibleTo Include="RaccoonNinja.McpToolset.Server.FileVault.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Blake3" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Markdig" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <!-- Direct reference so the central 3.0.3 pin overrides the vulnerable transitive 2.1.11
+         (GHSA-2m69-gcr7-jv3q); Microsoft.Data.Sqlite declares an open >= range, so this is legal. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Roslynator.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+
+</Project>

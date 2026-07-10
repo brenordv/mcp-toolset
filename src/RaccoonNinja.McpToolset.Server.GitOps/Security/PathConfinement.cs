@@ -94,7 +94,7 @@ public static class PathConfinement
     private static string ToRepoRelativePosix(string rootResolved, string candidate)
     {
         var relative = Path.GetRelativePath(rootResolved, candidate).Replace(Path.DirectorySeparatorChar, '/');
-        return string.IsNullOrEmpty(relative) ? "." : relative;
+        return string.IsNullOrWhiteSpace(relative) ? "." : relative;
     }
 
     /// <summary>Build a <see cref="PathOutsideRepoException"/> with the standard <c>path under '{param}' {reason}</c> message.</summary>

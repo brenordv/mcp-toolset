@@ -108,7 +108,7 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
     /// <returns>A <see cref="PcreUnavailableException"/> when the signature matches; otherwise <c>null</c>.</returns>
     public static GitCheckException ClassifyPcreStderr(string stderr)
     {
-        if (string.IsNullOrEmpty(stderr))
+        if (string.IsNullOrWhiteSpace(stderr))
         {
             return null;
         }

@@ -16,15 +16,15 @@ public static class GrepParser
     {
         var text = TextDecoding.Decode(raw);
         var matches = new List<GrepMatch>();
-        if (string.IsNullOrEmpty(text))
+        if (string.IsNullOrWhiteSpace(text))
         {
             return matches;
         }
 
-        var hasRef = !string.IsNullOrEmpty(reference);
+        var hasRef = !string.IsNullOrWhiteSpace(reference);
         foreach (var line in text.Split('\n'))
         {
-            if (string.IsNullOrEmpty(line))
+            if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
             }

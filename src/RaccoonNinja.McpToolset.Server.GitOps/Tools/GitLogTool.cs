@@ -77,11 +77,11 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
         string author, string since, string until, string grep, string pickaxe, int maxCount)
     {
         var attached = new List<AttachedOption>();
-        if (!string.IsNullOrEmpty(author)) attached.Add(new AttachedOption("--author", author));
-        if (!string.IsNullOrEmpty(since)) attached.Add(new AttachedOption("--since", since));
-        if (!string.IsNullOrEmpty(until)) attached.Add(new AttachedOption("--until", until));
-        if (!string.IsNullOrEmpty(grep)) attached.Add(new AttachedOption("--grep", grep));
-        if (!string.IsNullOrEmpty(pickaxe)) attached.Add(new AttachedOption("-S", pickaxe));
+        if (!string.IsNullOrWhiteSpace(author)) attached.Add(new AttachedOption("--author", author));
+        if (!string.IsNullOrWhiteSpace(since)) attached.Add(new AttachedOption("--since", since));
+        if (!string.IsNullOrWhiteSpace(until)) attached.Add(new AttachedOption("--until", until));
+        if (!string.IsNullOrWhiteSpace(grep)) attached.Add(new AttachedOption("--grep", grep));
+        if (!string.IsNullOrWhiteSpace(pickaxe)) attached.Add(new AttachedOption("-S", pickaxe));
         if (maxCount > 0) attached.Add(new AttachedOption("--max-count", maxCount.ToString(CultureInfo.InvariantCulture)));
         return attached;
     }

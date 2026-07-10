@@ -23,7 +23,7 @@ public static class ReflogParser
         var entries = new List<ReflogEntry>();
         foreach (var line in text.Split('\n'))
         {
-            if (string.IsNullOrEmpty(line))
+            if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
             }

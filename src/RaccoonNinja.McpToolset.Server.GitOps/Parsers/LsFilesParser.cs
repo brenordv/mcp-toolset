@@ -9,6 +9,6 @@ public static class LsFilesParser
 
         return string.IsNullOrWhiteSpace(text)
             ? []
-            : [.. text.Split('\0').Where(path => !string.IsNullOrEmpty(path))];
+            : [.. text.Split('\0').Where(path => !string.IsNullOrWhiteSpace(path))];
     }
 }

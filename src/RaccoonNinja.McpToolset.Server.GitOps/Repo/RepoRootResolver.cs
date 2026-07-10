@@ -33,7 +33,7 @@ public sealed class RepoRootResolver(string gitExecutable = "git") : IRepoRootRe
 
     private static void ValidateCwd(string cwd)
     {
-        if (string.IsNullOrEmpty(cwd))
+        if (string.IsNullOrWhiteSpace(cwd))
             throw new RejectedArgumentException("cwd must be a non-empty absolute path string",
                 new Dictionary<string, object> { ["param"] = "cwd" });
         if (cwd.Contains('\0'))
@@ -83,7 +83,7 @@ public sealed class RepoRootResolver(string gitExecutable = "git") : IRepoRootRe
                 new Dictionary<string, object> { ["exit_code"] = exitCode });
         }
         var top = stdout.Trim();
-        if (string.IsNullOrEmpty(top))
+        if (string.IsNullOrWhiteSpace(top))
             throw new NotAGitRepositoryException("git rev-parse returned an empty toplevel for cwd");
 
         var resolved = Path.GetFullPath(top);

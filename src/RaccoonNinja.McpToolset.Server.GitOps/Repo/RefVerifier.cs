@@ -28,7 +28,7 @@ public sealed class RefVerifier(string gitExecutable = "git") : IRefVerifier
                 new Dictionary<string, object> { ["param"] = "ref" });
 
         var sha = stdout.Trim();
-        return string.IsNullOrEmpty(sha)
+        return string.IsNullOrWhiteSpace(sha)
             ? throw new RefNotFoundException("ref resolved to empty output",
                 new Dictionary<string, object> { ["param"] = "ref" })
             : sha;
@@ -36,7 +36,7 @@ public sealed class RefVerifier(string gitExecutable = "git") : IRefVerifier
 
     private static void ValidateRefShape(string reference)
     {
-        if (string.IsNullOrEmpty(reference))
+        if (string.IsNullOrWhiteSpace(reference))
             throw new RejectedArgumentException("ref must be a non-empty string",
                 new Dictionary<string, object> { ["param"] = "ref" });
         if (reference.Contains('\0'))

@@ -56,7 +56,7 @@ public class OtherParsersTests
         Assert.Equal("HEAD@{0}", entry.Selector);
         Assert.Equal("commit: init", entry.Subject);
         Assert.Equal(System.DateTimeOffset.FromUnixTimeSeconds(1700000000), entry.When);
-        Assert.False(string.IsNullOrEmpty(entry.RelativeTime));
+        Assert.False(string.IsNullOrWhiteSpace(entry.RelativeTime));
     }
 
     [Fact]

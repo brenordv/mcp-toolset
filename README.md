@@ -15,22 +15,19 @@ network round-trips beyond the local process the assistant already talks to.
 
 ## Servers
 
-| Server      | Description                                                                                                                                                                                                    | Docs                                                          |
-|-------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------|
-| **git-ops** | Local, read-only Git inspection; status, history, diffs, blame, and search exposed as typed tools that return JSON. The assistant never drives `git` through a shell, and no writing subcommands are wired up. | [README](src/RaccoonNinja.McpToolset.Server.GitOps/README.md) |
-
-> **Note:** The **git-ops** server is the first and currently the reference server in this toolset. See its
-> [README](src/RaccoonNinja.McpToolset.Server.GitOps/README.md) for the full tool catalog, security model, and
-> instructions for adding it to Claude Code (or any MCP client).
+- **[git-ops](src/RaccoonNinja.McpToolset.Server.GitOps/README.md)**: Local, read-only Git inspection; status, history, diffs, blame, and search exposed as typed tools that return JSON. The assistant never drives `git` through a shell, and no writing subcommands are wired up.
+- **[file-vault](src/RaccoonNinja.McpToolset.Server.FileVault/README.md)**: A personal, cross-conversation file vault: versioned notes in a local SQLite + snapshot store, with optimistic concurrency, tags, full-text search, hierarchy, and structure-aware markdown/JSON/YAML edits. Drop-in port of the Rust `vault-mcp` server, same on-disk store.
 
 ## Repository layout
 
 ```
 RaccoonNinja.McpToolset/
 ├─ src/                       # one project per MCP server
-│  └─ RaccoonNinja.McpToolset.Server.GitOps/
+│  ├─ RaccoonNinja.McpToolset.Server.GitOps/
+│  └─ RaccoonNinja.McpToolset.Server.FileVault/
 ├─ tests/                     # matching test project per server
-│  └─ RaccoonNinja.McpToolset.Server.GitOps.Tests/
+│  ├─ RaccoonNinja.McpToolset.Server.GitOps.Tests/
+│  └─ RaccoonNinja.McpToolset.Server.FileVault.Tests/
 ├─ Directory.Build.props      # shared build settings (net10.0, analyzers, etc.)
 ├─ Directory.Packages.props   # central package version management
 └─ RaccoonNinja.McpToolset.slnx
@@ -81,3 +78,18 @@ sha256sum --check --ignore-missing SHA256SUMS.txt
 > It lets you detect accidental corruption of a download, but because the manifest is published alongside the artifacts,
 > it does not by itself prove the artifacts were produced by this project.
 > We are using GitHub build-provenance attestation as a tamper-evident signing.
+
+## Recommended Claude configuration
+To make it easier, you can allow all agents to use the mcp servers here, by adding the following to your `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__git-ops",
+      "mcp__vault"
+    ]
+  }
+}
+```
+This will allow the agents to use the mcp servers autonomously, without having to ask you for permission every time.
