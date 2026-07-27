@@ -1,5 +1,8 @@
 # Toolset Changelog
 
+# v4
+- Updated MCP: `git-ops` to v1.0.1 (git range expressions `A..B` / `A...B` in `git_log` and `git_diff`).
+
 # v3
 - Updated MCP: `file-vault` to v2.1.0.
 

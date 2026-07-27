@@ -28,10 +28,47 @@ public sealed class RefVerifier(string gitExecutable = "git") : IRefVerifier
                 new Dictionary<string, object> { ["param"] = "ref" });
 
         var sha = stdout.Trim();
-        return string.IsNullOrWhiteSpace(sha)
-            ? throw new RefNotFoundException("ref resolved to empty output",
-                new Dictionary<string, object> { ["param"] = "ref" })
-            : sha;
+        if (string.IsNullOrWhiteSpace(sha))
+        {
+            throw new RefNotFoundException("ref resolved to empty output",
+                new Dictionary<string, object> { ["param"] = "ref" });
+        }
+
+        // Postcondition: `rev-parse --verify` yields exactly one full object name. Assert that here so
+        // a resolved ref is always a clean SHA before it is composed into a positional argument (range
+        // reconstruction joins two of these with a literal `..`/`...`), rather than trusting the shape.
+        if (!IsResolvedObjectName(sha))
+        {
+            throw new RefNotFoundException("ref resolved to a non-object-name",
+                new Dictionary<string, object> { ["param"] = "ref" });
+        }
+
+        return sha;
+    }
+
+    /// <summary>
+    /// True when <paramref name="value"/> is a full git object name: lowercase hex of length 40
+    /// (SHA-1) or 64 (SHA-256). Length-agnostic between the two hash algorithms so SHA-256 repos are
+    /// not rejected.
+    /// </summary>
+    /// <param name="value">The trimmed <c>rev-parse --verify</c> output.</param>
+    /// <returns><c>true</c> when the value is a full lowercase-hex object name.</returns>
+    internal static bool IsResolvedObjectName(string value)
+    {
+        if (value is not { Length: 40 or 64 })
+        {
+            return false;
+        }
+
+        foreach (var c in value)
+        {
+            if (c is not ((>= '0' and <= '9') or (>= 'a' and <= 'f')))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void ValidateRefShape(string reference)

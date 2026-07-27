@@ -139,4 +139,20 @@ public class GitCommandBuilderTests
         Assert.Contains("--author=<author>", masked);
         Assert.Contains("<path>", masked);
     }
+
+    [Fact]
+    public void MaskedForLog_Masks_Reconstructed_Range_Token_Without_Leaking_Shas_Or_Operator()
+    {
+        const string rangeToken = "aaaa111122223333444455556666777788889999...bbbb0000cccc1111dddd2222eeee3333ffff4444";
+        var intent = BasicIntent();
+        intent.VerifiedRefs.Add(rangeToken);
+        var (argv, _) = GitCommandBuilder.Build(intent);
+        var masked = GitCommandBuilder.MaskedForLog(argv, intent);
+        var joined = string.Join(' ', masked);
+
+        Assert.Contains("<ref>", masked);
+        Assert.DoesNotContain(rangeToken, masked);
+        Assert.DoesNotContain("aaaa111122223333444455556666777788889999", joined);
+        Assert.DoesNotContain("bbbb0000cccc1111dddd2222eeee3333ffff4444", joined);
+    }
 }

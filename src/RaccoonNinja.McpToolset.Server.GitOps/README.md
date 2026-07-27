@@ -120,6 +120,11 @@ Returns a unified diff in one of four modes, picked by the parameters you pass (
 - **ref_to_ref**: `fromRef` to `toRef` (any branch/tag/SHA; `toRef` defaults to the working tree)
 - **stat_only**: per-file add/delete counts and change kind, no patch text
 
+`fromRef` also accepts a git range expression: `A..B` (two-dot, the same diff as `fromRef: A, toRef: B`)
+or `A...B` (three-dot, the diff from the merge base of `A` and `B` to `B`). A range must be the sole ref;
+combining a range with `toRef` returns a `RejectedArgument` error. Each side of the range is verified to a
+SHA before use, exactly like a plain ref.
+
 Each diff runs two passes: the patch itself (or `--name-status` for stat-only) and a companion `--numstat -z` pass.
 The two are merged into one `DiffResult` so every file carries both its hunks and its line counts. `contextLines`
 maps to git's `-U<n>`.
@@ -146,8 +151,8 @@ Returns commits matching the given filters, parsed from a fixed `--pretty=format
 (hash, short hash, author, authored/committed timestamps, relative time, subject, body, parents).
 
 Filters: `author`, `since`, `until`, `grep` (message match), `pickaxe` (`-S`, find when a string was added or
-removed), `paths`, `ref` (start point), `follow` (track renames, only when scoped to a single path), and `maxCount`
-(default 50).
+removed), `paths`, `ref` (start point, or a range `A..B` / `A...B` to list the commits one ref adds over
+another), `follow` (track renames, only when scoped to a single path), and `maxCount` (default 50).
 
 ```mermaid
 flowchart LR

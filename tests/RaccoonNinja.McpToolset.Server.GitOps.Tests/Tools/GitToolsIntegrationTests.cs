@@ -220,6 +220,86 @@ public class GitToolsIntegrationTests
         }
     }
 
+    [Theory]
+    [InlineData("HEAD~2..HEAD")]
+    [InlineData("HEAD~2...HEAD")]
+    public async Task GitLogTool_Accepts_Range_Expression_And_Returns_Branch_Commits(string range)
+    {
+        var tool = new GitLogTool(_common, _refVerifier);
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, @ref: range);
+        Assert.Null(envelope.Error);
+        Assert.Equal(2, envelope.Count);
+    }
+
+    [Fact]
+    public async Task GitLogTool_Rejects_Malformed_Range()
+    {
+        var tool = new GitLogTool(_common, _refVerifier);
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, @ref: "A....B");
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+    }
+
+    [Fact]
+    public async Task GitDiffTool_TwoDot_Range_In_FromRef_Matches_Two_Ref_File_Set()
+    {
+        var tool = new GitDiffTool(_common, _refVerifier);
+
+        var rangeEnvelope = await tool.InvokeAsync(_fixture.RepoPath, fromRef: "HEAD~2..HEAD");
+        var twoRefEnvelope = await tool.InvokeAsync(_fixture.RepoPath, fromRef: "HEAD~2", toRef: "HEAD");
+
+        Assert.Null(rangeEnvelope.Error);
+        Assert.Null(twoRefEnvelope.Error);
+        var rangePaths = ((DiffResult)rangeEnvelope.Results[0]).Files.Select(f => f.Path).OrderBy(p => p);
+        var twoRefPaths = ((DiffResult)twoRefEnvelope.Results[0]).Files.Select(f => f.Path).OrderBy(p => p);
+        Assert.Equal(twoRefPaths, rangePaths);
+    }
+
+    [Fact]
+    public async Task GitDiffTool_ThreeDot_Range_In_FromRef_Runs_Without_Error()
+    {
+        var tool = new GitDiffTool(_common, _refVerifier);
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, fromRef: "HEAD~1...HEAD");
+        Assert.Null(envelope.Error);
+    }
+
+    [Fact]
+    public async Task GitDiffTool_Range_FromRef_With_Default_ToRef_Does_Not_Crash()
+    {
+        var tool = new GitDiffTool(_common, _refVerifier);
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, fromRef: "HEAD~1..HEAD");
+        Assert.Null(envelope.Error);
+    }
+
+    [Theory]
+    [InlineData("HEAD~1..HEAD", "HEAD", "from_ref")]
+    [InlineData("HEAD", "HEAD~1..HEAD", "to_ref")]
+    public async Task GitDiffTool_Rejects_Range_Combined_With_Second_Ref(string fromRef, string toRef, string param)
+    {
+        var tool = new GitDiffTool(_common, _refVerifier);
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, fromRef: fromRef, toRef: toRef);
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal(param, envelope.Error.Detail["param"]);
+    }
+
+    [Fact]
+    public async Task GitLogTool_Rejects_Range_Side_Beginning_With_Dash()
+    {
+        var tool = new GitLogTool(_common, _refVerifier);
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, @ref: "-x..HEAD");
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+    }
+
+    [Fact]
+    public async Task GitLogTool_Accepts_Reflog_Revision_As_Range_Side()
+    {
+        var tool = new GitLogTool(_common, _refVerifier);
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, @ref: "HEAD@{0}..HEAD");
+        Assert.Null(envelope.Error);
+    }
+
     [Fact]
     public async Task GitToolsEnvelope_Is_Serializable_To_Json()
     {
