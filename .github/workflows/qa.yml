@@ -20,9 +20,18 @@ concurrency:
 
 jobs:
   quality:
-    name: Format, build and test
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: Format, build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # The filesystem-heavy tests have slower disk I/O on the Windows and macOS
+    # runners than on Linux, so allow headroom over the ~2 min the suite takes
+    # locally.
+    timeout-minutes: 20
+    strategy:
+      # Run every OS to completion: a Windows-only failure must not mask the
+      # macOS result, or vice versa.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     permissions:
       contents: read
     steps:
@@ -37,8 +46,12 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore RaccoonNinja.McpToolset.slnx
 
+      # Formatting is OS-independent, so verify it once on Linux. Running it on
+      # the Windows checkout risks CRLF-vs-LF false positives, and repeating it
+      # on every OS would be redundant.
       - name: Verify code formatting
         id: format
+        if: matrix.os == 'ubuntu-latest'
         run: dotnet format RaccoonNinja.McpToolset.slnx --verify-no-changes --no-restore
 
       - name: Build solution
@@ -58,21 +71,25 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-results
+          name: test-results-${{ matrix.os }}
           path: ${{ runner.temp }}/test-results
           retention-days: 7
           if-no-files-found: ignore
 
       - name: Write QA summary
         if: always()
+        # Force bash: the Windows runner defaults to PowerShell, where the
+        # set/heredoc-style block below would not run.
+        shell: bash
         env:
+          OS: ${{ matrix.os }}
           FORMAT_OUTCOME: ${{ steps.format.outcome }}
           BUILD_OUTCOME: ${{ steps.build.outcome }}
           TEST_OUTCOME: ${{ steps.test.outcome }}
         run: |
           set -euo pipefail
           {
-            echo "## QA results"
+            echo "## QA results (${OS})"
             echo ""
             echo "| Check | Result |"
             echo "| ----- | ------ |"

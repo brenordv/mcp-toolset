@@ -1,18 +1,18 @@
 using System.Globalization;
+using RaccoonNinja.McpToolset.Files.Storage;
 using RaccoonNinja.McpToolset.Server.FileVault.Domain;
 
 namespace RaccoonNinja.McpToolset.Server.FileVault.Storage;
 
 /// <summary>
 /// The plain-text snapshot store. Each version is written once to an immutable file and never
-/// reopened for writing. Writes are crash-safe: content goes to a temp file in the destination
-/// directory, is flushed to disk, then atomically renamed into place, so the database (committed
-/// after the rename) never references a snapshot that does not exist.
+/// reopened for writing. Writes are crash-safe: the atomic temp-flush-rename is delegated to
+/// <see cref="AtomicWriter"/>, so the database (committed after the rename) never references a
+/// snapshot that does not exist. Snapshot paths embed the content hash, so an existing target holds
+/// identical bytes and a write that finds one is treated as satisfied.
 /// </summary>
 public sealed class FileStore
 {
-    private static long _tempCounter;
-
     private readonly string _root;
     private readonly string _rootFullPath;
 
@@ -39,26 +39,10 @@ public sealed class FileStore
     {
         ArgumentNullException.ThrowIfNull(bytes);
         var destination = Resolve(relPath);
-        var directory = Path.GetDirectoryName(destination)
-                        ?? throw new IOException($"snapshot path '{relPath}' has no parent directory");
-        Directory.CreateDirectory(directory);
 
-        var temp = TempPath(directory, destination);
-        using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-        {
-            stream.Write(bytes);
-            stream.Flush(flushToDisk: true);
-        }
-
-        try
-        {
-            File.Move(temp, destination);
-        }
-        catch (IOException) when (File.Exists(destination))
-        {
-            // Same-hash target already present; the bytes on disk are identical by construction.
-            File.Delete(temp);
-        }
+        // WriteNew treats a pre-existing target as satisfied: snapshot paths embed the content hash,
+        // so an existing file holds the same bytes by construction (first writer wins on a race).
+        AtomicWriter.WriteNew(destination, bytes);
 
         return ContentHash.Of(bytes);
     }
@@ -194,17 +178,5 @@ public sealed class FileStore
         {
             // Same best-effort contract.
         }
-    }
-
-    private static string TempPath(string directory, string destination)
-    {
-        var stamp = DateTime.UtcNow.Ticks;
-        var counter = Interlocked.Increment(ref _tempCounter);
-        var baseName = Path.GetFileName(destination);
-        return Path.Combine(
-            directory,
-            string.Create(
-                CultureInfo.InvariantCulture,
-                $".{baseName}.{Environment.ProcessId}.{stamp}.{counter}.tmp"));
     }
 }

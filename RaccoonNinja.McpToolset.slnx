@@ -27,4 +27,8 @@
     <Project Path="src/RaccoonNinja.McpToolset.Server.FileVault/RaccoonNinja.McpToolset.Server.FileVault.csproj" />
     <Project Path="tests/RaccoonNinja.McpToolset.Server.FileVault.Tests/RaccoonNinja.McpToolset.Server.FileVault.Tests.csproj" />
   </Folder>
+  <Folder Name="/Shared/">
+    <Project Path="src/RaccoonNinja.McpToolset.Files/RaccoonNinja.McpToolset.Files.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Files.Tests/RaccoonNinja.McpToolset.Files.Tests.csproj" />
+  </Folder>
 </Solution>

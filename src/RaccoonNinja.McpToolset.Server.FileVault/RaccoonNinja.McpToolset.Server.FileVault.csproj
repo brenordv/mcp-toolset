@@ -10,7 +10,7 @@
          parameter names, and the wire contract of the original Rust server uses snake_case
          (base_version, key_path, clear_parent, ...). Scoped to this project only. -->
     <NoWarn>$(NoWarn);CA1707</NoWarn>
-    <Version>2.1.0</Version>
+    <Version>3.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +21,10 @@
   <ItemGroup>
     <!-- The test project unit-tests internal helpers (FTS query builder, cwd derivation). -->
     <InternalsVisibleTo Include="RaccoonNinja.McpToolset.Server.FileVault.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RaccoonNinja.McpToolset.Files\RaccoonNinja.McpToolset.Files.csproj" />
   </ItemGroup>
 
   <ItemGroup>

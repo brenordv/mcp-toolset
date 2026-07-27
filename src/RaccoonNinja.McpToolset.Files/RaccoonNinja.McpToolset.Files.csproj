@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>RaccoonNinja.McpToolset.Files</RootNamespace>
+    <AssemblyName>RaccoonNinja.McpToolset.Files</AssemblyName>
+    <Description>Filesystem concerns shared by the toolset servers: root confinement, encoding detection, atomic writes, and content-addressed storage. Holds no MCP-protocol knowledge, so it is unit-testable without a protocol harness.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="UTF.Unknown" />
+    <PackageReference Include="Blake3" />
+    <PackageReference Include="Roslynator.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>
