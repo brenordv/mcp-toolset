@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Server.GitOps.Envelope;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
 using RaccoonNinja.McpToolset.Server.GitOps.Extensions;
 using RaccoonNinja.McpToolset.Server.GitOps.Models;
 using RaccoonNinja.McpToolset.Server.GitOps.Parsers;
@@ -18,7 +19,7 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
     public Task<ResultEnvelope> InvokeAsync(
         [Description("Absolute working directory.")] string cwd,
         [Description("If true, diff the index against HEAD (cached).")] bool staged = false,
-        [Description("Diff starting ref (branch/tag/SHA).")] string fromRef = null,
+        [Description("Diff starting ref (branch/tag/SHA), or a range A..B / A...B (three-dot = merge-base diff).")] string fromRef = null,
         [Description("Diff ending ref (defaults to working tree when omitted with from_ref).")] string toRef = null,
         [Description("Restrict to these repo-relative paths.")] string[] paths = null,
         [Description("Override the unified-diff context line count (git -U).")] int? contextLines = null,
@@ -30,7 +31,8 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
         return common.WrapAsync(ctx, holder, async () =>
         {
             var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
-            var verifiedRefs = await refVerifier.VerifyOptionalRefsAsync(root, [fromRef, toRef], cancellationToken).ConfigureAwait(false);
+            GuardRangeCombination(fromRef, toRef);
+            var verifiedRefs = await refVerifier.VerifyOptionalRefsOrRangesAsync(root, [fromRef, toRef], cancellationToken).ConfigureAwait(false);
 
             var flags = BuildFlags(staged);
             var attached = BuildAttachedOptions(contextLines);
@@ -51,6 +53,47 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
                 .Build();
             return ToolCommon.SingleSuccess(resultModel, root, filtersApplied: filtersApplied, truncated: truncated);
         });
+    }
+
+    /// <summary>
+    /// Reject the ambiguous combination of a range expression in one ref slot with a second ref in
+    /// the other: <c>git diff &lt;range&gt; &lt;ref&gt;</c> is not a valid invocation. A lone range in
+    /// either slot is allowed. A malformed range surfaces here as a <see cref="RejectedArgumentException"/>
+    /// tagged with the offending parameter (<c>from_ref</c> / <c>to_ref</c>).
+    /// </summary>
+    /// <param name="fromRef">The starting ref or range.</param>
+    /// <param name="toRef">The ending ref or range.</param>
+    /// <exception cref="RejectedArgumentException">A range is combined with a second ref, or a ref slot holds a malformed range.</exception>
+    private static void GuardRangeCombination(string fromRef, string toRef)
+    {
+        var fromIsRange = ParseRefSlot(fromRef, "from_ref") is not null;
+        var toIsRange = ParseRefSlot(toRef, "to_ref") is not null;
+        if ((fromIsRange || toIsRange)
+            && !string.IsNullOrWhiteSpace(fromRef)
+            && !string.IsNullOrWhiteSpace(toRef))
+        {
+            throw new RejectedArgumentException(
+                "a range expression cannot be combined with a second ref",
+                new Dictionary<string, object> { ["param"] = fromIsRange ? "from_ref" : "to_ref" });
+        }
+    }
+
+    /// <summary>Parse one ref slot as a range, re-tagging a malformed-range error with <paramref name="param"/>.</summary>
+    /// <param name="reference">The ref slot value (may be null/blank).</param>
+    /// <param name="param">The diff parameter name to attribute a malformed range to.</param>
+    /// <returns>The parsed range, or <c>null</c> when the slot is blank or a plain ref.</returns>
+    /// <exception cref="RejectedArgumentException">The slot holds a malformed range expression.</exception>
+    private static RefRange? ParseRefSlot(string reference, string param)
+    {
+        try
+        {
+            return RefRange.Parse(reference);
+        }
+        catch (RejectedArgumentException)
+        {
+            throw new RejectedArgumentException("malformed range expression",
+                new Dictionary<string, object> { ["param"] = param });
+        }
     }
 
     /// <summary>Server-built diff flags: <c>--cached</c> when diffing the staged index.</summary>

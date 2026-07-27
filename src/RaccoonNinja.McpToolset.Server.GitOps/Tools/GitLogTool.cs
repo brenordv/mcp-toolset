@@ -23,7 +23,7 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
         [Description("Substring match against commit message (git --grep).")] string grep = null,
         [Description("Pickaxe search: when this string was added or removed (git -S).")] string pickaxe = null,
         [Description("Cap the number of commits returned. Default 50.")] int maxCount = 50,
-        [Description("Search from this ref (branch, tag, SHA, HEAD~n, ...).")] string @ref = null,
+        [Description("Search from this ref, or a range A..B / A...B (branch, tag, SHA, HEAD~n, ...).")] string @ref = null,
         [Description("Follow renames when scoping to a single path.")] bool follow = false,
         CancellationToken cancellationToken = default)
     {
@@ -32,7 +32,7 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
         return common.WrapAsync(ctx, holder, async () =>
         {
             var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
-            var verifiedRefs = await refVerifier.VerifyOptionalRefsAsync(root, [@ref], cancellationToken).ConfigureAwait(false);
+            var verifiedRefs = await refVerifier.VerifyOptionalRefsOrRangesAsync(root, [@ref], cancellationToken).ConfigureAwait(false);
 
             var intent = new GitIntent
             {
