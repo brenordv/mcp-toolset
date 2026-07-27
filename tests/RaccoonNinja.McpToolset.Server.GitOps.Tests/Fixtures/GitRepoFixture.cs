@@ -13,8 +13,13 @@ public sealed class GitRepoFixture : IAsyncLifetime
 
     public ValueTask InitializeAsync()
     {
-        RepoPath = Path.Combine(Path.GetTempPath(), "mcp-gitops-tests-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(RepoPath);
+        var created = Path.Combine(Path.GetTempPath(), "mcp-gitops-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(created);
+        // Canonicalize through symlinks so the path matches what git reports for
+        // this directory (rev-parse --show-toplevel). On macOS Path.GetTempPath()
+        // lives under /var, a symlink to /private/var, so the raw temp path and
+        // git's resolved path would otherwise differ.
+        RepoPath = RealPath(created);
 
         Run("init", "-b", "main");
         Run("config", "user.email", "tester@example.com");
@@ -67,6 +72,35 @@ public sealed class GitRepoFixture : IAsyncLifetime
             var outs = process.StandardOutput.ReadToEnd();
             throw new InvalidOperationException($"git {string.Join(' ', args)} failed ({process.ExitCode}): {err} {outs}");
         }
+    }
+
+    /// <summary>
+    /// Resolve every symlinked component of an existing path to its real target, root-downward, so the
+    /// result matches git's canonicalized output. A no-op where no ancestor is a symlink, which is the
+    /// usual case on Windows and Linux temp directories.
+    /// </summary>
+    private static string RealPath(string path)
+    {
+        var full = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(full) ?? string.Empty;
+        var current = root;
+        foreach (var segment in full[root.Length..]
+                     .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, segment);
+            if (!Directory.Exists(current))
+            {
+                continue;
+            }
+
+            var resolved = new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: true);
+            if (resolved is not null)
+            {
+                current = resolved.FullName;
+            }
+        }
+
+        return current;
     }
 
     private static void TryDelete(string path)
