@@ -1,5 +1,8 @@
 # Toolset Changelog
 
+# v5
+- Updated MCP: `git-ops` to v1.0.2 (fixes `git_grep` exit 128 from a leftover `--end-of-options` token on some git builds; rejects an empty grep pattern; raises disallowed git exits to Warning).
+
 # v4
 - Updated MCP: `git-ops` to v1.0.1 (git range expressions `A..B` / `A...B` in `git_log` and `git_diff`).
 

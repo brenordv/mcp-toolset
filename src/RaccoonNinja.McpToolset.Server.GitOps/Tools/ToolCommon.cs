@@ -86,12 +86,13 @@ public sealed class ToolCommon(
         // user-data-free stderr signature (e.g. a git built without PCRE2) and map it to a more
         // specific code; otherwise the failure is the generic GitCommandError. The scrubbed stderr
         // tail goes to the LOG ONLY (it can echo user-controlled paths/refs); the client-facing
-        // envelope detail carries the non-sensitive exit code alone. Logged at Debug. The single
-        // Error record is WrapAsync's tool_error, which carries the exit code so it survives at the
-        // default level.
+        // envelope detail carries the non-sensitive exit code alone. Logged at Warning so git's own
+        // "fatal:" message survives at the default log level: the client sees only the exit code, so
+        // without this record a version-dependent fatal (an argv token a given git build rejects) is
+        // undiagnosable from the field. WrapAsync also emits tool_error at Error carrying the code.
         var domainError = ClassifyDisallowedExit(intent, result, stderrClassifier);
         ctx.Log(
-            LogLevel.Debug,
+            LogLevel.Warning,
             "subprocess_exit",
             extras: new Dictionary<string, object>
             {
