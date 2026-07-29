@@ -19,7 +19,7 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
     [Description("Search tracked content. Set 'ref' to grep historical revisions without checking them out.")]
     public Task<ResultEnvelope> InvokeAsync(
         [Description("Absolute working directory.")] string cwd,
-        [Description("Pattern to search for.")] string pattern = null,
+        [Description("Pattern to search for (required, non-empty; must not begin with '-').")] string pattern = null,
         [Description("Restrict to these repo-relative paths.")] string[] paths = null,
         [Description("Optional ref to grep at, instead of HEAD/working tree.")] string @ref = null,
         [Description("Case-insensitive search.")] bool ignoreCase = false,
@@ -32,8 +32,33 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
         return common.WrapAsync(ctx, holder, async () =>
         {
             var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+
+            // A grep with no pattern is meaningless, and because the pattern is emitted as a glued
+            // "-e<pattern>" token, an empty value would collapse to a bare "-e" that swallows the next
+            // argument. Reject it up front. Whitespace is a valid fixed-string pattern (e.g. searching
+            // for a space), so this rejects only null/empty, deliberately not IsNullOrWhiteSpace.
+            if (string.IsNullOrEmpty(pattern))
+            {
+                throw new RejectedArgumentException(
+                    "pattern is required",
+                    new Dictionary<string, object> { ["param"] = "pattern" });
+            }
+
+            // git_grep does not accept a pattern beginning with '-'. Because the pattern is glued into a
+            // single "-e<pattern>" token it would in fact run safely, but the shared attached-option
+            // validation in GitCommandBuilder rejects a leading '-' as defence-in-depth. Reject it here
+            // first so the error names the user-facing "pattern" argument rather than the internal "-e".
+            if (pattern[0] == '-')
+            {
+                throw new RejectedArgumentException(
+                    "pattern must not begin with '-'",
+                    new Dictionary<string, object> { ["param"] = "pattern" });
+            }
+
             var verifiedRefs = await refVerifier.VerifyOptionalRefsAsync(root, [@ref], cancellationToken).ConfigureAwait(false);
 
+            // VerifiedRefs are RefVerifier-resolved object names, so grep receives them as bare,
+            // non-option-like tree positionals (GitCommandBuilder omits --end-of-options for grep).
             var intent = new GitIntent
             {
                 Subcommand = "grep",
@@ -70,7 +95,7 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
     /// <summary>Build the attached-form options: the search pattern (<c>-e</c>) plus an optional per-file cap (<c>-m</c>).</summary>
     private static List<AttachedOption> BuildAttachedOptions(string pattern, int? maxCount)
     {
-        var attached = new List<AttachedOption> { new("-e", pattern ?? string.Empty) };
+        var attached = new List<AttachedOption> { new("-e", pattern) };
         if (maxCount.HasValue)
             attached.Add(new AttachedOption("-m", maxCount.Value.ToString(CultureInfo.InvariantCulture)));
         return attached;

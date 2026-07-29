@@ -117,8 +117,19 @@ public static class GitCommandBuilder
             provenance[argv.Count - 1] = option.Flag.TrimStart('-');
         }
 
-        // 8. End-of-options barrier + verified refs as positional args.
-        argv.Add("--end-of-options");
+        // 8. Optional end-of-options barrier, then verified refs as positional args.
+        // git grep is parsed with PARSE_OPT_KEEP_DASHDASH and, on git builds where its parser leaves a
+        // literal "--end-of-options" in argv (the same class of bug fixed for checkout/reset in git
+        // 2.43.1), that leftover token is taken as a bogus revision and grep aborts via verify_filename()
+        // with exit 128. grep never needs the barrier: its pattern is a glued "-e<pattern>" token, its
+        // refs are RefVerifier-resolved object names, and its pathspecs sit behind "--". So skip it for
+        // grep, and for every other subcommand emit it only when a positional actually follows it (a
+        // trailing marker with nothing after it is pointless and just as fragile on those parsers).
+        var hasPositionals = intent.VerifiedRefs.Count > 0 || intent.PositionalServerArgs.Count > 0;
+        if (intent.Subcommand != "grep" && hasPositionals)
+        {
+            argv.Add("--end-of-options");
+        }
         foreach (var refToken in intent.VerifiedRefs)
         {
             argv.Add(refToken);

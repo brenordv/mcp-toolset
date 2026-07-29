@@ -165,6 +165,48 @@ public class GitToolsIntegrationTests
     }
 
     [Fact]
+    public async Task GitGrepTool_Finds_Token_At_Ref_With_Prefix_Stripped()
+    {
+        var tool = new GitGrepTool(_common, _refVerifier);
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, "alpha", @ref: "HEAD");
+        Assert.Null(envelope.Error);
+        Assert.NotEmpty(envelope.Results);
+        var match = (GrepMatch)envelope.Results[0];
+        Assert.Equal("alpha.txt", match.Path);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task GitGrepTool_Rejects_Null_Or_Empty_Pattern(string pattern)
+    {
+        var tool = new GitGrepTool(_common, _refVerifier);
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, pattern);
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal("pattern", envelope.Error.Detail["param"]);
+    }
+
+    [Fact]
+    public async Task GitGrepTool_Accepts_Whitespace_Pattern_As_Valid_Search()
+    {
+        var tool = new GitGrepTool(_common, _refVerifier);
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, " ");
+        Assert.Null(envelope.Error);
+        Assert.NotEmpty(envelope.Results);
+    }
+
+    [Fact]
+    public async Task GitGrepTool_Rejects_Pattern_Beginning_With_Dash_Naming_Pattern_Param()
+    {
+        var tool = new GitGrepTool(_common, _refVerifier);
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, "-verbose");
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal("pattern", envelope.Error.Detail["param"]);
+    }
+
+    [Fact]
     public async Task GitStashListTool_Returns_Empty_Envelope_For_Stash_Free_Repo()
     {
         var tool = new GitStashListTool(_common);

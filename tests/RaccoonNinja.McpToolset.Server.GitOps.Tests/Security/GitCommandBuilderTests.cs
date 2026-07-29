@@ -76,14 +76,54 @@ public class GitCommandBuilderTests
     }
 
     [Fact]
-    public void Build_Always_Inserts_EndOfOptions_Barrier_Before_VerifiedRefs()
+    public void Build_Inserts_EndOfOptions_Barrier_Before_VerifiedRefs_For_NonGrep_RefBearing_Command()
     {
         var intent = BasicIntent();
         intent.VerifiedRefs.Add("abc1234567");
         var (argv, _) = GitCommandBuilder.Build(intent);
         var barrierIdx = argv.IndexOf("--end-of-options");
         var refIdx = argv.IndexOf("abc1234567");
+        Assert.True(barrierIdx >= 0);
         Assert.True(barrierIdx < refIdx);
+    }
+
+    [Fact]
+    public void Build_Omits_EndOfOptions_For_Grep_Working_Tree()
+    {
+        var intent = BasicIntent("grep");
+        intent.AttachedOptions.Add(new AttachedOption("-e", "needle"));
+        var (argv, _) = GitCommandBuilder.Build(intent);
+        Assert.DoesNotContain("--end-of-options", argv);
+    }
+
+    [Fact]
+    public void Build_Omits_EndOfOptions_For_Grep_With_Ref_And_Emits_Ref_As_Bare_Positional()
+    {
+        var intent = BasicIntent("grep");
+        intent.AttachedOptions.Add(new AttachedOption("-e", "needle"));
+        intent.VerifiedRefs.Add("abc1234567");
+        var (argv, _) = GitCommandBuilder.Build(intent);
+        Assert.DoesNotContain("--end-of-options", argv);
+        Assert.Contains("abc1234567", argv);
+    }
+
+    [Fact]
+    public void Build_Omits_Trailing_EndOfOptions_When_No_Positionals()
+    {
+        var (argv, _) = GitCommandBuilder.Build(BasicIntent("status"));
+        Assert.DoesNotContain("--end-of-options", argv);
+    }
+
+    [Fact]
+    public void Build_Inserts_EndOfOptions_Before_PositionalServerArgs_For_NonGrep()
+    {
+        var intent = BasicIntent("for-each-ref");
+        intent.PositionalServerArgs.Add("refs/heads");
+        var (argv, _) = GitCommandBuilder.Build(intent);
+        var barrierIdx = argv.IndexOf("--end-of-options");
+        var positionalIdx = argv.IndexOf("refs/heads");
+        Assert.True(barrierIdx >= 0);
+        Assert.True(barrierIdx < positionalIdx);
     }
 
     [Fact]
