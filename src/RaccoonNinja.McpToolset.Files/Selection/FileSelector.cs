@@ -17,7 +17,8 @@ public sealed class FileSelector
         IReadOnlyList<string> paths,
         bool includeIgnored,
         bool caseSensitive,
-        int maxFiles)
+        int maxFiles,
+        IReadOnlySet<string> extensions)
     {
         Mode = mode;
         Root = root;
@@ -27,6 +28,7 @@ public sealed class FileSelector
         IncludeIgnored = includeIgnored;
         CaseSensitive = caseSensitive;
         MaxFiles = maxFiles;
+        Extensions = extensions;
     }
 
     /// <summary>Which of glob, regex, paths, or "everything" this selector uses.</summary>
@@ -54,6 +56,12 @@ public sealed class FileSelector
     public int MaxFiles { get; }
 
     /// <summary>
+    /// The set of file extensions (lowercase, no leading dot) a file must have to be selected, ANDed with
+    /// the chosen selector; <c>null</c> means no extension filter. Gates file emission only, never traversal.
+    /// </summary>
+    public IReadOnlySet<string> Extensions { get; }
+
+    /// <summary>
     /// Build a validated selector, enforcing that at most one of <paramref name="glob"/>, <paramref name="regex"/>,
     /// or <paramref name="paths"/> is supplied. A blank glob or regex counts as absent; a non-null
     /// <paramref name="paths"/> (even empty) counts as present so <c>paths: []</c> selects nothing rather than
@@ -66,6 +74,7 @@ public sealed class FileSelector
     /// <param name="includeIgnored">Whether to bypass ignore rules.</param>
     /// <param name="caseSensitive">Whether matching is case-sensitive.</param>
     /// <param name="maxFiles">The result cap; defaults to unbounded so the server sets the policy ceiling.</param>
+    /// <param name="extensions">File extensions (dot optional, case-insensitive) a file must have; <c>null</c> for no filter.</param>
     /// <returns>The validated selector.</returns>
     /// <exception cref="SelectorException">Thrown when more than one of glob, regex, or paths is supplied.</exception>
     public static FileSelector Create(
@@ -75,7 +84,8 @@ public sealed class FileSelector
         IReadOnlyList<string> paths = null,
         bool includeIgnored = false,
         bool caseSensitive = false,
-        int maxFiles = int.MaxValue)
+        int maxFiles = int.MaxValue,
+        IReadOnlyList<string> extensions = null)
     {
         var hasGlob = !string.IsNullOrWhiteSpace(glob);
         var hasRegex = !string.IsNullOrWhiteSpace(regex);
@@ -100,6 +110,27 @@ public sealed class FileSelector
             hasPaths ? paths : null,
             includeIgnored,
             caseSensitive,
-            maxFiles);
+            maxFiles,
+            NormalizeExtensions(extensions));
+    }
+
+    /// <summary>Normalize the extension list to a dot-free, case-insensitive set, or <c>null</c> when empty.</summary>
+    private static HashSet<string> NormalizeExtensions(IReadOnlyList<string> extensions)
+    {
+        if (extensions is null)
+        {
+            return null;
+        }
+
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var extension in extensions)
+        {
+            if (!string.IsNullOrWhiteSpace(extension))
+            {
+                set.Add(extension.Trim().TrimStart('.'));
+            }
+        }
+
+        return set.Count == 0 ? null : set;
     }
 }

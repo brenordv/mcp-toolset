@@ -31,11 +31,13 @@ public sealed class FileWalker
 
     /// <summary>Walk the tree under <paramref name="options"/> and return the surviving, sorted entries.</summary>
     /// <param name="options">The walk configuration.</param>
+    /// <param name="cancellationToken">Checked periodically during enumeration so a caller can bound the walk by time.</param>
     /// <returns>The matched entries plus the skipped-symlink count and the truncation flag.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException">Thrown when the start path is not an existing directory inside the root.</exception>
     /// <exception cref="PathConfinementException">Thrown when the start path escapes the root.</exception>
-    public WalkResult Walk(FileWalkOptions options)
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled mid-walk.</exception>
+    public WalkResult Walk(FileWalkOptions options, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -63,6 +65,11 @@ public sealed class FileWalker
                 {
                     capHit = true;
                     break;
+                }
+
+                if ((visited & 1023) == 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
                 }
 
                 Process(info, frame, options, stack, results, ref skippedSymlinks);

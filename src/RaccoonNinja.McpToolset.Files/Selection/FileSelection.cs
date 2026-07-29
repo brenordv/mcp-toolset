@@ -32,32 +32,53 @@ public sealed class FileSelection
     /// <summary>Resolve <paramref name="selector"/> to its files.</summary>
     /// <param name="selector">The validated selection request.</param>
     /// <param name="regexOptions">The guard rails for a raw-regex selector; defaults to <see cref="SafeRegexOptions"/> defaults.</param>
+    /// <param name="cancellationToken">Checked periodically during the walk so a caller can bound it by time.</param>
     /// <returns>The selected files, sorted, with the skipped-symlink count and truncation flag.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="selector"/> is <c>null</c>.</exception>
     /// <exception cref="RegexCompilationException">Thrown when a raw-regex selector fails the ADR-005 guards.</exception>
     /// <exception cref="PathConfinementException">Thrown when the walk's start directory escapes the root.</exception>
-    public WalkResult Select(FileSelector selector, SafeRegexOptions regexOptions = null)
+    /// <exception cref="OperationCanceledException">Thrown when the walk is cancelled mid-flight.</exception>
+    public WalkResult Select(FileSelector selector, SafeRegexOptions regexOptions = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(selector);
 
         return selector.Mode == SelectionMode.Paths
             ? SelectPaths(selector)
-            : Walk(selector, regexOptions ?? new SafeRegexOptions());
+            : Walk(selector, regexOptions ?? new SafeRegexOptions(), cancellationToken);
     }
 
-    private WalkResult Walk(FileSelector selector, SafeRegexOptions regexOptions)
+    private WalkResult Walk(FileSelector selector, SafeRegexOptions regexOptions, CancellationToken cancellationToken)
     {
         var match = BuildMatch(selector, regexOptions);
-        return _walker.Walk(new FileWalkOptions
-        {
-            Start = selector.Root ?? ".",
-            Match = match,
-            IncludeIgnored = selector.IncludeIgnored,
-            MaxResults = selector.MaxFiles,
-        });
+        return _walker.Walk(
+            new FileWalkOptions
+            {
+                Start = selector.Root ?? ".",
+                Match = match,
+                IncludeIgnored = selector.IncludeIgnored,
+                MaxResults = selector.MaxFiles,
+            },
+            cancellationToken);
     }
 
     private static Func<string, bool> BuildMatch(FileSelector selector, SafeRegexOptions regexOptions)
+    {
+        var baseMatch = BuildBaseMatch(selector, regexOptions);
+        var extensionMatch = BuildExtensionMatch(selector.Extensions);
+        if (baseMatch is null)
+        {
+            return extensionMatch;
+        }
+
+        if (extensionMatch is null)
+        {
+            return baseMatch;
+        }
+
+        return path => baseMatch(path) && extensionMatch(path);
+    }
+
+    private static Func<string, bool> BuildBaseMatch(FileSelector selector, SafeRegexOptions regexOptions)
     {
         switch (selector.Mode)
         {
@@ -76,12 +97,30 @@ public sealed class FileSelection
         }
     }
 
+    /// <summary>A predicate that keeps only files whose extension is in <paramref name="extensions"/>; <c>null</c> when unset.</summary>
+    private static Func<string, bool> BuildExtensionMatch(IReadOnlySet<string> extensions)
+    {
+        if (extensions is null || extensions.Count == 0)
+        {
+            return null;
+        }
+
+        return path =>
+        {
+            var extension = Path.GetExtension(path);
+            return extension.Length > 0 && extensions.Contains(extension[1..]);
+        };
+    }
+
     private WalkResult SelectPaths(FileSelector selector)
     {
+        var extensionMatch = BuildExtensionMatch(selector.Extensions);
         var entries = new List<WalkEntry>();
         foreach (var raw in selector.Paths)
         {
-            if (raw is not null && TryGate(raw, out var entry))
+            if (raw is not null
+                && TryGate(raw, out var entry)
+                && (extensionMatch is null || extensionMatch(entry.RelativePath)))
             {
                 entries.Add(entry);
             }

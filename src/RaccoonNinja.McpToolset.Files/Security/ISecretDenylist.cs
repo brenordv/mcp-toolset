@@ -19,4 +19,12 @@ public interface ISecretDenylist
     /// <returns><c>true</c> when the directory (for example <c>.git</c> or <c>.ssh</c>) is off-limits.</returns>
     /// <exception cref="System.ArgumentException">Thrown when <paramref name="relativePath"/> is null or blank.</exception>
     bool IsDeniedDirectory(string relativePath);
+
+    /// <summary>
+    /// The static denylist patterns as display strings, for surfacing in a server's scope description.
+    /// It reveals only the fixed, hardcoded rule set (directory segments and file globs) and never
+    /// probes the filesystem, so it discloses nothing about what a given tree actually contains.
+    /// </summary>
+    /// <returns>The denied directory segments (rendered as <c>segment/**</c>) and the file-name globs.</returns>
+    IReadOnlyCollection<string> DescribePatterns();
 }

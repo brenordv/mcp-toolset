@@ -23,6 +23,7 @@ public sealed class SecretDenylist : ISecretDenylist
     private static readonly string[] FilePatterns =
     [
         ".env*", "*.env", "*.pem", "*.key", "*.pfx", "*.p12",
+        "*.p8", "*.pk8", "*.asc", "*.gpg", "*.jwk", "*.jwks",
         "id_rsa*", "id_ed25519*", "id_ecdsa*", "id_dsa*",
         "*.jks", "*.keystore", "*.pkcs12", "*.ppk",
         ".netrc", "_netrc", ".git-credentials",
@@ -47,6 +48,17 @@ public sealed class SecretDenylist : ISecretDenylist
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
         return HasDeniedDirectorySegment(relativePath.Split('/'));
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<string> DescribePatterns()
+    {
+        var patterns = new List<string>(DeniedDirectorySegments.Count + FilePatterns.Length + 1);
+        // Directory segments are denied at any depth, so the display form carries a leading **/.
+        patterns.AddRange(DeniedDirectorySegments.Order(StringComparer.Ordinal).Select(segment => $"**/{segment}/**"));
+        patterns.Add($"**/{GcloudParentSegment}/{GcloudSegment}/**");
+        patterns.AddRange(FilePatterns);
+        return patterns;
     }
 
     /// <summary>Whether any segment is a denied directory name, or the <c>.config/gcloud</c> pair appears consecutively.</summary>

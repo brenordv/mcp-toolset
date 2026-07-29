@@ -191,6 +191,65 @@ public sealed class FileSelectionTests : IDisposable
         Assert.True(result.Truncated);
     }
 
+    [Fact]
+    public void Select_ExtensionFilter_KeepsOnlyMatchingExtensions()
+    {
+        // Arrange
+        Write("a.cs", "1");
+        Write("b.txt", "2");
+        Write("sub/c.cs", "3");
+
+        // Act - dot optional and case-insensitive.
+        var paths = Paths(_selection.Select(FileSelector.Create(extensions: [".CS"])));
+
+        // Assert
+        Assert.Equal(["a.cs", "sub/c.cs"], paths);
+    }
+
+    [Fact]
+    public void Select_ExtensionFilter_AndsWithGlob()
+    {
+        // Arrange
+        Write("src/a.cs", "1");
+        Write("src/a.g.cs", "2");
+        Write("src/a.txt", "3");
+
+        // Act
+        var paths = Paths(_selection.Select(FileSelector.Create(glob: "src/*", extensions: ["cs"])));
+
+        // Assert - only files that match the glob AND carry the extension.
+        Assert.Equal(["src/a.cs", "src/a.g.cs"], paths);
+    }
+
+    [Fact]
+    public void Select_ExtensionFilter_PrunesExtensionlessAndDotfiles()
+    {
+        // Arrange
+        Write("Makefile", "1");
+        Write(".gitignore", "*.log\n");
+        Write("keep.md", "2");
+
+        // Act
+        var paths = Paths(_selection.Select(FileSelector.Create(extensions: ["md"])));
+
+        // Assert - "Makefile" (no extension) and ".gitignore" (extension "gitignore") are both pruned.
+        Assert.Equal(["keep.md"], paths);
+    }
+
+    [Fact]
+    public void Select_PathsMode_AppliesExtensionFilter()
+    {
+        // Arrange
+        Write("a.cs", "1");
+        Write("b.txt", "2");
+
+        // Act
+        var paths = Paths(_selection.Select(FileSelector.Create(paths: ["a.cs", "b.txt"], extensions: ["cs"])));
+
+        // Assert
+        Assert.Equal(["a.cs"], paths);
+    }
+
     private static string[] Paths(WalkResult result)
         => result.Entries.Select(entry => entry.RelativePath).ToArray();
 

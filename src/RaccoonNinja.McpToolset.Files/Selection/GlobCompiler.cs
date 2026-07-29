@@ -16,6 +16,12 @@ public static class GlobCompiler
 {
     private static readonly TimeSpan MatchTimeout = TimeSpan.FromSeconds(1);
 
+    /// <summary>The maximum glob length, mirroring the raw-regex pattern cap so translation stays bounded.</summary>
+    private const int MaxGlobLength = 2048;
+
+    /// <summary>The maximum brace-group nesting depth; deeper nesting is rejected before it can recurse.</summary>
+    private const int MaxBraceDepth = 4;
+
     /// <summary>Compile <paramref name="glob"/> to an anchored regex over a <c>/</c>-separated root-relative path.</summary>
     /// <param name="glob">The glob pattern.</param>
     /// <param name="caseSensitive">When <c>true</c>, match case-sensitively; otherwise case-insensitively (the default).</param>
@@ -25,7 +31,12 @@ public static class GlobCompiler
     {
         ArgumentNullException.ThrowIfNull(glob);
 
-        var body = Translate(glob, 0, glob.Length);
+        if (glob.Length > MaxGlobLength)
+        {
+            throw new RegexCompilationException($"glob exceeds the {MaxGlobLength}-character limit");
+        }
+
+        var body = Translate(glob, 0, glob.Length, depth: 0);
         var anchored = glob.Contains('/')
             ? string.Concat("^", body, "$")
             : string.Concat("^(?:.*/)?", body, "$");
@@ -40,7 +51,7 @@ public static class GlobCompiler
     }
 
     /// <summary>Translate the glob span <c>[start, end)</c> into a regex fragment (recursively, for brace alternatives).</summary>
-    private static string Translate(string s, int start, int end)
+    private static string Translate(string s, int start, int end, int depth)
     {
         var sb = new StringBuilder();
         var i = start;
@@ -59,7 +70,7 @@ public static class GlobCompiler
                     i = AppendCharClass(s, i, end, sb);
                     break;
                 case '{':
-                    i = AppendBraceGroup(s, i, end, sb);
+                    i = AppendBraceGroup(s, i, end, sb, depth);
                     break;
                 default:
                     sb.Append(Regex.Escape(s[i].ToString()));
@@ -126,8 +137,13 @@ public static class GlobCompiler
     }
 
     /// <summary>Turn a balanced <c>{a,b,...}</c> group into <c>(?:a|b|...)</c>, translating each top-level alternative.</summary>
-    private static int AppendBraceGroup(string s, int i, int end, StringBuilder sb)
+    private static int AppendBraceGroup(string s, int i, int end, StringBuilder sb, int depth)
     {
+        if (depth >= MaxBraceDepth)
+        {
+            throw new RegexCompilationException($"glob brace nesting exceeds the depth limit of {MaxBraceDepth}");
+        }
+
         var close = FindMatchingBrace(s, i, end);
         if (close < 0)
         {
@@ -145,7 +161,7 @@ public static class GlobCompiler
             }
 
             var (altStart, altEnd) = alternatives[a];
-            sb.Append(Translate(s, altStart, altEnd));
+            sb.Append(Translate(s, altStart, altEnd, depth + 1));
         }
 
         sb.Append(')');
