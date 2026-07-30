@@ -17,17 +17,22 @@ network round-trips beyond the local process the assistant already talks to.
 
 - **[git-ops](src/RaccoonNinja.McpToolset.Server.GitOps/README.md)**: Local, read-only Git inspection; status, history, diffs, blame, and search exposed as typed tools that return JSON. The assistant never drives `git` through a shell, and no writing subcommands are wired up.
 - **[file-vault](src/RaccoonNinja.McpToolset.Server.FileVault/README.md)**: A personal, cross-conversation file vault: versioned notes in a local SQLite + snapshot store, with optimistic concurrency, tags, full-text search, hierarchy, and structure-aware markdown/JSON/YAML edits. Drop-in port of the Rust `vault-mcp` server, same on-disk store.
+- **[text-search](src/RaccoonNinja.McpToolset.Server.TextSearch/README.md)**: Local, read-only, root-confined text search and inspection; `describe_scope`, `find_files`, `inspect_files`, `search_text`, and `read_lines` as typed tools that replace the `find`/`grep`/`cat` habit. Every path is resolved through all symlinks and confined to its configured roots, a non-overridable denylist keeps secret files unread, and results stay root-relative so no absolute path from your machine reaches the model. Supports multiple named roots plus opt-in package roots for grepping cached dependency sources.
 
 ## Repository layout
 
 ```
 RaccoonNinja.McpToolset/
-├─ src/                       # one project per MCP server
-│  ├─ RaccoonNinja.McpToolset.Server.GitOps/
-│  └─ RaccoonNinja.McpToolset.Server.FileVault/
-├─ tests/                     # matching test project per server
+├─ src/
+│  ├─ RaccoonNinja.McpToolset.Server.GitOps/       # MCP server
+│  ├─ RaccoonNinja.McpToolset.Server.FileVault/    # MCP server
+│  ├─ RaccoonNinja.McpToolset.Server.TextSearch/   # MCP server
+│  └─ RaccoonNinja.McpToolset.Files/               # shared library: confinement, denylist, selection, encoding
+├─ tests/                     # matching test project per src project
 │  ├─ RaccoonNinja.McpToolset.Server.GitOps.Tests/
-│  └─ RaccoonNinja.McpToolset.Server.FileVault.Tests/
+│  ├─ RaccoonNinja.McpToolset.Server.FileVault.Tests/
+│  ├─ RaccoonNinja.McpToolset.Server.TextSearch.Tests/
+│  └─ RaccoonNinja.McpToolset.Files.Tests/
 ├─ Directory.Build.props      # shared build settings (net10.0, analyzers, etc.)
 ├─ Directory.Packages.props   # central package version management
 └─ RaccoonNinja.McpToolset.slnx
@@ -87,7 +92,8 @@ To make it easier, you can allow all agents to use the mcp servers here, by addi
   "permissions": {
     "allow": [
       "mcp__git-ops",
-      "mcp__vault"
+      "mcp__vault",
+      "mcp__text-search"
     ]
   }
 }
