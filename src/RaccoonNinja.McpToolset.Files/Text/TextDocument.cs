@@ -1,6 +1,4 @@
-using RaccoonNinja.McpToolset.Files.Text;
-
-namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
+namespace RaccoonNinja.McpToolset.Files.Text;
 
 /// <summary>
 /// A decoded text file: the detected encoding, the lines (terminator-free, with 1-based numbers), and

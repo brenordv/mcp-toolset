@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using RaccoonNinja.McpToolset.Files.Text;
 
 namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
 

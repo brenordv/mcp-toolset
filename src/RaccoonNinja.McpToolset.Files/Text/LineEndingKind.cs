@@ -1,4 +1,4 @@
-namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
+namespace RaccoonNinja.McpToolset.Files.Text;
 
 /// <summary>The line-ending style detected across a text file.</summary>
 public enum LineEndingKind

@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>RaccoonNinja.McpToolset.Server.TextEdit</RootNamespace>
+    <AssemblyName>text-edit</AssemblyName>
+    <Description>Local stdio MCP server: root-confined text mutation (normalize, replace) with a non-overridable secret denylist and hash-gated undo backed by an append-only journal. Points at one repository; write tools are kept on prompt, not blanket-approved.</Description>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- CA1707: MCP tool input schemas take their property names verbatim from C# method
+         parameter names, and the wire contract uses snake_case (case_sensitive, is_regex,
+         expected_match_count, ...). Scoped to this project only. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The test project unit-tests internal helpers (write gate, journal, replacer, normalizer). -->
+    <InternalsVisibleTo Include="RaccoonNinja.McpToolset.Server.TextEdit.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RaccoonNinja.McpToolset.Files\RaccoonNinja.McpToolset.Files.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Journal: append-only SQLite store + Dapper micro-ORM. Native SQLite ships via the bundle;
+         Blake3 (pre-image hashing) flows transitively through the .Files project reference. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Roslynator.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+  </ItemGroup>
+
+</Project>

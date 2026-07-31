@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.AccessControl;
 
 namespace RaccoonNinja.McpToolset.Files.Storage;
 
@@ -67,6 +68,98 @@ public static class AtomicWriter
         {
             SafeDelete(temp);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Replace <paramref name="destination"/> like <see cref="Replace"/>, but first copy the existing
+    /// file's access metadata onto the temp so the rewritten file keeps the source's permissions instead
+    /// of inheriting the temp's defaults. On Unix the Unix file mode is copied with the setuid, setgid,
+    /// and sticky bits stripped (the new content is caller-supplied, so an elevated bit must not carry
+    /// over); on Windows the discretionary ACL is copied. The copy is best-effort: a metadata failure is
+    /// reported by a <c>false</c> return but never aborts the write, because a permission-copy failure
+    /// must not strand the content change. <see cref="Replace"/> keeps its metadata-agnostic behavior so
+    /// content-addressed callers are unaffected.
+    /// </summary>
+    /// <param name="destination">The absolute destination path; when it exists, its metadata is preserved.</param>
+    /// <param name="content">The bytes to write.</param>
+    /// <returns><c>true</c> when metadata was preserved or there was nothing to preserve; <c>false</c> when the copy failed.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="destination"/> is null or blank.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="content"/> is null.</exception>
+    /// <exception cref="IOException">Thrown when the write or rename fails.</exception>
+    public static bool ReplacePreservingMetadata(string destination, byte[] content)
+    {
+        var temp = PrepareTemp(destination, content);
+        try
+        {
+            var preserved = CopyAccessMetadata(destination, temp);
+            File.Move(temp, destination, overwrite: true);
+            return preserved;
+        }
+        catch
+        {
+            SafeDelete(temp);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Copy the access metadata of <paramref name="source"/> onto <paramref name="temp"/> before the temp
+    /// is renamed into place. Fully self-contained: every failure mode of the platform metadata APIs is
+    /// swallowed and reported as <c>false</c> so this can never propagate out and abort the pending write.
+    /// </summary>
+    private static bool CopyAccessMetadata(string source, string temp)
+    {
+        try
+        {
+            if (!File.Exists(source))
+            {
+                return true;
+            }
+
+            if (OperatingSystem.IsWindows())
+            {
+                // Round-trip the DACL through SDDL rather than passing the source's FileSecurity object
+                // straight to SetAccessControl: a descriptor read via GetAccessControl has its
+                // access-rules-modified flag unset, so SetAccessControl would persist nothing. Building a
+                // fresh descriptor from the SDDL marks the DACL section dirty so it actually writes.
+                var sourceAcl = new FileInfo(source).GetAccessControl(AccessControlSections.Access);
+                var sddl = sourceAcl.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+                var targetAcl = new FileSecurity();
+                targetAcl.SetSecurityDescriptorSddlForm(sddl, AccessControlSections.Access);
+                new FileInfo(temp).SetAccessControl(targetAcl);
+            }
+            else
+            {
+                const UnixFileMode elevated = UnixFileMode.SetUser | UnixFileMode.SetGroup | UnixFileMode.StickyBit;
+                var mode = File.GetUnixFileMode(source) & ~elevated;
+                File.SetUnixFileMode(temp, mode);
+            }
+
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Covers PrivilegeNotHeldException from the Windows ACL path, which derives from it.
+            return false;
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return false;
+        }
+        catch (ArgumentException)
+        {
+            // A malformed SDDL round-trip (SetSecurityDescriptorSddlForm) surfaces here; the copy is
+            // best-effort, so report failure rather than let it abort the pending write.
+            return false;
+        }
+        catch (System.Security.SecurityException)
+        {
+            return false;
         }
     }
 

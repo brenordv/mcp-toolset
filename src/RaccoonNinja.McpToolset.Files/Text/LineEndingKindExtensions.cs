@@ -1,4 +1,4 @@
-namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
+namespace RaccoonNinja.McpToolset.Files.Text;
 
 /// <summary>Wire-name mapping for <see cref="LineEndingKind"/>.</summary>
 public static class LineEndingKindExtensions

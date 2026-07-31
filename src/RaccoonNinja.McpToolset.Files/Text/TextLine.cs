@@ -1,4 +1,4 @@
-namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
+namespace RaccoonNinja.McpToolset.Files.Text;
 
 /// <summary>
 /// One line of a decoded text file: its 1-based number and its terminator-free content. A column is a
