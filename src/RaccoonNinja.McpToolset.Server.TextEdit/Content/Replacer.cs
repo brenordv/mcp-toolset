@@ -65,7 +65,7 @@ public sealed class Replacer : ITextTransform
         string newText;
         if (_isRegex)
         {
-            count = _regex.Matches(text).Count;
+            count = _regex.Count(text);
             newText = count == 0 ? text : _regex.Replace(text, _replacement);
         }
         else
