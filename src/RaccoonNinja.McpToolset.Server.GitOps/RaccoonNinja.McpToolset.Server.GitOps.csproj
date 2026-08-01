@@ -5,11 +5,17 @@
     <RootNamespace>RaccoonNinja.McpToolset.Server.GitOps</RootNamespace>
     <AssemblyName>git-ops</AssemblyName>
     <Description>Local stdio MCP server exposing read-only git inspection as typed, structured tools.</Description>
+    <Version>1.0.2</Version>
     <InvariantGlobalization>false</InvariantGlobalization>
     <!-- Required by [LibraryImport] source-generated marshalling on the libc stat() P/Invoke
          in LogFileValidator. We do not write any unsafe blocks in source. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The test project unit-tests the internal resolved-object-name postcondition (RefVerifier). -->
+    <InternalsVisibleTo Include="RaccoonNinja.McpToolset.Server.GitOps.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol" />

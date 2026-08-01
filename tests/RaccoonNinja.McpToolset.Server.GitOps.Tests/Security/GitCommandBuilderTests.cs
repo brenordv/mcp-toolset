@@ -103,7 +103,7 @@ public class GitCommandBuilderTests
     }
 
     [Fact]
-    public void Build_AlwaysInsertsEndOfOptionsBarrierBeforeVerifiedRefs()
+    public void Build_Inserts_EndOfOptions_Barrier_Before_VerifiedRefs_For_NonGrep_RefBearing_Command()
     {
         // Arrange
         var intent = BasicIntent();
@@ -115,7 +115,47 @@ public class GitCommandBuilderTests
         // Assert
         var barrierIdx = argv.IndexOf("--end-of-options");
         var refIdx = argv.IndexOf("abc1234567");
+        Assert.True(barrierIdx >= 0);
         Assert.True(barrierIdx < refIdx);
+    }
+
+    [Fact]
+    public void Build_Omits_EndOfOptions_For_Grep_Working_Tree()
+    {
+        var intent = BasicIntent("grep");
+        intent.AttachedOptions.Add(new AttachedOption("-e", "needle"));
+        var (argv, _) = GitCommandBuilder.Build(intent);
+        Assert.DoesNotContain("--end-of-options", argv);
+    }
+
+    [Fact]
+    public void Build_Omits_EndOfOptions_For_Grep_With_Ref_And_Emits_Ref_As_Bare_Positional()
+    {
+        var intent = BasicIntent("grep");
+        intent.AttachedOptions.Add(new AttachedOption("-e", "needle"));
+        intent.VerifiedRefs.Add("abc1234567");
+        var (argv, _) = GitCommandBuilder.Build(intent);
+        Assert.DoesNotContain("--end-of-options", argv);
+        Assert.Contains("abc1234567", argv);
+    }
+
+    [Fact]
+    public void Build_Omits_Trailing_EndOfOptions_When_No_Positionals()
+    {
+        var (argv, _) = GitCommandBuilder.Build(BasicIntent("status"));
+        Assert.DoesNotContain("--end-of-options", argv);
+    }
+
+    [Fact]
+    public void Build_Inserts_EndOfOptions_Before_PositionalServerArgs_For_NonGrep()
+    {
+        var intent = BasicIntent("for-each-ref");
+        intent.PositionalServerArgs.Add("refs/heads");
+        var (argv, _) = GitCommandBuilder.Build(intent);
+        var barrierIdx = argv.IndexOf("--end-of-options");
+        var positionalIdx = argv.IndexOf("refs/heads");
+        Assert.True(barrierIdx >= 0);
+        Assert.True(barrierIdx < positionalIdx);
     }
 
     [Fact]
@@ -188,5 +228,21 @@ public class GitCommandBuilderTests
         Assert.DoesNotContain("src/foo.cs", string.Join(' ', masked));
         Assert.Contains("--author=<author>", masked);
         Assert.Contains("<path>", masked);
+    }
+
+    [Fact]
+    public void MaskedForLog_Masks_Reconstructed_Range_Token_Without_Leaking_Shas_Or_Operator()
+    {
+        const string rangeToken = "aaaa111122223333444455556666777788889999...bbbb0000cccc1111dddd2222eeee3333ffff4444";
+        var intent = BasicIntent();
+        intent.VerifiedRefs.Add(rangeToken);
+        var (argv, _) = GitCommandBuilder.Build(intent);
+        var masked = GitCommandBuilder.MaskedForLog(argv, intent);
+        var joined = string.Join(' ', masked);
+
+        Assert.Contains("<ref>", masked);
+        Assert.DoesNotContain(rangeToken, masked);
+        Assert.DoesNotContain("aaaa111122223333444455556666777788889999", joined);
+        Assert.DoesNotContain("bbbb0000cccc1111dddd2222eeee3333ffff4444", joined);
     }
 }
