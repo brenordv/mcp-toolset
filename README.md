@@ -17,17 +17,26 @@ network round-trips beyond the local process the assistant already talks to.
 
 - **[git-ops](src/RaccoonNinja.McpToolset.Server.GitOps/README.md)**: Local, read-only Git inspection; status, history, diffs, blame, and search exposed as typed tools that return JSON. The assistant never drives `git` through a shell, and no writing subcommands are wired up.
 - **[file-vault](src/RaccoonNinja.McpToolset.Server.FileVault/README.md)**: A personal, cross-conversation file vault: versioned notes in a local SQLite + snapshot store, with optimistic concurrency, tags, full-text search, hierarchy, and structure-aware markdown/JSON/YAML edits. Drop-in port of the Rust `vault-mcp` server, same on-disk store.
+- **[text-search](src/RaccoonNinja.McpToolset.Server.TextSearch/README.md)**: Local, read-only, root-confined text search and inspection; `describe_scope`, `find_files`, `inspect_files`, `search_text`, and `read_lines` as typed tools that replace the `find`/`grep`/`cat` habit. Every path is resolved through all symlinks and confined to its configured roots, a non-overridable denylist keeps secret files unread, and results stay root-relative so no absolute path from your machine reaches the model. Supports multiple named roots plus opt-in package roots for grepping cached dependency sources.
+- **[text-edit](src/RaccoonNinja.McpToolset.Server.TextEdit/README.md)**: The mutating counterpart to text-search: root-confined text edits (`normalize_files`, `replace_text`) with hash-gated undo (`list_recent_batches`, `undo_batch`/`undo_last_batch`). It points at one repository, keeps its write tools on prompt, refuses secret files via the same non-overridable denylist, round-trips encodings and line endings faithfully, and journals every change to an append-only store sited outside the root so a batch can be rolled back even after a mid-batch crash.
 
 ## Repository layout
 
 ```
 RaccoonNinja.McpToolset/
-├─ src/                       # one project per MCP server
-│  ├─ RaccoonNinja.McpToolset.Server.GitOps/
-│  └─ RaccoonNinja.McpToolset.Server.FileVault/
-├─ tests/                     # matching test project per server
+├─ src/
+│  ├─ RaccoonNinja.McpToolset.Server.GitOps/       # MCP server
+│  ├─ RaccoonNinja.McpToolset.Server.FileVault/    # MCP server
+│  ├─ RaccoonNinja.McpToolset.Server.TextSearch/   # MCP server
+│  ├─ RaccoonNinja.McpToolset.Server.TextEdit/     # MCP server
+│  └─ RaccoonNinja.McpToolset.Files/               # shared library: confinement, denylist, selection, encoding
+├─ tests/                     # matching test project per src project
 │  ├─ RaccoonNinja.McpToolset.Server.GitOps.Tests/
-│  └─ RaccoonNinja.McpToolset.Server.FileVault.Tests/
+│  ├─ RaccoonNinja.McpToolset.Server.FileVault.Tests/
+│  ├─ RaccoonNinja.McpToolset.Server.TextSearch.Tests/
+│  ├─ RaccoonNinja.McpToolset.Server.TextEdit.Tests/
+│  └─ RaccoonNinja.McpToolset.Files.Tests/
+├─ eng/                       # publish settings (ServerPublish.props) + local publish.ps1
 ├─ Directory.Build.props      # shared build settings (net10.0, analyzers, etc.)
 ├─ Directory.Packages.props   # central package version management
 └─ RaccoonNinja.McpToolset.slnx
@@ -46,6 +55,20 @@ dotnet build RaccoonNinja.McpToolset.slnx
 dotnet test  RaccoonNinja.McpToolset.slnx
 ```
 
+To build self-contained, single-file executables locally (the same shape the release workflow ships), run the publish script for your shell:
+
+```bash
+# PowerShell (Windows, or pwsh on any platform)
+./eng/publish.ps1                 # win-x64, linux-x64, osx-arm64 -> dist/<rid>/
+./eng/publish.ps1 -Rids win-x64   # a single platform
+
+# Bash (Ubuntu / macOS)
+./eng/publish.sh                  # win-x64, linux-x64, osx-arm64 -> dist/<rid>/
+./eng/publish.sh win-x64          # a single platform
+```
+
+Each server becomes one self-contained executable: the .NET runtime and the native SQLite/BLAKE3 libraries are embedded, so there is nothing else to install to run it. The single-file settings live in `eng/ServerPublish.props`.
+
 ## Continuous integration
 
 Two GitHub Actions workflows live under [`.github/workflows`](.github/workflows):
@@ -57,10 +80,11 @@ Two GitHub Actions workflows live under [`.github/workflows`](.github/workflows)
   reuse it as a gate.
 - **Publish** (`publish.yml`): triggered by pushing a tag of the form
   `release/vX.Y.Z` (for example `release/v1.0.0`). It first re-runs QA as a
-  hard gate, then cross-compiles a self-contained, single-file binary of each
-  MCP server for `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`, packages
-  each as a named zip, and publishes them, together with a `SHA256SUMS.txt`
-  manifest, in a single atomic GitHub release.
+  hard gate, then cross-compiles each MCP server into a self-contained,
+  single-file executable (the .NET runtime and native libraries are embedded)
+  for `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`, packages each as a
+  named zip, and publishes them, together with a `SHA256SUMS.txt` manifest, in
+  a single atomic GitHub release.
 
 ## Releases and verification
 
@@ -87,9 +111,15 @@ To make it easier, you can allow all agents to use the mcp servers here, by addi
   "permissions": {
     "allow": [
       "mcp__git-ops",
-      "mcp__vault"
+      "mcp__vault",
+      "mcp__text-search"
     ]
   }
 }
 ```
 This will allow the agents to use the mcp servers autonomously, without having to ask you for permission every time.
+
+The read-only servers above are safe to blanket-approve. **text-edit is deliberately left out**: it writes to
+your files, so keep its tools on prompt rather than auto-approving them. If you want its read-only tools
+approved while its write tools still prompt, allow only `mcp__text-edit__describe_scope` and
+`mcp__text-edit__list_recent_batches`.

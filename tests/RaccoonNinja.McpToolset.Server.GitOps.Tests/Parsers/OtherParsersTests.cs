@@ -13,20 +13,29 @@ public class OtherParsersTests
     private static readonly string[] LsFilesExpected = ["a.txt", "src/b.cs", "c"];
 
     [Fact]
-    public void LsFiles_Splits_On_Nul_And_Drops_Empties()
+    public void LsFiles_SplitsOnNulAndDropsEmpties()
     {
+        // Arrange
         var bytes = Encoding.UTF8.GetBytes("a.txt\0src/b.cs\0\0c\0");
+
+        // Act
         var result = LsFilesParser.Parse(bytes);
+
+        // Assert
         Assert.Equal(LsFilesExpected, result);
     }
 
     [Fact]
-    public void Branch_Strips_RefsHeads_And_Detects_Current()
+    public void Branch_StripsRefsHeadsAndDetectsCurrent()
     {
+        // Arrange
         var line = $"refs/heads/main{Us}*{Us}abc123{Us}origin/main{Us}tip subject\n" +
                    $"refs/remotes/origin/main{Us} {Us}abc123{Us}{Us}\n";
+
+        // Act
         var branches = BranchParser.Parse(Encoding.UTF8.GetBytes(line));
 
+        // Assert
         Assert.Equal(2, branches.Count);
         Assert.Equal("main", branches[0].Name);
         Assert.True(branches[0].IsCurrent);
@@ -36,20 +45,30 @@ public class OtherParsersTests
     }
 
     [Fact]
-    public void Stash_Parses_Index_From_Refname()
+    public void Stash_ParsesIndexFromRefname()
     {
+        // Arrange
         var line = $"stash@{{2}}{Us}On main: WIP{Us}1700000000";
+
+        // Act
         var entries = StashListParser.Parse(Encoding.UTF8.GetBytes(line));
+
+        // Assert
         var entry = Assert.Single(entries);
         Assert.Equal(2, entry.Index);
         Assert.Equal("On main: WIP", entry.Subject);
     }
 
     [Fact]
-    public void Reflog_Parses_Fields_And_Epoch_Into_Structured_When()
+    public void Reflog_ParsesFieldsAndEpochIntoStructuredWhen()
     {
+        // Arrange
         var line = $"abc123def{Us}abc123{Us}HEAD@{{0}}{Us}commit: init{Us}1700000000";
+
+        // Act
         var entries = ReflogParser.Parse(Encoding.UTF8.GetBytes(line));
+
+        // Assert
         var entry = Assert.Single(entries);
         Assert.Equal("abc123def", entry.Hash);
         Assert.Equal("abc123", entry.ShortHash);
@@ -60,10 +79,15 @@ public class OtherParsersTests
     }
 
     [Fact]
-    public void Grep_Parses_Path_Line_And_Content()
+    public void Grep_ParsesPathLineAndContent()
     {
+        // Arrange
         var bytes = Encoding.UTF8.GetBytes("alpha.txt\09\0the alpha line");
+
+        // Act
         var matches = GrepParser.Parse(bytes, null);
+
+        // Assert
         var match = Assert.Single(matches);
         Assert.Equal("alpha.txt", match.Path);
         Assert.Equal(9, match.Line);
@@ -71,19 +95,27 @@ public class OtherParsersTests
     }
 
     [Fact]
-    public void Grep_Strips_Ref_Prefix_From_Path_When_Ref_Supplied()
+    public void Grep_StripsRefPrefixFromPathWhenRefSupplied()
     {
+        // Arrange
         var bytes = Encoding.UTF8.GetBytes("HEAD:alpha.txt\03\0content");
+
+        // Act
         var matches = GrepParser.Parse(bytes, "HEAD");
+
+        // Assert
         var match = Assert.Single(matches);
         Assert.Equal("alpha.txt", match.Path);
         Assert.Equal(3, match.Line);
     }
 
     [Fact]
-    public void RelativeTime_Returns_Singular_And_Plural_Units()
+    public void RelativeTime_ReturnsSingularAndPluralUnits()
     {
+        // Arrange
         var now = System.DateTimeOffset.UtcNow;
+
+        // Act & Assert
         Assert.Equal("1 minute ago", global::RaccoonNinja.McpToolset.Server.GitOps.Parsers.RelativeTime.Describe(now.AddMinutes(-1), now));
         Assert.Equal("2 hours ago", global::RaccoonNinja.McpToolset.Server.GitOps.Parsers.RelativeTime.Describe(now.AddHours(-2), now));
         Assert.StartsWith("in ", global::RaccoonNinja.McpToolset.Server.GitOps.Parsers.RelativeTime.Describe(now.AddMinutes(5), now));

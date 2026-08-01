@@ -5,8 +5,9 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Security;
 public class EnvironmentBuilderTests
 {
     [Fact]
-    public void Build_Drops_Variables_Not_On_The_Allowlist()
+    public void Build_DropsVariablesNotOnTheAllowlist()
     {
+        // Arrange
         var parent = new Dictionary<string, string>
         {
             ["PATH"] = "/usr/bin",
@@ -15,8 +16,11 @@ public class EnvironmentBuilderTests
             ["LD_PRELOAD"] = "evil",
             ["RANDOM_THING"] = "x",
         };
+
+        // Act
         var env = EnvironmentBuilder.Build(parent);
 
+        // Assert
         Assert.Equal("/usr/bin", env["PATH"]);
         Assert.False(env.ContainsKey("GIT_SSH_COMMAND"));
         Assert.False(env.ContainsKey("GIT_CONFIG_PARAMETERS"));
@@ -25,9 +29,12 @@ public class EnvironmentBuilderTests
     }
 
     [Fact]
-    public void Build_Always_Sets_Git_Neutralizers()
+    public void Build_AlwaysSetsGitNeutralizers()
     {
+        // Act
         var env = EnvironmentBuilder.Build(new Dictionary<string, string>());
+
+        // Assert
         Assert.Equal("0", env["GIT_TERMINAL_PROMPT"]);
         Assert.Equal("1", env["GIT_CONFIG_NOSYSTEM"]);
         Assert.Equal("0", env["GIT_OPTIONAL_LOCKS"]);

@@ -268,8 +268,6 @@ public sealed class FileStoreTests : IDisposable
         Action act = () => _store.ReadSnapshot("proj/missing/v1-999.txt");
 
         // Assert
-        // ThrowsAny: the concrete type is a subclass (DirectoryNotFoundException) and the
-        // contract under test is the IOException family.
         Assert.ThrowsAny<IOException>(act);
     }
 }

@@ -114,7 +114,6 @@ public sealed class McpProtocolTests : IAsyncLifetime
         // Assert
         Assert.Equivalent(ExpectedToolNames, tools.Select(t => t.Name), strict: true);
 
-        // The input schema property names come verbatim from the Rust wire contract.
         Assert.Equivalent(
             VaultSaveSchemaProperties,
             SchemaProperties(tools.Single(t => t.Name == "vault_save")), strict: true);
@@ -225,7 +224,6 @@ public sealed class McpProtocolTests : IAsyncLifetime
         Assert.True(restoredBody.GetProperty("ok").GetBoolean());
         Assert.Equal("restored", restoredBody.GetProperty("message").GetString());
 
-        // The restored note is writable again.
         await Save("lifecycle-note", "body v2", baseVersion: 1);
     }
 

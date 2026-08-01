@@ -6,19 +6,27 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Errors;
 public class GitCheckExceptionTests
 {
     [Fact]
-    public void Base_Carries_Message_And_Default_Code()
+    public void Base_CarriesMessageAndDefaultCode()
     {
+        // Act
         var ex = new GitCheckException("boom");
+
+        // Assert
         Assert.Equal("boom", ex.Message);
         Assert.Equal(ErrorCodes.GitCheckError, ex.Code);
         Assert.Empty(ex.Detail);
     }
 
     [Fact]
-    public void Detail_Is_Independent_Copy_From_Caller()
+    public void Detail_IsIndependentCopyFromCaller()
     {
+        // Arrange
         var detail = new Dictionary<string, object> { ["k"] = 1 };
+
+        // Act
         var ex = new GitCheckException("boom", detail);
+
+        // Assert
         Assert.Equal(1, ex.Detail["k"]);
     }
 
@@ -32,9 +40,12 @@ public class GitCheckExceptionTests
     [InlineData(typeof(RejectedArgumentException), ErrorCodes.RejectedArgument)]
     [InlineData(typeof(GitTimeoutException), ErrorCodes.GitTimeout)]
     [InlineData(typeof(GitCommandException), ErrorCodes.GitCommandError)]
-    public void Subclasses_Expose_Stable_Codes(System.Type exType, string expected)
+    public void Subclasses_ExposeStableCodes(System.Type exType, string expected)
     {
+        // Act
         var instance = (GitCheckException)System.Activator.CreateInstance(exType, new object[] { "msg", null });
+
+        // Assert
         Assert.Equal(expected, instance.Code);
     }
 }

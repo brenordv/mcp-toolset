@@ -10,7 +10,7 @@ public class GitGrepToolTests
     [InlineData("fatal: cannot use Perl-compatible regexes when not compiled with USE_LIBPCRE")]
     [InlineData("fatal: cannot use Perl-compatible regexes when not compiled with USE_LIBPCRE2")]
     [InlineData("error: USE_LIBPCRE")]
-    public void ClassifyPcreStderr_Maps_Pcre_Signature_To_PcreUnavailable(string stderr)
+    public void ClassifyPcreStderr_MapsPcreSignatureToPcreUnavailable(string stderr)
     {
         // Act
         var result = GitGrepTool.ClassifyPcreStderr(stderr);
@@ -25,7 +25,7 @@ public class GitGrepToolTests
     [InlineData("")]
     [InlineData("fatal: bad revision 'HEAD~99'")]
     [InlineData("fatal: ambiguous argument 'nope'")]
-    public void ClassifyPcreStderr_Returns_Null_For_Unrelated_Stderr(string stderr)
+    public void ClassifyPcreStderr_ReturnsNullForUnrelatedStderr(string stderr)
     {
         // Act & Assert
         Assert.Null(GitGrepTool.ClassifyPcreStderr(stderr));

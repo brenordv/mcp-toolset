@@ -470,7 +470,7 @@ Add an entry to your MCP configuration (e.g. `.mcp.json` at your project root, o
 {
   "mcpServers": {
     "git-ops": {
-      "command": "c:\\path\\to\\RaccoonNinja.McpToolset.Server.GitOps.exe",
+      "command": "c:\\path\\to\\git-ops.exe",
       "args": [],
       "env": {
         "MCP_GITOPS_LOG_FILE": "Z:\\logs\\mcp-gitops.log",

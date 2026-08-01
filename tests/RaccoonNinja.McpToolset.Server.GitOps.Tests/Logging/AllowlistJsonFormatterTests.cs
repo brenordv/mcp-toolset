@@ -8,8 +8,9 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Logging;
 public class AllowlistJsonFormatterTests
 {
     [Fact]
-    public void Formatter_Emits_Allowed_Fields_And_Drops_Unknown()
+    public void Formatter_EmitsAllowedFieldsAndDropsUnknown()
     {
+        // Arrange
         var formatter = new AllowlistJsonFormatter();
         var template = new MessageTemplateParser().Parse("{Event}");
         var properties = new[]
@@ -26,8 +27,11 @@ public class AllowlistJsonFormatterTests
             messageTemplate: template,
             properties: properties);
         using var writer = new StringWriter();
+
+        // Act
         formatter.Format(ev, writer);
 
+        // Assert
         var line = writer.ToString().Trim();
         using var doc = JsonDocument.Parse(line);
         var root = doc.RootElement;

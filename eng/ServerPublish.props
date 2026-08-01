@@ -1,0 +1,44 @@
+<Project>
+
+  <!--
+    Shared publish configuration for the MCP server executables. Imported explicitly by each
+    server .csproj (not through Directory.Build.props, which also covers the Files library and the
+    xUnit test runners). The single-file / self-contained switches are guarded on RuntimeIdentifier
+    so a plain `dotnet build` or `dotnet test` (no RID) is unaffected; they engage only during a
+    `dotnet publish -r <rid>`, which is what eng/publish.ps1 drives.
+
+    Trimming and AOT stay off: Dapper, SQLitePCLRaw, Serilog, and the MCP tool-schema generation
+    are reflection-based and not trim-safe (phase-3 plan: trim/AOT off for v1). The native libraries
+    (e_sqlite3, blake3) are embedded and self-extracted at first run so the result is one file.
+  -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <!-- Keep the publish output to the single exe: no symbols and no XML doc files copied from
+         this project or its references. -->
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    <PublishDocumentationFile>false</PublishDocumentationFile>
+    <PublishDocumentationFiles>false</PublishDocumentationFiles>
+    <!-- "none" matches no extension, so referenced projects' sidecar .pdb/.xml are not copied
+         alongside the exe (the referenced managed assemblies are bundled into the single file). -->
+    <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+
+  <!-- SQLitePCLRaw ships static-link native archives (libe_sqlite3.a / .lib) alongside the runtime
+       .so/.dll/.dylib. Only the runtime library is bundled into the single file; the static archives
+       are copied as content and would sit next to the exe. Drop them so the publish is truly one file. -->
+  <Target Name="TrimStaticNativeArtifacts" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(Extension)' == '.a' or '%(Extension)' == '.lib'" />
+    </ItemGroup>
+  </Target>
+
+</Project>

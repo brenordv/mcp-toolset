@@ -170,8 +170,6 @@ public sealed class VaultConfigTests
     public void WithHome_PurgeDeleteFilesEmptyOrWhitespace_UsesDefault(string raw)
     {
         // Arrange
-        // Note: setting an env var to "" removes it on .NET, so the "" case exercises the
-        // unset path while "   " exercises the trimmed-to-empty switch arm.
         using var scope = new VaultEnvScope();
         VaultEnvScope.Set("VAULT_MCP_PURGE_DELETE_FILES", raw);
 

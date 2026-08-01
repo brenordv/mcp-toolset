@@ -42,36 +42,43 @@ public class ToolCommonTests
     }
 
     [Fact]
-    public async Task WrapAsync_Translates_GitCheckException_To_Failure_Envelope()
+    public async Task WrapAsync_TranslatesGitCheckExceptionToFailureEnvelope()
     {
+        // Arrange
         var common = Build();
         var ctx = common.MakeContext("test");
         var holder = new RootHolder();
         holder.Set("/repo");
 
+        // Act
         var envelope = await common.WrapAsync(ctx, holder, () =>
             throw new RejectedArgumentException("bad", new Dictionary<string, object> { ["param"] = "x" }));
 
+        // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
         Assert.Equal("/repo", envelope.RepoRoot);
     }
 
     [Fact]
-    public async Task WrapAsync_Wraps_Unexpected_Exception_As_GitCommandError()
+    public async Task WrapAsync_WrapsUnexpectedExceptionAsGitCommandError()
     {
+        // Arrange
         var common = Build();
         var ctx = common.MakeContext("test");
 
+        // Act
         var envelope = await common.WrapAsync(ctx, new RootHolder(), () =>
             throw new System.InvalidOperationException("boom"));
 
+        // Assert
         Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
     }
 
     [Fact]
-    public async Task ExecuteAsync_Records_Metrics_And_Calls_Runner()
+    public async Task ExecuteAsync_RecordsMetricsAndCallsRunner()
     {
+        // Arrange
         var runner = Substitute.For<IGitProcessRunner>();
         runner.RunAsync(
                 Arg.Any<IList<string>>(), Arg.Any<IDictionary<string, string>>(), Arg.Any<string>(),
@@ -90,7 +97,10 @@ public class ToolCommonTests
         var ctx = common.MakeContext("test");
         var intent = new GitIntent { Subcommand = "status", RepoRoot = Path.GetTempPath() };
 
+        // Act
         var result = await common.ExecuteAsync(intent, ctx);
+
+        // Assert
         Assert.Equal(0, result.ExitCode);
         await runner.Received(1).RunAsync(
             Arg.Any<IList<string>>(), Arg.Any<IDictionary<string, string>>(), Arg.Any<string>(),
@@ -98,13 +108,15 @@ public class ToolCommonTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Throws_GitCommandError_With_ExitCode_And_No_Stderr_In_Detail()
+    public async Task ExecuteAsync_ThrowsGitCommandErrorWithExitCodeAndNoStderrInDetail()
     {
+        // Arrange
         var runner = RunnerReturning(128, System.Text.Encoding.UTF8.GetBytes("fatal: bad revision"));
         var common = Build(runner: runner);
         var ctx = common.MakeContext("test");
         var intent = new GitIntent { Subcommand = "status", RepoRoot = Path.GetTempPath() };
 
+        // Act & Assert
         var ex = await Assert.ThrowsAsync<GitCommandException>(() => common.ExecuteAsync(intent, ctx));
 
         Assert.Equal(128, ex.Detail["git_exit_code"]);
@@ -112,13 +124,15 @@ public class ToolCommonTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Uses_StderrClassifier_To_Map_Known_Failure()
+    public async Task ExecuteAsync_UsesStderrClassifierToMapKnownFailure()
     {
+        // Arrange
         var runner = RunnerReturning(128, System.Text.Encoding.UTF8.GetBytes("classify me"));
         var common = Build(runner: runner);
         var ctx = common.MakeContext("test");
         var intent = new GitIntent { Subcommand = "grep", RepoRoot = Path.GetTempPath() };
 
+        // Act & Assert
         await Assert.ThrowsAsync<PcreUnavailableException>(() => common.ExecuteAsync(
             intent,
             ctx,
@@ -127,13 +141,15 @@ public class ToolCommonTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Falls_Back_To_GitCommandError_When_Classifier_Returns_Null()
+    public async Task ExecuteAsync_FallsBackToGitCommandErrorWhenClassifierReturnsNull()
     {
+        // Arrange
         var runner = RunnerReturning(128, System.Text.Encoding.UTF8.GetBytes("fatal: unrelated"));
         var common = Build(runner: runner);
         var ctx = common.MakeContext("test");
         var intent = new GitIntent { Subcommand = "grep", RepoRoot = Path.GetTempPath() };
 
+        // Act & Assert
         await Assert.ThrowsAsync<GitCommandException>(() => common.ExecuteAsync(
             intent,
             ctx,
@@ -142,18 +158,21 @@ public class ToolCommonTests
     }
 
     [Fact]
-    public async Task WrapAsync_Records_Single_Error_And_GitCommandError_Counter_On_Git_Failure()
+    public async Task WrapAsync_RecordsSingleErrorAndGitCommandErrorCounterOnGitFailure()
     {
+        // Arrange
         var metrics = new SessionMetrics();
         var common = Build(runner: RunnerReturning(1), metrics: metrics);
         var ctx = common.MakeContext("git_test");
 
+        // Act
         var envelope = await common.WrapAsync(ctx, new RootHolder(), async () =>
         {
             await common.ExecuteAsync(new GitIntent { Subcommand = "status", RepoRoot = Path.GetTempPath() }, ctx);
             return ToolCommon.SingleSuccess("unreachable", "/repo");
         });
 
+        // Assert
         Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
         var summary = metrics.Summary();
         var calls = (Dictionary<string, object>)summary["tool_calls_total"];
@@ -163,53 +182,71 @@ public class ToolCommonTests
     }
 
     [Fact]
-    public async Task WrapAsync_Records_Single_Ok_Once_Per_Call()
+    public async Task WrapAsync_RecordsSingleOkOncePerCall()
     {
+        // Arrange
         var metrics = new SessionMetrics();
         var common = Build(metrics: metrics);
         var ctx = common.MakeContext("git_test");
 
+        // Act
         await common.WrapAsync(ctx, new RootHolder(), () =>
             Task.FromResult(ToolCommon.SingleSuccess("ok", "/repo")));
 
+        // Assert
         var calls = (Dictionary<string, object>)metrics.Summary()["tool_calls_total"];
         Assert.Equal(1L, (long)calls["git_test:ok"]);
     }
 
     [Fact]
-    public void ConfinePaths_Returns_Empty_For_Null_Paths()
+    public void ConfinePaths_ReturnsEmptyForNullPaths()
     {
+        // Act & Assert
         Assert.Empty(ToolCommon.ConfinePaths(Path.GetTempPath(), null));
     }
 
     [Fact]
-    public void ConfinePaths_Confines_Each_Path_Relative_To_Root()
+    public void ConfinePaths_ConfinesEachPathRelativeToRoot()
     {
+        // Act
         var result = ToolCommon.ConfinePaths(Path.GetTempPath(), ["sub/file.txt"]);
+
+        // Assert
         Assert.Equal(["sub/file.txt"], result);
     }
 
     [Fact]
-    public void Make_Context_Has_Tool_Name_And_Unique_Call_Id()
+    public void Make_ContextHasToolNameAndUniqueCallId()
     {
+        // Arrange
         var common = Build();
+
+        // Act
         var a = common.MakeContext("git_log");
         var b = common.MakeContext("git_log");
+
+        // Assert
         Assert.Equal("git_log", a.Tool);
         Assert.NotEqual(a.CallId, b.CallId);
     }
 
     [Fact]
-    public void SingleSuccess_Wraps_Payload_In_One_Element_List()
+    public void SingleSuccess_WrapsPayloadInOneElementList()
     {
+        // Act
         var env = ToolCommon.SingleSuccess("hi", "/repo");
+
+        // Assert
         Assert.Single(env.Results, "hi");
     }
 
     [Fact]
-    public void ListSuccess_Copies_Items_Into_Results()
+    public void ListSuccess_CopiesItemsIntoResults()
     {
+        // Act
         var env = ToolCommon.ListSuccess(new object[] { 1, 2, 3 }, "/repo");
+
+        // Assert
         Assert.Equal(3, env.Count);
     }
 }

@@ -66,7 +66,6 @@ public sealed class FileStoreRetentionTests : IDisposable
         // Assert
         Assert.False(File.Exists(Path.Combine(_storeRoot, "proj", "doomed", "v1-aaa.txt")));
         Assert.False(Directory.Exists(Path.Combine(_storeRoot, "proj", "doomed")));
-        // Pruning is best-effort and only removes the immediate parent.
         Assert.True(Directory.Exists(Path.Combine(_storeRoot, "proj")));
     }
 
@@ -137,7 +136,6 @@ public sealed class FileStoreRetentionTests : IDisposable
         var counterVariant = Path.Combine(_storeRoot, "proj", "DELETED_1_one.txt");
         Assert.True(File.Exists(counterVariant));
         Assert.Equal(bytes, File.ReadAllBytes(counterVariant));
-        // A prior retained file must never be clobbered.
         Assert.Equal(earlierBytes, File.ReadAllBytes(collision));
         Assert.False(File.Exists(Path.Combine(_storeRoot, "proj", "one.txt")));
     }

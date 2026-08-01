@@ -9,21 +9,25 @@ public class LogParserTests
     private const char Rs = '\x1e';
 
     [Fact]
-    public void Parse_Returns_Empty_For_Empty_Bytes()
+    public void Parse_ReturnsEmptyForEmptyBytes()
     {
+        // Act & Assert
         Assert.Empty(LogParser.Parse(Array.Empty<byte>()));
         Assert.Empty(LogParser.Parse(null));
     }
 
     [Fact]
-    public void Parse_Splits_Records_And_Maps_Fields()
+    public void Parse_SplitsRecordsAndMapsFields()
     {
+        // Arrange
         var commit1 = $"abc123{Us}abc{Us}{Us}Alice{Us}alice@example.com{Us}1700000000{Us}1700000005{Us}subject one{Us}body one{Rs}";
         var commit2 = $"def456{Us}def{Us}abc123{Us}Bob{Us}bob@example.com{Us}1700000100{Us}1700000200{Us}subject two{Us}{Rs}";
         var bytes = Encoding.UTF8.GetBytes(commit1 + "\n" + commit2);
 
+        // Act
         var result = LogParser.Parse(bytes);
 
+        // Assert
         Assert.Equal(2, result.Count);
         Assert.Equal("abc123", result[0].Hash);
         Assert.Equal("abc", result[0].ShortHash);
@@ -40,18 +44,24 @@ public class LogParserTests
     }
 
     [Fact]
-    public void Parse_Pads_Missing_Trailing_Fields()
+    public void Parse_PadsMissingTrailingFields()
     {
+        // Arrange
         var partial = $"abc{Us}a{Us}{Us}Alice{Us}alice@example.com{Us}1{Us}2{Rs}";
+
+        // Act
         var result = LogParser.Parse(Encoding.UTF8.GetBytes(partial));
+
+        // Assert
         Assert.Single(result);
         Assert.Equal(string.Empty, result[0].Subject);
         Assert.Null(result[0].Body);
     }
 
     [Fact]
-    public void Pretty_Format_Constant_Has_Expected_Fields()
+    public void Pretty_FormatConstantHasExpectedFields()
     {
+        // Act & Assert
         Assert.Contains("%H", LogParser.LogPrettyFormat);
         Assert.Contains("%h", LogParser.LogPrettyFormat);
         Assert.Contains("%P", LogParser.LogPrettyFormat);

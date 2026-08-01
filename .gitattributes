@@ -1,0 +1,8 @@
+# Let Git detect text vs binary and store text blobs with normalized LF.
+* text=auto
+
+# Byte-exact fixtures produced by the real Rust vault-mcp binary. They must be
+# checked out verbatim on every OS: Git's autocrlf must never rewrite their line
+# endings, or the FileVault store-compat tests read the snapshots back with CRLF
+# and fail the byte-for-byte content and Blake3 hash assertions on Windows.
+tests/RaccoonNinja.McpToolset.Server.FileVault.Tests/Fixtures/rust-store/** -text

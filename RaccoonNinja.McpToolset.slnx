@@ -27,4 +27,18 @@
     <Project Path="src/RaccoonNinja.McpToolset.Server.FileVault/RaccoonNinja.McpToolset.Server.FileVault.csproj" />
     <Project Path="tests/RaccoonNinja.McpToolset.Server.FileVault.Tests/RaccoonNinja.McpToolset.Server.FileVault.Tests.csproj" />
   </Folder>
+  <Folder Name="/MCP text-search/">
+    <File Path="src/RaccoonNinja.McpToolset.Server.TextSearch/README.md" />
+    <Project Path="src/RaccoonNinja.McpToolset.Server.TextSearch/RaccoonNinja.McpToolset.Server.TextSearch.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Server.TextSearch.Tests/RaccoonNinja.McpToolset.Server.TextSearch.Tests.csproj" />
+  </Folder>
+  <Folder Name="/MCP text-edit/">
+    <File Path="src/RaccoonNinja.McpToolset.Server.TextEdit/README.md" />
+    <Project Path="src/RaccoonNinja.McpToolset.Server.TextEdit/RaccoonNinja.McpToolset.Server.TextEdit.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Server.TextEdit.Tests/RaccoonNinja.McpToolset.Server.TextEdit.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Shared/">
+    <Project Path="src/RaccoonNinja.McpToolset.Files/RaccoonNinja.McpToolset.Files.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Files.Tests/RaccoonNinja.McpToolset.Files.Tests.csproj" />
+  </Folder>
 </Solution>

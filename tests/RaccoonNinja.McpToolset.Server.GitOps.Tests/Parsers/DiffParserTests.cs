@@ -10,32 +10,48 @@ public class DiffParserTests
     private const string PlainStatusPath = "src/file.cs";
 
     [Fact]
-    public void ParseNumstatZ_Reads_Plain_Entries()
+    public void ParseNumstatZ_ReadsPlainEntries()
     {
+        // Arrange
         var bytes = Encoding.UTF8.GetBytes("2\t1\tsrc/file.cs\0");
+
+        // Act
         var ns = DiffParser.ParseNumstatZ(bytes);
+
+        // Assert
         Assert.Equal((2, 1), ns["src/file.cs"]);
     }
 
     [Fact]
-    public void ParseNumstatZ_Handles_Binary_Markers_As_Zero()
+    public void ParseNumstatZ_HandlesBinaryMarkersAsZero()
     {
+        // Arrange
         var bytes = Encoding.UTF8.GetBytes("-\t-\tsrc/binary.bin\0");
+
+        // Act
         var ns = DiffParser.ParseNumstatZ(bytes);
+
+        // Assert
         Assert.Equal((0, 0), ns["src/binary.bin"]);
     }
 
     [Fact]
-    public void ParseNumstatZ_Handles_Renames_With_Two_Trailing_Tokens()
+    public void ParseNumstatZ_HandlesRenamesWithTwoTrailingTokens()
     {
+        // Arrange
         var bytes = Encoding.UTF8.GetBytes("3\t0\t\0old/path.cs\0new/path.cs\0");
+
+        // Act
         var ns = DiffParser.ParseNumstatZ(bytes);
+
+        // Assert
         Assert.Equal((3, 0), ns["new/path.cs"]);
     }
 
     [Fact]
-    public void ParseUnified_Reads_Single_File_With_One_Hunk()
+    public void ParseUnified_ReadsSingleFileWithOneHunk()
     {
+        // Arrange
         const string raw =
             "diff --git a/foo.txt b/foo.txt\n" +
             "index abc..def 100644\n" +
@@ -46,8 +62,11 @@ public class DiffParserTests
             "-old\n" +
             "+new\n" +
             " end\n";
+
+        // Act
         var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(raw));
 
+        // Assert
         var file = Assert.Single(files);
         Assert.Equal("foo.txt", file.Path);
         Assert.Equal("foo.txt", file.OldPath);
@@ -62,8 +81,9 @@ public class DiffParserTests
     }
 
     [Fact]
-    public void ParseUnified_Detects_Added_And_Deleted_Files()
+    public void ParseUnified_DetectsAddedAndDeletedFiles()
     {
+        // Arrange
         const string raw =
             "diff --git a/new.txt b/new.txt\n" +
             "new file mode 100644\n" +
@@ -73,26 +93,35 @@ public class DiffParserTests
             "+hello\n" +
             "diff --git a/gone.txt b/gone.txt\n" +
             "deleted file mode 100644\n";
+
+        // Act
         var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(raw));
 
+        // Assert
         Assert.Equal(2, files.Count);
         Assert.Equal(ChangeType.Added, files[0].ChangeType);
         Assert.Equal(ChangeType.Deleted, files[1].ChangeType);
     }
 
     [Fact]
-    public void ParseUnified_Flags_Binary_Files()
+    public void ParseUnified_FlagsBinaryFiles()
     {
+        // Arrange
         const string raw =
             "diff --git a/img.png b/img.png\n" +
             "Binary files a/img.png and b/img.png differ\n";
+
+        // Act
         var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(raw));
+
+        // Assert
         Assert.True(files.Single().IsBinary);
     }
 
     [Fact]
-    public void AssembleDiffResult_Enriches_From_Numstat()
+    public void AssembleDiffResult_EnrichesFromNumstat()
     {
+        // Arrange
         var input = new List<FileDiff>
         {
             new() { Path = "foo.txt", Additions = 0, Deletions = 0 },
@@ -101,8 +130,11 @@ public class DiffParserTests
         {
             ["foo.txt"] = (5, 2),
         };
+
+        // Act
         var result = DiffParser.AssembleDiffResult(input, WorktreeMode, numstat: numstat);
 
+        // Assert
         Assert.Equal(5, result.Files[0].Additions);
         Assert.Equal(2, result.Files[0].Deletions);
         Assert.Equal(5, result.TotalAdditions);
@@ -111,15 +143,19 @@ public class DiffParserTests
     }
 
     [Fact]
-    public void AssembleDiffResult_Without_Numstat_Sums_Provided_Counts()
+    public void AssembleDiffResult_WithoutNumstatSumsProvidedCounts()
     {
+        // Arrange
         var input = new List<FileDiff>
         {
             new() { Path = "a.cs", Additions = 2, Deletions = 1 },
             new() { Path = "b.cs", Additions = 3, Deletions = 4 },
         };
+
+        // Act
         var result = DiffParser.AssembleDiffResult(input, WorktreeMode);
 
+        // Assert
         Assert.Equal(2, result.Files.Count);
         Assert.Equal(5, result.TotalAdditions);
         Assert.Equal(5, result.TotalDeletions);
@@ -129,11 +165,13 @@ public class DiffParserTests
 
     [Theory]
     [MemberData(nameof(RenameAndCopyDiffs))]
-    public void ParseUnified_Sets_ChangeType_And_OldPath_For_Renames_And_Copies(
+    public void ParseUnified_SetsChangeTypeAndOldPathForRenamesAndCopies(
         string raw, ChangeType expectedChange, string expectedOldPath, string expectedPath)
     {
+        // Act
         var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(raw));
 
+        // Assert
         var file = Assert.Single(files);
         Assert.Equal(expectedChange, file.ChangeType);
         Assert.Equal(expectedOldPath, file.OldPath);
@@ -147,77 +185,97 @@ public class DiffParserTests
     [InlineData(ChangeType.Renamed, "renamed")]
     [InlineData(ChangeType.Copied, "copied")]
     [InlineData(ChangeType.Unknown, "unknown")]
-    public void ChangeType_Serializes_As_Lowercase_String(ChangeType value, string expected)
+    public void ChangeType_SerializesAsLowercaseString(ChangeType value, string expected)
     {
+        // Act
         var json = System.Text.Json.JsonSerializer.Serialize(new FileDiff { Path = "x", ChangeType = value });
 
+        // Assert
         Assert.Contains($"\"change_type\":\"{expected}\"", json);
     }
 
     [Fact]
-    public void ChangeType_RoundTrips_Through_Json()
+    public void ChangeType_RoundTripsThroughJson()
     {
+        // Arrange
         var original = new FileDiff { Path = "x", ChangeType = ChangeType.Renamed };
+
+        // Act
         var json = System.Text.Json.JsonSerializer.Serialize(original);
 
         var restored = System.Text.Json.JsonSerializer.Deserialize<FileDiff>(json);
 
+        // Assert
         Assert.Equal(ChangeType.Renamed, restored.ChangeType);
     }
 
     [Theory]
     [MemberData(nameof(PlainNameStatusEntries))]
-    public void ParseNameStatusZ_Maps_Plain_Status_Letters(string raw, ChangeType expected)
+    public void ParseNameStatusZ_MapsPlainStatusLetters(string raw, ChangeType expected)
     {
+        // Act
         var result = DiffParser.ParseNameStatusZ(Encoding.UTF8.GetBytes(raw));
+
+        // Assert
         Assert.Equal(expected, result[PlainStatusPath]);
     }
 
     [Fact]
-    public void ParseNameStatusZ_Keys_Rename_On_New_Path()
+    public void ParseNameStatusZ_KeysRenameOnNewPath()
     {
+        // Arrange
         const string oldPath = "old/path.cs";
         const string newPath = "new/path.cs";
         var bytes = Encoding.UTF8.GetBytes($"R100\0{oldPath}\0{newPath}\0");
 
+        // Act
         var result = DiffParser.ParseNameStatusZ(bytes);
 
+        // Assert
         Assert.Equal(ChangeType.Renamed, result[newPath]);
         Assert.False(result.ContainsKey(oldPath));
     }
 
     [Fact]
-    public void ParseNameStatusZ_Keys_Copy_On_New_Path()
+    public void ParseNameStatusZ_KeysCopyOnNewPath()
     {
+        // Arrange
         const string origPath = "orig.cs";
         const string copyPath = "copy.cs";
         var bytes = Encoding.UTF8.GetBytes($"C075\0{origPath}\0{copyPath}\0");
 
+        // Act
         var result = DiffParser.ParseNameStatusZ(bytes);
 
+        // Assert
         Assert.Equal(ChangeType.Copied, result[copyPath]);
         Assert.False(result.ContainsKey(origPath));
     }
 
     [Fact]
-    public void ParseNameStatusZ_Returns_Empty_For_Empty_Input()
+    public void ParseNameStatusZ_ReturnsEmptyForEmptyInput()
     {
+        // Act
         var result = DiffParser.ParseNameStatusZ(Array.Empty<byte>());
+
+        // Assert
         Assert.Empty(result);
     }
 
     [Fact]
-    public void ParseNameStatusZ_Ignores_Trailing_Empty_Token()
+    public void ParseNameStatusZ_IgnoresTrailingEmptyToken()
     {
-        // The trailing NUL yields an empty token after the last path; it must not be treated as a record.
+        // Act
         var result = DiffParser.ParseNameStatusZ(Encoding.UTF8.GetBytes($"M\0{PlainStatusPath}\0"));
 
+        // Assert
         Assert.Equal(ChangeType.Modified, Assert.Single(result).Value);
     }
 
     [Fact]
-    public void AssembleDiffResult_Overlays_ChangeType_When_Unknown()
+    public void AssembleDiffResult_OverlaysChangeTypeWhenUnknown()
     {
+        // Arrange
         var input = new List<FileDiff>
         {
             new() { Path = "foo.cs", ChangeType = ChangeType.Unknown },
@@ -227,14 +285,17 @@ public class DiffParserTests
             ["foo.cs"] = ChangeType.Added,
         };
 
+        // Act
         var result = DiffParser.AssembleDiffResult(input, WorktreeMode, changeTypes: changeTypes);
 
+        // Assert
         Assert.Equal(ChangeType.Added, result.Files[0].ChangeType);
     }
 
     [Fact]
-    public void AssembleDiffResult_Does_Not_Clobber_Existing_ChangeType()
+    public void AssembleDiffResult_DoesNotClobberExistingChangeType()
     {
+        // Arrange
         var input = new List<FileDiff>
         {
             new() { Path = "foo.cs", ChangeType = ChangeType.Modified },
@@ -244,8 +305,10 @@ public class DiffParserTests
             ["foo.cs"] = ChangeType.Added,
         };
 
+        // Act
         var result = DiffParser.AssembleDiffResult(input, WorktreeMode, changeTypes: changeTypes);
 
+        // Assert
         Assert.Equal(ChangeType.Modified, result.Files[0].ChangeType);
     }
 

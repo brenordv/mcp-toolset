@@ -6,8 +6,9 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Parsers;
 public class BlameParserTests
 {
     [Fact]
-    public void Parse_Reads_Sha_Line_Number_Author_And_Content()
+    public void Parse_ReadsShaLineNumberAuthorAndContent()
     {
+        // Arrange
         const string raw =
             "1111111111111111111111111111111111111111 1 1 1\n" +
             "author Alice\n" +
@@ -19,8 +20,11 @@ public class BlameParserTests
             "\thello\n" +
             "1111111111111111111111111111111111111111 2 2\n" +
             "\tworld\n";
+
+        // Act
         var lines = BlameParser.Parse(Encoding.UTF8.GetBytes(raw));
 
+        // Assert
         Assert.Equal(2, lines.Count);
         Assert.Equal(1, lines[0].LineNo);
         Assert.Equal("hello", lines[0].Content);
@@ -30,9 +34,12 @@ public class BlameParserTests
     }
 
     [Fact]
-    public void Parse_Skips_Non_Sha_Headers()
+    public void Parse_SkipsNonShaHeaders()
     {
+        // Arrange
         const string raw = "boundary\n\nnot-a-sha 1 1\n";
+
+        // Act & Assert
         Assert.Empty(BlameParser.Parse(Encoding.UTF8.GetBytes(raw)));
     }
 }

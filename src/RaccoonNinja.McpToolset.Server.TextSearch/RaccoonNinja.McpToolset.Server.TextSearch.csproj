@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>RaccoonNinja.McpToolset.Server.TextSearch</RootNamespace>
+    <AssemblyName>text-search</AssemblyName>
+    <Description>Local stdio MCP server: read-only, root-confined text search and inspection (find, inspect, grep, read) with a non-overridable secret denylist. Designed to be blanket-approved.</Description>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- CA1707: MCP tool input schemas take their property names verbatim from C# method
+         parameter names, and the wire contract uses snake_case (start_line, case_sensitive,
+         include_ignored, ...). Scoped to this project only. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The test project unit-tests internal helpers (content reader, text document, search). -->
+    <InternalsVisibleTo Include="RaccoonNinja.McpToolset.Server.TextSearch.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RaccoonNinja.McpToolset.Files\RaccoonNinja.McpToolset.Files.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Roslynator.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+  </ItemGroup>
+
+  <Import Project="..\..\eng\ServerPublish.props" />
+
+</Project>

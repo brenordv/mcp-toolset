@@ -5,9 +5,12 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Logging;
 public class StdoutSentinelTests
 {
     [Fact]
-    public void Install_And_Uninstall_Round_Trip()
+    public void Install_AndUninstallRoundTrip()
     {
+        // Arrange
         StdoutSentinel.Install();
+
+        // Act & Assert
         try
         {
             Assert.Throws<InvalidOperationException>(() => Console.Out.Write("nope"));
@@ -20,10 +23,13 @@ public class StdoutSentinelTests
     }
 
     [Fact]
-    public void Install_Is_Idempotent()
+    public void Install_IsIdempotent()
     {
+        // Arrange
         StdoutSentinel.Install();
         StdoutSentinel.Install();
+
+        // Act & Assert
         try
         {
             Assert.Throws<InvalidOperationException>(() => Console.Out.Write("nope"));

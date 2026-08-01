@@ -23,18 +23,16 @@ public class ErrorMappingTests
     [InlineData(VaultErrorCode.NothingToUpdate, "nothing_to_update")]
     public void ToWireCode_EveryCode_ReturnsStableSnakeCaseString(VaultErrorCode code, string expected)
     {
-        // Act + Assert: these strings match the Rust server byte-for-byte and must never drift.
+        // Act + Assert
         Assert.Equal(expected, code.ToWireCode());
     }
 
     [Fact]
     public void ToWireCode_CoversEveryEnumValue()
     {
-        // Act + Assert: a newly added enum value without a wire string would fall through to
-        // "internal", which the theory above cannot see; this guard makes the gap loud.
+        // Act + Assert
         foreach (var code in Enum.GetValues<VaultErrorCode>())
         {
-            // Every domain code needs its own wire string.
             Assert.NotEqual("internal", code.ToWireCode());
         }
     }
@@ -145,7 +143,7 @@ public class ErrorMappingTests
         // Act
         using var body = JsonDocument.Parse(ErrorMapping.ToErrorJson(exception));
 
-        // Assert: no extra payload fields for a code-only error.
+        // Assert
         var error = body.RootElement.GetProperty("error");
         Assert.Equal(["code", "message"], error.EnumerateObject().Select(p => p.Name));
         Assert.Equal("nothing_to_update", error.GetProperty("code").GetString());

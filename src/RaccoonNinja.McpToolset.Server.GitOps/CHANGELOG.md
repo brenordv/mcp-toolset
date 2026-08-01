@@ -1,4 +1,7 @@
-﻿## v1.0.2
+﻿## v2.0.0
+- Renamed the assembly to `git-ops`.
+
+## v1.0.2
 - Fixed `git_grep` aborting with a fatal `GitCommandError` (git exit 128) on some git builds, in both
   working-tree and `ref` mode, for patterns that were present. The command builder appended
   `--end-of-options` to every subcommand, but `git grep` parses `--` itself and, on builds predating
