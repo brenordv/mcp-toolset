@@ -42,4 +42,6 @@
     <PackageReference Include="Serilog.Sinks.Console" />
   </ItemGroup>
 
+  <Import Project="..\..\eng\ServerPublish.props" />
+
 </Project>

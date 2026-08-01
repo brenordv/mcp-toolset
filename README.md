@@ -36,6 +36,7 @@ RaccoonNinja.McpToolset/
 │  ├─ RaccoonNinja.McpToolset.Server.TextSearch.Tests/
 │  ├─ RaccoonNinja.McpToolset.Server.TextEdit.Tests/
 │  └─ RaccoonNinja.McpToolset.Files.Tests/
+├─ eng/                       # publish settings (ServerPublish.props) + local publish.ps1
 ├─ Directory.Build.props      # shared build settings (net10.0, analyzers, etc.)
 ├─ Directory.Packages.props   # central package version management
 └─ RaccoonNinja.McpToolset.slnx
@@ -54,6 +55,20 @@ dotnet build RaccoonNinja.McpToolset.slnx
 dotnet test  RaccoonNinja.McpToolset.slnx
 ```
 
+To build self-contained, single-file executables locally (the same shape the release workflow ships), run the publish script for your shell:
+
+```bash
+# PowerShell (Windows, or pwsh on any platform)
+./eng/publish.ps1                 # win-x64, linux-x64, osx-arm64 -> dist/<rid>/
+./eng/publish.ps1 -Rids win-x64   # a single platform
+
+# Bash (Ubuntu / macOS)
+./eng/publish.sh                  # win-x64, linux-x64, osx-arm64 -> dist/<rid>/
+./eng/publish.sh win-x64          # a single platform
+```
+
+Each server becomes one self-contained executable: the .NET runtime and the native SQLite/BLAKE3 libraries are embedded, so there is nothing else to install to run it. The single-file settings live in `eng/ServerPublish.props`.
+
 ## Continuous integration
 
 Two GitHub Actions workflows live under [`.github/workflows`](.github/workflows):
@@ -65,10 +80,11 @@ Two GitHub Actions workflows live under [`.github/workflows`](.github/workflows)
   reuse it as a gate.
 - **Publish** (`publish.yml`): triggered by pushing a tag of the form
   `release/vX.Y.Z` (for example `release/v1.0.0`). It first re-runs QA as a
-  hard gate, then cross-compiles a self-contained, single-file binary of each
-  MCP server for `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`, packages
-  each as a named zip, and publishes them, together with a `SHA256SUMS.txt`
-  manifest, in a single atomic GitHub release.
+  hard gate, then cross-compiles each MCP server into a self-contained,
+  single-file executable (the .NET runtime and native libraries are embedded)
+  for `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`, packages each as a
+  named zip, and publishes them, together with a `SHA256SUMS.txt` manifest, in
+  a single atomic GitHub release.
 
 ## Releases and verification
 

@@ -81,13 +81,11 @@ jobs:
             outdir="${RUNNER_TEMP}/publish/${name}/${RID}"
 
             echo "::group::Publishing ${name} for ${RID}"
+            # Self-contained single-file settings (incl. native-library embedding and
+            # compression) live in eng/ServerPublish.props, imported by each server project.
             dotnet publish "$csproj" \
               --configuration Release \
               --runtime "$RID" \
-              --self-contained true \
-              -p:PublishSingleFile=true \
-              -p:DebugType=none \
-              -p:DebugSymbols=false \
               -p:Version="$VERSION" \
               -p:ContinuousIntegrationBuild=true \
               --output "$outdir"

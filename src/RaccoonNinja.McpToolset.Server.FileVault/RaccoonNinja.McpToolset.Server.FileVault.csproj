@@ -50,4 +50,6 @@
     <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
+  <Import Project="..\..\eng\ServerPublish.props" />
+
 </Project>

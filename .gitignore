@@ -56,6 +56,7 @@ bin/
 bld/
 build/
 cmake-build-*/
+dist/
 com_crashlytics_export_strings.xml
 coverage*.json
 coverage*.xml

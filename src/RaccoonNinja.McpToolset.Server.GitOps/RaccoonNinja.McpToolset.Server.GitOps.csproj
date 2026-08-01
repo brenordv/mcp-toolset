@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>RaccoonNinja.McpToolset.Server.GitOps</RootNamespace>
-    <AssemblyName>RaccoonNinja.McpToolset.Server.GitOps</AssemblyName>
+    <AssemblyName>git-ops</AssemblyName>
     <Description>Local stdio MCP server exposing read-only git inspection as typed, structured tools.</Description>
     <InvariantGlobalization>false</InvariantGlobalization>
     <!-- Required by [LibraryImport] source-generated marshalling on the libc stat() P/Invoke
@@ -27,5 +27,7 @@
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Sinks.Console" />
   </ItemGroup>
+
+  <Import Project="..\..\eng\ServerPublish.props" />
 
 </Project>
