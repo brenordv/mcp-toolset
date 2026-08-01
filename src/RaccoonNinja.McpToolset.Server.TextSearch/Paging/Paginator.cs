@@ -1,10 +1,9 @@
 namespace RaccoonNinja.McpToolset.Server.TextSearch.Paging;
 
 /// <summary>
-/// Pages an ordinal-sorted result set by resuming after a composite key. Multi-file tools flatten every
-/// targeted root into one list keyed <c>{rootIndex}\0{path}</c>, already ordered by (root, path), and
-/// page it here in one pass, so no root is lost at a page boundary and a page never comes back empty
-/// while more results remain. The skip is ordinal, matching how the flattened list is built.
+/// Pages an ordinal-sorted result set by resuming after a key. Multi-file tools key the scoped window by
+/// the scope-relative path, already ordinal-ordered, and page it here in one pass, so a page never comes
+/// back empty while more results remain. The skip is ordinal, matching how the window is built.
 /// </summary>
 public static class Paginator
 {

@@ -39,7 +39,6 @@ internal static class SelectorSupport
                 glob: glob,
                 regex: regex,
                 paths: paths,
-                includeIgnored: false,
                 caseSensitive: caseSensitive,
                 maxFiles: maxFiles,
                 extensions: extensions);

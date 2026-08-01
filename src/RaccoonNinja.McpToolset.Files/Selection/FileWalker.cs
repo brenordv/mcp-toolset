@@ -5,28 +5,35 @@ namespace RaccoonNinja.McpToolset.Files.Selection;
 /// <summary>
 /// Walks a confined root and returns the entries that survive four independent prunings: the root
 /// confinement (the walk only ever enumerates real directories inside the canonical root), the
-/// non-overridable secret denylist, the ignore-file rules, and symlink skipping. It never descends a
-/// reparse-point (symbolic-link or junction) directory, which both keeps the walk inside the real tree
-/// and makes a symlink cycle impossible, and it counts every skipped link so the caller can report an
-/// aggregate rather than leave the entries looking mysteriously absent. Confinement and the denylist are
-/// the security controls; ignore is a convenience rail the caller can disable. The result is sorted
-/// ordinal by root-relative path so pagination is deterministic.
+/// non-overridable secret denylist, the ignore rules (a built-in default tier plus the tree's own
+/// <c>.gitignore</c>/<c>.mcpignore</c> files), and symlink skipping. It never descends a reparse-point
+/// (symbolic-link or junction) directory, which both keeps the walk inside the real tree and makes a
+/// symlink cycle impossible, and it counts every skipped link so the caller can report an aggregate rather
+/// than leave the entries looking mysteriously absent. Confinement and the denylist are the security
+/// controls; ignore is a convenience rail a caller re-includes past with the <c>IncludeIgnored</c> globs.
+/// The result is sorted ordinal by root-relative path so pagination is deterministic.
 /// </summary>
 public sealed class FileWalker
 {
     private readonly IRootResolver _root;
     private readonly ISecretDenylist _denylist;
+    private readonly IgnoreRules _defaultIgnore;
 
     /// <summary>Create a walker bound to a confiner and the shared denylist.</summary>
     /// <param name="root">The root confiner; the walk stays inside its canonical root.</param>
     /// <param name="denylist">The non-overridable secret denylist applied to every entry.</param>
-    /// <exception cref="ArgumentNullException">Thrown when either argument is <c>null</c>.</exception>
-    public FileWalker(IRootResolver root, ISecretDenylist denylist)
+    /// <param name="defaultIgnore">
+    /// The built-in default ignore tier, seeded as the least-specific rule set so a project's own
+    /// <c>.gitignore</c>/<c>.mcpignore</c> overrides it; <c>null</c> means no default tier.
+    /// </param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="root"/> or <paramref name="denylist"/> is <c>null</c>.</exception>
+    public FileWalker(IRootResolver root, ISecretDenylist denylist, IgnoreRules defaultIgnore = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(denylist);
         _root = root;
         _denylist = denylist;
+        _defaultIgnore = defaultIgnore ?? IgnoreRules.Empty;
     }
 
     /// <summary>Walk the tree under <paramref name="options"/> and return the surviving, sorted entries.</summary>
@@ -93,7 +100,7 @@ public sealed class FileWalker
         };
     }
 
-    /// <summary>Prune, emit, or descend a single entry according to the four controls.</summary>
+    /// <summary>Prune, emit, or descend a single entry. The denylist gate always runs before any ignore decision.</summary>
     private void Process(
         FileSystemInfo info,
         Frame frame,
@@ -112,6 +119,8 @@ public sealed class FileWalker
             return;
         }
 
+        // Security gate first: a denylisted path is pruned before any ignore or re-include logic runs, so no
+        // include glob can ever descend into or surface a secret.
         var denied = isDirectory
             ? _denylist.IsDeniedDirectory(relativePath)
             : _denylist.IsDeniedFile(relativePath);
@@ -120,24 +129,89 @@ public sealed class FileWalker
             return;
         }
 
-        if (!options.IncludeIgnored && frame.Rules.IsIgnored(relativePath, isDirectory))
+        if (frame.InReIncludedSubtree)
         {
+            ProcessInsideReIncluded(info, relativePath, isDirectory, options, stack, results);
             return;
         }
 
+        var ignored = frame.Rules.IsIgnored(relativePath, isDirectory);
         if (isDirectory)
         {
-            if (options.IncludeDirectories && Matches(options.Match, relativePath))
+            ProcessDirectory(info, relativePath, ignored, frame, options, stack, results);
+            return;
+        }
+
+        if (ignored)
+        {
+            var include = options.IncludeIgnored;
+            if (!include.IsEmpty && include.Matches(relativePath) && Matches(options.Match, relativePath))
             {
-                results.Add(ToEntry(info, relativePath, isDirectory: true));
+                results.Add(ToEntry(info, relativePath, isDirectory: false));
             }
 
-            var childRules = IgnoreRules.Combine([frame.Rules, IgnoreRules.Load(info.FullName, relativePath)]);
-            stack.Push(new Frame(info.FullName, relativePath, childRules));
             return;
         }
 
         if (Matches(options.Match, relativePath))
+        {
+            results.Add(ToEntry(info, relativePath, isDirectory: false));
+        }
+    }
+
+    /// <summary>Handle a directory not yet inside a re-included subtree: descend, prune, or re-include it.</summary>
+    private static void ProcessDirectory(
+        FileSystemInfo info,
+        string relativePath,
+        bool ignored,
+        Frame frame,
+        FileWalkOptions options,
+        Stack<Frame> stack,
+        List<WalkEntry> results)
+    {
+        if (ignored)
+        {
+            // An ignored directory is descended only when a re-include glob could match beneath it; inside
+            // that subtree the ignore tiers no longer apply and the include globs alone decide what surfaces.
+            var include = options.IncludeIgnored;
+            if (!include.IsEmpty && include.CouldContain(relativePath))
+            {
+                stack.Push(new Frame(info.FullName, relativePath, IgnoreRules.Empty, InReIncludedSubtree: true));
+            }
+
+            return;
+        }
+
+        if (options.IncludeDirectories && Matches(options.Match, relativePath))
+        {
+            results.Add(ToEntry(info, relativePath, isDirectory: true));
+        }
+
+        var childRules = IgnoreRules.Combine([frame.Rules, IgnoreRules.Load(info.FullName, relativePath)]);
+        stack.Push(new Frame(info.FullName, relativePath, childRules, InReIncludedSubtree: false));
+    }
+
+    /// <summary>Handle an entry already inside a re-included subtree: gate descent and emission on the include globs.</summary>
+    private static void ProcessInsideReIncluded(
+        FileSystemInfo info,
+        string relativePath,
+        bool isDirectory,
+        FileWalkOptions options,
+        Stack<Frame> stack,
+        List<WalkEntry> results)
+    {
+        var include = options.IncludeIgnored;
+        if (isDirectory)
+        {
+            if (include.CouldContain(relativePath))
+            {
+                stack.Push(new Frame(info.FullName, relativePath, IgnoreRules.Empty, InReIncludedSubtree: true));
+            }
+
+            return;
+        }
+
+        if (include.Matches(relativePath) && Matches(options.Match, relativePath))
         {
             results.Add(ToEntry(info, relativePath, isDirectory: false));
         }
@@ -179,7 +253,7 @@ public sealed class FileWalker
     /// <summary>Accumulate the ignore rules that apply at the start directory, from the root down through it.</summary>
     private IgnoreRules BuildInitialRules(string startRel)
     {
-        var sets = new List<IgnoreRules> { IgnoreRules.Load(_root.CanonicalRoot, string.Empty) };
+        var sets = new List<IgnoreRules> { _defaultIgnore, IgnoreRules.Load(_root.CanonicalRoot, string.Empty) };
         if (startRel.Length == 0)
         {
             return IgnoreRules.Combine(sets);
@@ -197,6 +271,10 @@ public sealed class FileWalker
         return IgnoreRules.Combine(sets);
     }
 
-    /// <summary>One directory awaiting its turn on the walk stack, carrying the ignore rules in force there.</summary>
-    private sealed record Frame(string RealPath, string Rel, IgnoreRules Rules);
+    /// <summary>
+    /// One directory awaiting its turn on the walk stack, carrying the ignore rules in force there and
+    /// whether it sits inside a re-included ignored subtree (where the include globs, not the ignore tiers,
+    /// decide what surfaces).
+    /// </summary>
+    private sealed record Frame(string RealPath, string Rel, IgnoreRules Rules, bool InReIncludedSubtree = false);
 }

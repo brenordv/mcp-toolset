@@ -3,13 +3,9 @@ using System.Text.Json.Serialization;
 namespace RaccoonNinja.McpToolset.Server.TextSearch.Models;
 
 /// <summary>One entry returned by <c>inspect_files</c>: the encoding and text shape of a file.</summary>
-public sealed record FileInspection
+public sealed record FileInspection : IHasPath
 {
-    /// <summary>The name of the root this file is in.</summary>
-    [JsonPropertyName("root")]
-    public string Root { get; init; }
-
-    /// <summary>The <c>/</c>-separated path relative to <see cref="Root"/>.</summary>
+    /// <summary>The <c>/</c>-separated path relative to the call's scope (the <c>cwd</c>, or the base root when it is omitted).</summary>
     [JsonPropertyName("path")]
     public string Path { get; init; }
 

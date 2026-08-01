@@ -1,4 +1,5 @@
 using RaccoonNinja.McpToolset.Files.Security;
+using RaccoonNinja.McpToolset.Files.Selection;
 
 namespace RaccoonNinja.McpToolset.Files.Tests.Security;
 
@@ -119,5 +120,102 @@ public sealed class SecretDenylistTests
         // Act
         // Assert
         Assert.Throws<ArgumentNullException>(() => _denylist.IsDeniedFile(null));
+    }
+
+    [Theory]
+    [InlineData("build.secret")]
+    [InlineData("nested/token.secret")]
+    public void IsDeniedFile_ExtraFileGlob_ReturnsTrue(string path)
+    {
+        // Arrange
+        var denylist = new SecretDenylist(["*.secret"]);
+
+        // Act
+        var actual = denylist.IsDeniedFile(path);
+
+        // Assert
+        Assert.True(actual);
+    }
+
+    [Fact]
+    public void IsDeniedDirectory_ExtraDirectorySegment_ReturnsTrue()
+    {
+        // Arrange
+        var denylist = new SecretDenylist(["private/"]);
+
+        // Act
+        // Assert
+        Assert.True(denylist.IsDeniedDirectory("a/private"));
+        Assert.True(denylist.IsDeniedFile("a/private/token.txt"));
+    }
+
+    [Fact]
+    public void Constructor_ExtraDenyCannotRemoveBuiltin()
+    {
+        // Arrange
+        var denylist = new SecretDenylist(["!*.env"]);
+
+        // Act
+        var actual = denylist.IsDeniedFile(".env");
+
+        // Assert
+        Assert.True(actual);
+    }
+
+    [Theory]
+    [InlineData("/etc/passwd")]
+    [InlineData("C:/secrets")]
+    [InlineData("\\\\host\\share")]
+    public void Constructor_AbsoluteExtraEntry_Throws(string entry)
+    {
+        // Arrange
+        // Act
+        // Assert
+        Assert.Throws<ArgumentException>(() => new SecretDenylist([entry]));
+    }
+
+    [Fact]
+    public void Constructor_ExtraDirectoryEntryWithInternalSlash_Throws()
+    {
+        // Arrange
+        // Act
+        // Assert
+        Assert.Throws<ArgumentException>(() => new SecretDenylist(["a/b/"]));
+    }
+
+    [Fact]
+    public void Constructor_MalformedExtraGlob_Throws()
+    {
+        // Arrange
+        const string deeplyNested = "{{{{{a}}}}}";
+
+        // Act
+        // Assert
+        Assert.Throws<RegexCompilationException>(() => new SecretDenylist([deeplyNested]));
+    }
+
+    [Fact]
+    public void DescribePatterns_IncludesExtras()
+    {
+        // Arrange
+        var denylist = new SecretDenylist(["*.secret", "private/"]);
+
+        // Act
+        var patterns = denylist.DescribePatterns();
+
+        // Assert
+        Assert.Contains("*.secret", patterns);
+        Assert.Contains("**/private/**", patterns);
+    }
+
+    [Fact]
+    public void ReparentUnsafeLeafSegments_ContainsConfigParent()
+    {
+        // Arrange
+        // Act
+        var segments = _denylist.ReparentUnsafeLeafSegments;
+
+        // Assert
+        Assert.Contains(".config", segments);
     }
 }

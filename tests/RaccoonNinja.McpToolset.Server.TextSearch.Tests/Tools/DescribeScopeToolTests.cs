@@ -18,8 +18,8 @@ public sealed class DescribeScopeToolTests
         // Assert
         Assert.Null(envelope.Error);
         var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
-        Assert.Contains("**/.git/**", info.DenylistPatterns);
-        Assert.Contains(".env*", info.DenylistPatterns);
+        Assert.Contains("**/.git/**", info.Denylist);
+        Assert.Contains(".env*", info.Denylist);
         Assert.Equal("utf-8", info.DefaultEncoding);
         Assert.Equal("utf-16 code units", info.ColumnUnit);
         Assert.True(info.DenylistedOmitted);
@@ -28,20 +28,34 @@ public sealed class DescribeScopeToolTests
     }
 
     [Fact]
-    public async Task DescribeScope_ListsRootsByNameAndKind_NoAbsolutePath()
+    public async Task DescribeScope_ReportsBaseRootScopeModelAndIgnoreTiers_NoAbsolutePath()
     {
         // Arrange
-        using var harness = new TextSearchHarness([("app", RootKind.Workspace), ("cargo", RootKind.Package)]);
+        using var harness = new TextSearchHarness();
 
         // Act
         var envelope = await harness.Describe.InvokeAsync();
 
         // Assert
         var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
-        Assert.Equal(2, info.Roots.Count);
-        Assert.Contains(info.Roots, root => root.Name == "app" && root.Kind == "workspace");
-        Assert.Contains(info.Roots, root => root.Name == "cargo" && root.Kind == "package");
-        Assert.DoesNotContain(harness.RootDir("app"), TextSearchHarness.ToJson(envelope), StringComparison.Ordinal);
-        Assert.DoesNotContain(harness.RootDir("cargo"), TextSearchHarness.ToJson(envelope), StringComparison.Ordinal);
+        Assert.Equal(Path.GetFileName(harness.Root), info.BaseRoot);
+        Assert.Contains("cwd", info.ScopeModel, StringComparison.Ordinal);
+        Assert.Equal([".gitignore", ".mcpignore"], info.IgnoreFiles);
+        Assert.NotEmpty(info.DefaultIgnore);
+        Assert.DoesNotContain(harness.Root, TextSearchHarness.ToJson(envelope), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DescribeScope_DefaultIgnoreDisabled_ReportsEmptyTier()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness(defaultIgnore: "off");
+
+        // Act
+        var envelope = await harness.Describe.InvokeAsync();
+
+        // Assert
+        var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
+        Assert.Empty(info.DefaultIgnore);
     }
 }

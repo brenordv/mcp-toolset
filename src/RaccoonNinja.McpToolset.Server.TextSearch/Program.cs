@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -25,12 +26,16 @@ public static class Program
     private const string ServerName = "text-search";
 
     private const string ServerInstructions =
-        "Read-only, root-confined text search and inspection. Blanket-approve it: it never writes, never "
-        + "leaves its configured root, and never reads a secret (a non-overridable denylist covers .env, "
-        + "keys, .git, and the like). Call describe_scope first for the roots and caps. find_files lists "
-        + "files by glob (primary), regex, or explicit paths; inspect_files reports encoding and line "
-        + "shape; search_text greps line by line; read_lines returns a numbered slice. Paths are always "
-        + "root-relative, in and out. List results paginate via the returned cursor.";
+        "Read-only, base-root-confined text search and inspection. Blanket-approve it: it never writes, "
+        + "never leaves its configured base root, and never reads a secret (a non-overridable denylist "
+        + "covers .env, keys, .git, and the like). Pass cwd (an absolute working directory inside the base "
+        + "root) to scope a call to one project; omit it to search the whole base root, which is the heavy "
+        + "path. Paths are relative to cwd (or to the base root when cwd is omitted), in and out. Call "
+        + "describe_scope first for the caps, the ignore tiers, and the denylist. find_files lists files by "
+        + "glob (primary), regex, or explicit paths; inspect_files reports encoding and line shape; "
+        + "search_text greps line by line; read_lines returns a numbered slice. include_ignored takes globs "
+        + "that re-include otherwise-ignored paths (never secrets). List results paginate via the returned "
+        + "cursor (keep cwd stable across pages).";
 
     /// <summary>The process entrypoint.</summary>
     /// <param name="args">Command-line arguments (passed to the host builder; config comes from the environment).</param>
@@ -42,14 +47,15 @@ public static class Program
         var serverLogger = ServerEventLog.ForServer(Log.Logger);
 
         SearchConfig config;
-        RootRegistry registry;
-        SecretDenylist denylist;
+        ScopeResolver resolver;
         try
         {
             config = SearchConfig.Load();
-            denylist = new SecretDenylist();
-            registry = RootRegistry.Load(config, denylist);
-            ServerEventLog.Scope(serverLogger, RootsHash(registry), config.CapsSummary());
+            resolver = ScopeResolver.Load(config);
+            var caps = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{config.CapsSummary()} defaultIgnore={resolver.DefaultIgnorePatterns.Count} denylist={resolver.Denylist.DescribePatterns().Count}");
+            ServerEventLog.Scope(serverLogger, resolver.RootHash, caps);
         }
         catch (SearchStartupException ex)
         {
@@ -65,8 +71,8 @@ public static class Program
 
         builder.Services.AddSingleton(metrics);
         builder.Services.AddSingleton(config);
-        builder.Services.AddSingleton(registry);
-        builder.Services.AddSingleton<ISecretDenylist>(denylist);
+        builder.Services.AddSingleton(resolver);
+        builder.Services.AddSingleton<ISecretDenylist>(resolver.Denylist);
         builder.Services.AddSingleton<IEncodingDetector, EncodingDetector>();
         builder.Services.AddSingleton<ToolCommon>();
 
@@ -110,8 +116,4 @@ public static class Program
 
         return exitCode;
     }
-
-    /// <summary>An 8-char hash of the configured roots, so the scope log correlates without leaking paths.</summary>
-    private static string RootsHash(RootRegistry registry)
-        => LogScrubbing.HashedValue(string.Join('\n', registry.All.Select(root => root.Confinement.CanonicalRoot)));
 }

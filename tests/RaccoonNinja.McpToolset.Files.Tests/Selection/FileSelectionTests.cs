@@ -88,7 +88,7 @@ public sealed class FileSelectionTests : IDisposable
         Write(".env", "SECRET=1");
 
         // Act
-        var paths = Paths(_selection.Select(FileSelector.Create(includeIgnored: true)));
+        var paths = Paths(_selection.Select(FileSelector.Create(includeIgnored: IncludeGlobSet.Compile(["**"]))));
 
         // Assert
         Assert.Contains("skip.log", paths);

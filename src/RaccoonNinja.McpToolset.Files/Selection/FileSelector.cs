@@ -15,7 +15,7 @@ public sealed class FileSelector
         string glob,
         string regex,
         IReadOnlyList<string> paths,
-        bool includeIgnored,
+        IncludeGlobSet includeIgnored,
         bool caseSensitive,
         int maxFiles,
         IReadOnlySet<string> extensions)
@@ -46,8 +46,8 @@ public sealed class FileSelector
     /// <summary>The explicit paths when <see cref="Mode"/> is <see cref="SelectionMode.Paths"/>; otherwise <c>null</c>.</summary>
     public IReadOnlyList<string> Paths { get; }
 
-    /// <summary>Whether ignore-file rules are bypassed (text-search only; the server rejects it for text-edit).</summary>
-    public bool IncludeIgnored { get; }
+    /// <summary>The globs re-including otherwise-ignored paths (text-search only; empty for text-edit). Never re-includes a denylisted path.</summary>
+    public IncludeGlobSet IncludeIgnored { get; }
 
     /// <summary>Whether matching is case-sensitive; never propagated to the denylist, which is always insensitive.</summary>
     public bool CaseSensitive { get; }
@@ -71,7 +71,7 @@ public sealed class FileSelector
     /// <param name="glob">A glob pattern, or <c>null</c>.</param>
     /// <param name="regex">A raw regex, or <c>null</c>.</param>
     /// <param name="paths">An explicit path list, or <c>null</c>.</param>
-    /// <param name="includeIgnored">Whether to bypass ignore rules.</param>
+    /// <param name="includeIgnored">The globs re-including otherwise-ignored paths, or <c>null</c> for none.</param>
     /// <param name="caseSensitive">Whether matching is case-sensitive.</param>
     /// <param name="maxFiles">The result cap; defaults to unbounded so the server sets the policy ceiling.</param>
     /// <param name="extensions">File extensions (dot optional, case-insensitive) a file must have; <c>null</c> for no filter.</param>
@@ -82,7 +82,7 @@ public sealed class FileSelector
         string glob = null,
         string regex = null,
         IReadOnlyList<string> paths = null,
-        bool includeIgnored = false,
+        IncludeGlobSet includeIgnored = null,
         bool caseSensitive = false,
         int maxFiles = int.MaxValue,
         IReadOnlyList<string> extensions = null)
@@ -108,7 +108,7 @@ public sealed class FileSelector
             hasGlob ? glob : null,
             hasRegex ? regex : null,
             hasPaths ? paths : null,
-            includeIgnored,
+            includeIgnored ?? IncludeGlobSet.Empty,
             caseSensitive,
             maxFiles,
             NormalizeExtensions(extensions));

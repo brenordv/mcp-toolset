@@ -17,8 +17,11 @@ public sealed record FileWalkOptions
     /// </summary>
     public Func<string, bool> Match { get; init; }
 
-    /// <summary>When <c>true</c>, ignore-file rules are not applied (text-search only; off by default).</summary>
-    public bool IncludeIgnored { get; init; }
+    /// <summary>
+    /// The globs that re-include otherwise-ignored paths for this walk (text-search only; empty by default,
+    /// so every ignore tier stays in force). Never re-includes a denylisted path.
+    /// </summary>
+    public IncludeGlobSet IncludeIgnored { get; init; } = IncludeGlobSet.Empty;
 
     /// <summary>When <c>true</c>, directories that survive pruning are returned too; by default only files are.</summary>
     public bool IncludeDirectories { get; init; }

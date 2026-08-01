@@ -19,14 +19,15 @@ public sealed class FileSelection
     /// <summary>Create a selection service over a confiner and the shared denylist.</summary>
     /// <param name="root">The root confiner; selection never escapes its canonical root.</param>
     /// <param name="denylist">The non-overridable secret denylist enforced at the read gate.</param>
-    /// <exception cref="ArgumentNullException">Thrown when either argument is <c>null</c>.</exception>
-    public FileSelection(IRootResolver root, ISecretDenylist denylist)
+    /// <param name="defaultIgnore">The built-in default ignore tier passed to the walker; <c>null</c> means none.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="root"/> or <paramref name="denylist"/> is <c>null</c>.</exception>
+    public FileSelection(IRootResolver root, ISecretDenylist denylist, IgnoreRules defaultIgnore = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(denylist);
         _root = root;
         _denylist = denylist;
-        _walker = new FileWalker(root, denylist);
+        _walker = new FileWalker(root, denylist, defaultIgnore);
     }
 
     /// <summary>Resolve <paramref name="selector"/> to its files.</summary>

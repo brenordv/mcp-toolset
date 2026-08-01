@@ -46,13 +46,22 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
             extras: new Dictionary<string, object>(StringComparer.Ordinal) { [LogFields.RefusalReason] = "regex_timeout" });
     }
 
-    /// <summary>Record that a call reached into a package root, both as a counter and a per-call log line.</summary>
+    /// <summary>Record that a call searched the whole base root (no <c>cwd</c> scope), as a counter and a log line.</summary>
     /// <param name="ctx">The call context.</param>
-    public void PackageTargeted(CallContext ctx)
+    public void WholeBase(CallContext ctx)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        metrics.RecordPackageTargeting();
-        ctx.Log(LogLevel.Debug, "package_targeted");
+        metrics.RecordWholeBaseCall();
+        ctx.Log(LogLevel.Debug, "whole_base");
+    }
+
+    /// <summary>Record that a call re-included otherwise-ignored paths, as a counter and a log line.</summary>
+    /// <param name="ctx">The call context.</param>
+    public void IncludeIgnoredUsed(CallContext ctx)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        metrics.RecordIncludeIgnored();
+        ctx.Log(LogLevel.Debug, "include_ignored");
     }
 
     /// <summary>Record that an agent regex fell back from the non-backtracking to the backtracking engine.</summary>
@@ -98,6 +107,13 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
         {
             metrics.RecordToolCall(ctx.Tool, "error");
             metrics.RecordDurationMs((int)stopwatch.ElapsedMilliseconds);
+            if (ex.RefusalReason is not null)
+            {
+                // A boundary refusal (for example a cwd escaping the base) is counted in refusals_total and
+                // emits a refusal log line in addition to the generic tool_error.
+                Refusal(ctx, ex.RefusalReason);
+            }
+
             ctx.Log(
                 LogLevel.Warning,
                 "tool_error",
