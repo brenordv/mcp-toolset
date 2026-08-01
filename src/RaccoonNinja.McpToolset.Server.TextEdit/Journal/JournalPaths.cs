@@ -64,27 +64,18 @@ public sealed class JournalPaths
         var rootHash = Blake3.Hasher.Hash(Encoding.UTF8.GetBytes(canonicalRoot)).ToString();
         var dir = Path.GetFullPath(Path.Combine(appDataBase, rootHash));
 
-        EnsureOutsideRoot(dir, canonicalRoot);
+        if (root.ContainsPath(dir))
+        {
+            throw new EditStartupException(
+                "the journal directory resolves inside the edit root; the pre-image store must live outside "
+                + "the root so this server's own write tools cannot alter it. Move the journal location (or the root) so they do not overlap");
+        }
 
         Directory.CreateDirectory(dir);
         Directory.CreateDirectory(Path.Combine(dir, BlobsDirName));
         Harden(dir);
 
         return new JournalPaths(dir, rootHash);
-    }
-
-    private static void EnsureOutsideRoot(string journalDir, string canonicalRoot)
-    {
-        var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var root = Path.GetFullPath(canonicalRoot);
-        if (journalDir.Equals(root, comparison)
-            || journalDir.StartsWith(root + Path.DirectorySeparatorChar, comparison)
-            || journalDir.StartsWith(root + Path.AltDirectorySeparatorChar, comparison))
-        {
-            throw new EditStartupException(
-                "the journal directory resolves inside the edit root; the pre-image store must live outside "
-                + "the root so this server's own write tools cannot alter it. Move the journal location (or the root) so they do not overlap");
-        }
     }
 
     private static void Harden(string dir)

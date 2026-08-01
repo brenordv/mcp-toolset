@@ -47,6 +47,43 @@ public sealed class RootConfinementTests : IDisposable
     }
 
     [Fact]
+    public void ContainsPath_RootItself_ReturnsTrue()
+    {
+        // Arrange
+        // Act
+        var contained = _confiner.ContainsPath(_rootDir);
+
+        // Assert
+        Assert.True(contained);
+    }
+
+    [Fact]
+    public void ContainsPath_NotYetCreatedChild_ReturnsTrue()
+    {
+        // Arrange
+        var child = Path.Combine(_rootDir, "journal", "blobs");
+
+        // Act
+        var contained = _confiner.ContainsPath(child);
+
+        // Assert
+        Assert.True(contained);
+    }
+
+    [Fact]
+    public void ContainsPath_SiblingOutsideRoot_ReturnsFalse()
+    {
+        // Arrange
+        var sibling = NewTempDirectory("sibling");
+
+        // Act
+        var contained = _confiner.ContainsPath(sibling);
+
+        // Assert
+        Assert.False(contained);
+    }
+
+    [Fact]
     public void Confine_ExistingNestedFile_ReturnsRootRelativePosixPath()
     {
         // Arrange

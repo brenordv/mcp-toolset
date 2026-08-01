@@ -58,6 +58,34 @@ public sealed class RootConfinement : IRootResolver
         };
     }
 
+    /// <summary>
+    /// Whether <paramref name="absolutePath"/> resolves to the root itself or a path beneath it, with every
+    /// symbolic link in the path collapsed the same way the root was canonicalized (so a <c>/var</c> path on
+    /// macOS is compared as its <c>/private/var</c> real path). A not-yet-created leaf is resolved against its
+    /// longest existing ancestor. Returns <c>false</c> when the path cannot be resolved.
+    /// </summary>
+    /// <param name="absolutePath">An absolute path to test against the root.</param>
+    /// <returns><c>true</c> when the resolved path is the root or lies inside it.</returns>
+    public bool ContainsPath(string absolutePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(absolutePath);
+
+        string real;
+        try
+        {
+            real = Canonicalize(Path.GetFullPath(absolutePath), nameof(absolutePath));
+        }
+        catch (Exception ex) when (ex is PathConfinementException or ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        var normalized = real.TrimEnd(Separators);
+        return normalized.Equals(CanonicalRoot, PathComparison)
+            || normalized.StartsWith(CanonicalRoot + Path.DirectorySeparatorChar, PathComparison)
+            || normalized.StartsWith(CanonicalRoot + Path.AltDirectorySeparatorChar, PathComparison);
+    }
+
     /// <summary>Refuse the syntactic forms that defeat a lexical prefix check before any resolution runs.</summary>
     private static void RejectHostileSyntax(string raw, string paramName)
     {
