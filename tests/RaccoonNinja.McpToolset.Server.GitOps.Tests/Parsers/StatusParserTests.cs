@@ -6,12 +6,16 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Parsers;
 public class StatusParserTests
 {
     [Fact]
-    public void Parse_Reads_Branch_Headers_And_AheadBehind()
+    public void Parse_ReadsBranchHeadersAndAheadBehind()
     {
+        // Arrange
         var bytes = Encoding.UTF8.GetBytes(
             "# branch.head main\0# branch.upstream origin/main\0# branch.ab +2 -1\0");
+
+        // Act
         var status = StatusParser.Parse(bytes);
 
+        // Assert
         Assert.Equal("main", status.Branch);
         Assert.Equal("origin/main", status.Upstream);
         Assert.Equal(2, status.Ahead);
@@ -20,21 +24,28 @@ public class StatusParserTests
     }
 
     [Fact]
-    public void Parse_Marks_Branch_Null_When_Detached()
+    public void Parse_MarksBranchNullWhenDetached()
     {
+        // Arrange
         var bytes = Encoding.UTF8.GetBytes("# branch.head (detached)\0");
+
+        // Act & Assert
         Assert.Null(StatusParser.Parse(bytes).Branch);
     }
 
     [Fact]
-    public void Parse_Classifies_Staged_Unstaged_Untracked()
+    public void Parse_ClassifiesStagedUnstagedUntracked()
     {
+        // Arrange
         var bytes = Encoding.UTF8.GetBytes(
             "1 M. N... 100644 100644 100644 abc abc src/staged.txt\0" +
             "1 .M N... 100644 100644 100644 def def src/unstaged.txt\0" +
             "? src/new.txt\0");
+
+        // Act
         var status = StatusParser.Parse(bytes);
 
+        // Assert
         Assert.Single(status.Staged, s => s.Path == "src/staged.txt");
         Assert.Single(status.Unstaged, s => s.Path == "src/unstaged.txt");
         Assert.Single(status.Untracked, s => s.Path == "src/new.txt" && s.IsUntracked);
@@ -42,12 +53,16 @@ public class StatusParserTests
     }
 
     [Fact]
-    public void Parse_Handles_Rename_With_Orig_Path_In_Next_Token()
+    public void Parse_HandlesRenameWithOrigPathInNextToken()
     {
+        // Arrange
         var bytes = Encoding.UTF8.GetBytes(
             "2 R. N... 100644 100644 100644 abc abc R100 src/new.txt\0src/old.txt\0");
+
+        // Act
         var status = StatusParser.Parse(bytes);
 
+        // Assert
         var entry = Assert.Single(status.Staged);
         Assert.Equal("src/new.txt", entry.Path);
         Assert.Equal("src/old.txt", entry.OrigPath);

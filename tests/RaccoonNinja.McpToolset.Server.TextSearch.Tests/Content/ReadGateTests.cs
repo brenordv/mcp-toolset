@@ -16,20 +16,26 @@ public sealed class ReadGateTests
     [Fact]
     public async Task Inspect_PathsWithSecrets_OmitsDenylisted()
     {
+        // Arrange
         using var harness = SeedSecrets();
 
+        // Act
         var envelope = await harness.Inspect.InvokeAsync(paths: SecretPaths);
 
+        // Assert
         Assert.Equal(["ok.cs"], TextSearchHarness.Paths(envelope));
     }
 
     [Fact]
     public async Task Search_PathsWithSecrets_MatchesOnlyAllowedFile()
     {
+        // Arrange
         using var harness = SeedSecrets();
 
+        // Act
         var envelope = await harness.Search.InvokeAsync(pattern: "token", paths: SecretPaths);
 
+        // Assert
         var matches = envelope.Results.Cast<ContentMatch>().ToArray();
         Assert.NotEmpty(matches);
         Assert.All(matches, match => Assert.Equal("ok.cs", match.Path));
@@ -38,10 +44,13 @@ public sealed class ReadGateTests
     [Fact]
     public async Task ReadLines_GitConfig_IsRefused()
     {
+        // Arrange
         using var harness = SeedSecrets();
 
+        // Act
         var envelope = await harness.ReadLines.InvokeAsync(path: ".git/config");
 
+        // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.NotFound, envelope.Error.Code);
     }

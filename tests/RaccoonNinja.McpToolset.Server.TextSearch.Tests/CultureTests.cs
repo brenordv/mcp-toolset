@@ -14,24 +14,30 @@ public sealed class CultureTests
     [Fact]
     public async Task Search_CaseInsensitive_UnderTurkishCulture_MatchesAsciiI()
     {
+        // Arrange
         using var restore = new CultureScope("tr-TR");
         using var harness = new TextSearchHarness();
         harness.Write("a.txt", "INDEX\nindex\nIndex");
 
+        // Act
         var envelope = await harness.Search.InvokeAsync(pattern: "index", glob: "*.txt");
 
+        // Assert
         Assert.Equal(3, envelope.Results.Count);
     }
 
     [Fact]
     public async Task FindFiles_GlobCaseInsensitive_UnderTurkishCulture_MatchesAsciiI()
     {
+        // Arrange
         using var restore = new CultureScope("tr-TR");
         using var harness = new TextSearchHarness();
         harness.Write("index.txt", "x");
 
+        // Act
         var envelope = await harness.Find.InvokeAsync(glob: "INDEX.txt");
 
+        // Assert
         Assert.Equal(["index.txt"], TextSearchHarness.Paths(envelope));
     }
 

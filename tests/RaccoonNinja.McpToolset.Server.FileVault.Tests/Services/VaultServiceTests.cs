@@ -69,10 +69,10 @@ public sealed class VaultServiceTests : IDisposable
         Save("line one\nline two", baseVersion: null);
         Save("line one\nline two CHANGED", baseVersion: 1);
 
-        // Act: a second writer still at base_version 1.
+        // Act
         Action act = () => Save("line one\nsomething else", baseVersion: 1);
 
-        // Assert: the hint carries base/current and a base-to-current diff.
+        // Assert
         var conflict = Assert.Throws<VaultException>(act);
         Assert.Equal(VaultErrorCode.Conflict, conflict.Code);
         Assert.Equal(2, conflict.CurrentVersion);
@@ -85,7 +85,7 @@ public sealed class VaultServiceTests : IDisposable
     [Fact]
     public void Save_FirstSaveRace_ThrowsHintlessConflict()
     {
-        // Arrange: a duplicate first save has no base_version, so no hint is possible.
+        // Arrange
         Save("winner", baseVersion: null);
 
         // Act
@@ -101,7 +101,7 @@ public sealed class VaultServiceTests : IDisposable
     [Fact]
     public void Save_ConflictWithUnreadableBaseSnapshot_DegradesToHintlessConflict()
     {
-        // Arrange: destroy the base snapshot so hint enrichment cannot read it back.
+        // Arrange
         Save("v1 content", baseVersion: null);
         var v1RelPath = _service.Get(Project, Name, version: 1).Record.RelPath;
         Save("v2 content", baseVersion: 1);

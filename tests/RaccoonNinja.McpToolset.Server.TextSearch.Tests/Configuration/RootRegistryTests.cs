@@ -13,22 +13,30 @@ public sealed class RootRegistryTests : IDisposable
 
     [Fact]
     public void Create_NoWorkspaceRoot_FailsFast()
-        => Assert.Throws<SearchStartupException>(() => RootRegistry.Create(Config, Denylist, "", null));
+    {
+        // Act & Assert
+        Assert.Throws<SearchStartupException>(() => RootRegistry.Create(Config, Denylist, "", null));
+    }
 
     [Fact]
     public void Create_NonexistentRoot_FailsFast()
     {
+        // Arrange
         var missing = Path.Combine(Path.GetTempPath(), $"rnmcp-missing-{Guid.NewGuid():N}");
+
+        // Act & Assert
         Assert.Throws<SearchStartupException>(() => RootRegistry.Create(Config, Denylist, missing, null));
     }
 
     [Fact]
     public void Create_OverlappingRoots_FailsFast()
     {
+        // Arrange
         var parent = NewTempDirectory("parent");
         var child = Path.Combine(parent, "nested");
         Directory.CreateDirectory(child);
 
+        // Act & Assert
         Assert.Throws<SearchStartupException>(() =>
             RootRegistry.Create(Config, Denylist, string.Join(';', parent, child), null));
     }
@@ -36,15 +44,21 @@ public sealed class RootRegistryTests : IDisposable
     [Fact]
     public void Create_ReservedName_FailsFast()
     {
+        // Arrange
         var dir = NewTempDirectory("reserved");
+
+        // Act & Assert
         Assert.Throws<SearchStartupException>(() => RootRegistry.Create(Config, Denylist, $"@bad={dir}", null));
     }
 
     [Fact]
     public void Create_DuplicateAlias_FailsFast()
     {
+        // Arrange
         var first = NewTempDirectory("dup1");
         var second = NewTempDirectory("dup2");
+
+        // Act & Assert
         Assert.Throws<SearchStartupException>(() =>
             RootRegistry.Create(Config, Denylist, $"x={first};x={second}", null));
     }
@@ -52,11 +66,14 @@ public sealed class RootRegistryTests : IDisposable
     [Fact]
     public void Create_Aliases_PreserveNamesAndKinds()
     {
+        // Arrange
         var workspace = NewTempDirectory("ws");
         var package = NewTempDirectory("pkg");
 
+        // Act
         var registry = RootRegistry.Create(Config, Denylist, $"app={workspace}", $"cargo={package}");
 
+        // Assert
         Assert.Contains(registry.All, root => root is { Name: "app", Kind: RootKind.Workspace });
         Assert.Contains(registry.All, root => root is { Name: "cargo", Kind: RootKind.Package });
     }
@@ -64,13 +81,16 @@ public sealed class RootRegistryTests : IDisposable
     [Fact]
     public void Create_DerivedNameCollision_IsDisambiguated()
     {
+        // Arrange
         var first = Path.Combine(NewTempDirectory("a"), "src");
         var second = Path.Combine(NewTempDirectory("b"), "src");
         Directory.CreateDirectory(first);
         Directory.CreateDirectory(second);
 
+        // Act
         var registry = RootRegistry.Create(Config, Denylist, string.Join(';', first, second), null);
 
+        // Assert
         var names = registry.All.Select(root => root.Name).ToArray();
         Assert.Contains("src", names);
         Assert.Contains("src-2", names);
@@ -79,10 +99,14 @@ public sealed class RootRegistryTests : IDisposable
     [Fact]
     public void Resolve_UnknownRoot_ThrowsInvalidArgument()
     {
+        // Arrange
         var dir = NewTempDirectory("only");
         var registry = RootRegistry.Create(Config, Denylist, $"app={dir}", null);
 
+        // Act
         var exception = Assert.Throws<TextSearchException>(() => registry.Resolve("nope"));
+
+        // Assert
         Assert.Equal(ErrorCodes.InvalidArgument, exception.Code);
     }
 

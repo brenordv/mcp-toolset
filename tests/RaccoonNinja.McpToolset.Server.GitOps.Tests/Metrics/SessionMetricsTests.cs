@@ -5,18 +5,24 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Metrics;
 public class SessionMetricsTests
 {
     [Fact]
-    public void Summary_Is_Empty_For_Fresh_Instance()
+    public void Summary_IsEmptyForFreshInstance()
     {
+        // Arrange
         var metrics = new SessionMetrics();
+
+        // Act
         var summary = metrics.Summary();
+
+        // Assert
         Assert.Equal(0, summary["subprocess_duration_ms_p50"]);
         Assert.Equal(0, summary["subprocess_duration_ms_p95"]);
         Assert.Equal(0L, summary["cache_hits_total"]);
     }
 
     [Fact]
-    public void Counters_Accumulate_Per_Tool_And_Outcome()
+    public void Counters_AccumulatePerToolAndOutcome()
     {
+        // Arrange
         var metrics = new SessionMetrics();
         metrics.RecordToolCall("git_log", "ok");
         metrics.RecordToolCall("git_log", "ok");
@@ -26,7 +32,10 @@ public class SessionMetricsTests
         metrics.RecordTruncation();
         metrics.RecordTimeout();
 
+        // Act
         var summary = metrics.Summary();
+
+        // Assert
         var calls = (System.Collections.Generic.Dictionary<string, object>)summary["tool_calls_total"];
         Assert.Equal(2L, (long)calls["git_log:ok"]);
         Assert.Equal(1L, (long)calls["git_log:error"]);
@@ -37,24 +46,33 @@ public class SessionMetricsTests
     }
 
     [Fact]
-    public void Git_Command_Errors_Are_Counted_Separately_From_Timeouts()
+    public void Git_CommandErrorsAreCountedSeparatelyFromTimeouts()
     {
+        // Arrange
         var metrics = new SessionMetrics();
         metrics.RecordGitCommandError();
         metrics.RecordGitCommandError();
         metrics.RecordTimeout();
 
+        // Act
         var summary = metrics.Summary();
+
+        // Assert
         Assert.Equal(2L, summary["git_command_errors_total"]);
         Assert.Equal(1L, summary["timeouts_total"]);
     }
 
     [Fact]
-    public void Duration_Quantiles_Track_Min_And_Max_Sample()
+    public void Duration_QuantilesTrackMinAndMaxSample()
     {
+        // Arrange
         var metrics = new SessionMetrics();
         for (var i = 1; i <= 100; i++) metrics.RecordDurationMs(i);
+
+        // Act
         var summary = metrics.Summary();
+
+        // Assert
         var p50 = (int)summary["subprocess_duration_ms_p50"];
         var p95 = (int)summary["subprocess_duration_ms_p95"];
         Assert.InRange(p50, 40, 60);

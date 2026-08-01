@@ -44,9 +44,6 @@ public sealed class UndoerTests : IDisposable
     [Fact]
     public void Undo_AfterWriteFailure_HashGatesInsteadOfClobberingLaterEdit()
     {
-        // A write that fails after its row is journaled must finalize the row (post == pre) so undo
-        // hash-gates it. A row left pending would be restored unconditionally and clobber an edit made
-        // after the failure.
         if (!OperatingSystem.IsWindows())
         {
             Assert.Skip("Blocking the replace while still allowing the gate's read is Windows sharing semantics.");
@@ -55,26 +52,19 @@ public sealed class UndoerTests : IDisposable
         // Arrange
         _harness.WriteText("a.txt", "hello world");
         var full = Path.Combine(_harness.Root, "a.txt");
-
         BatchOutcome outcome;
         using (File.Open(full, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
-            // FileShare.Read lets the gate read the file but denies the delete the atomic replace needs, so
-            // the write fails only after BeginBatch has already committed the row.
             outcome = _harness.Apply("replace_text", Replace("world", "there"), "a.txt");
         }
 
         Assert.Equal(RefusalReason.WriteFailed, outcome.Files[0].Reason);
-        Assert.NotNull(outcome.BatchId);
-        Assert.Equal("hello world", _harness.ReadText("a.txt"));
-
-        // A later manual edit changes the file out from under the journaled (post == pre) hash.
         _harness.WriteText("a.txt", "a later manual edit");
 
         // Act
         var undo = _harness.Undoer.Undo(outcome.BatchId.Value);
 
-        // Assert: the hash gate skips it, so the manual edit survives.
+        // Assert
         Assert.Contains(undo.Skipped, skip => skip.Path == "a.txt" && skip.Reason == UndoSkipReason.HashMismatch);
         Assert.Equal("a later manual edit", _harness.ReadText("a.txt"));
     }

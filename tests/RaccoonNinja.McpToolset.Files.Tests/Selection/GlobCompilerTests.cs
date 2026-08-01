@@ -196,13 +196,18 @@ public sealed class GlobCompilerTests
     [Fact]
     public void Compile_DeeplyNestedBraces_ThrowsRegexCompilationException()
     {
-        // Five levels of brace nesting exceeds the depth cap (guards against stack overflow).
+        // Arrange
+        // Act
+        // Assert
         Assert.Throws<RegexCompilationException>(() => GlobCompiler.Compile("{a,{b,{c,{d,{e,f}}}}}.txt"));
     }
 
     [Fact]
     public void Compile_OverlongGlob_ThrowsRegexCompilationException()
     {
+        // Arrange
+        // Act
+        // Assert
         Assert.Throws<RegexCompilationException>(() => GlobCompiler.Compile(new string('a', 3000)));
     }
 }

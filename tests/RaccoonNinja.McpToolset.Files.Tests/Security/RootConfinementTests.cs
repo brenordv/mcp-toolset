@@ -212,7 +212,7 @@ public sealed class RootConfinementTests : IDisposable
         // Act
         var confined = _confiner.Confine("alias.txt");
 
-        // Assert - the denylist and output see the resolved target, not the alias name.
+        // Assert
         Assert.Equal("target.txt", confined.RelativePath);
         Assert.True(confined.Exists);
     }
@@ -220,7 +220,7 @@ public sealed class RootConfinementTests : IDisposable
     [Fact]
     public void Confine_SiblingRootPrefixCollision_Throws()
     {
-        // Arrange - a sibling whose name shares the root's prefix must not be mistaken for being inside it.
+        // Arrange
         var sibling = _rootDir + "-secret";
         Directory.CreateDirectory(sibling);
         _cleanup.Add(sibling);

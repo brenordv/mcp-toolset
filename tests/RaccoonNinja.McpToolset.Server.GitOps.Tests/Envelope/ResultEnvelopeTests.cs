@@ -7,12 +7,14 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Envelope;
 public class ResultEnvelopeTests
 {
     [Fact]
-    public void Success_Mirrors_Results_Count_And_Defaults_Error_To_Null()
+    public void Success_MirrorsResultsCountAndDefaultsErrorToNull()
     {
+        // Act
         var envelope = ResultEnvelope.Success(
             new List<object> { 1, 2, 3 },
             repoRoot: "/repo");
 
+        // Assert
         Assert.Equal(3, envelope.Count);
         Assert.Null(envelope.Error);
         Assert.Equal("/repo", envelope.RepoRoot);
@@ -21,9 +23,12 @@ public class ResultEnvelopeTests
     }
 
     [Fact]
-    public void Success_Preserves_Filters_And_PreFilterCount()
+    public void Success_PreservesFiltersAndPreFilterCount()
     {
+        // Arrange
         var filters = new Dictionary<string, object> { ["author"] = "<redacted>" };
+
+        // Act
         var envelope = ResultEnvelope.Success(
             new List<object>(),
             repoRoot: "/repo",
@@ -31,6 +36,7 @@ public class ResultEnvelopeTests
             filtersApplied: filters,
             truncated: true);
 
+        // Assert
         Assert.Equal(0, envelope.Count);
         Assert.Equal(42, envelope.PreFilterCount);
         Assert.True(envelope.Truncated);
@@ -38,11 +44,15 @@ public class ResultEnvelopeTests
     }
 
     [Fact]
-    public void Failure_Carries_Error_Code_And_Message()
+    public void Failure_CarriesErrorCodeAndMessage()
     {
+        // Arrange
         var ex = new RejectedArgumentException("bad", new Dictionary<string, object> { ["param"] = "ref" });
+
+        // Act
         var envelope = ResultEnvelope.Failure(ex, repoRoot: "/repo");
 
+        // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
         Assert.Equal("bad", envelope.Error.Message);

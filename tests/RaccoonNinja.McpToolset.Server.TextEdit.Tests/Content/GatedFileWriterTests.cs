@@ -86,12 +86,11 @@ public sealed class GatedFileWriterTests : IDisposable
     [Fact]
     public void Apply_TransformExpandsPastSizeCap_IsRefusedTooLargeAndNotWritten()
     {
-        // The read is under the cap but the rewrite would expand past it. The gate must refuse rather than
-        // write an oversized post-image, which undo (reading under the same cap) could never restore.
+        // Arrange
         using var harness = new TextEditHarness(TextEditHarness.DefaultConfig() with { MaxFileBytes = 16 });
         harness.WriteText("grow.txt", "aaaaaaaa");
 
-        // Act: each of the eight bytes expands to three, well past the sixteen-byte cap.
+        // Act
         var outcome = harness.Apply("replace_text", new Replacer("a", "ccc", false, false, harness.Config), "grow.txt");
 
         // Assert

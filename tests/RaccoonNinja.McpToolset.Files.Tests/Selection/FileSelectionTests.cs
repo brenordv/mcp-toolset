@@ -90,7 +90,7 @@ public sealed class FileSelectionTests : IDisposable
         // Act
         var paths = Paths(_selection.Select(FileSelector.Create(includeIgnored: true)));
 
-        // Assert - the ignored log surfaces, the denylisted .env still does not.
+        // Assert
         Assert.Contains("skip.log", paths);
         Assert.DoesNotContain(".env", paths);
     }
@@ -130,7 +130,7 @@ public sealed class FileSelectionTests : IDisposable
     [Fact]
     public void Select_PathsMode_ReadGateOmitsDenylistedPaths()
     {
-        // Arrange - the read gate must hold even when enumeration is skipped (ADR C3).
+        // Arrange
         Write("ok.cs", "1");
         Write(".env", "SECRET=1");
         Write(".git/config", "[core]");
@@ -171,7 +171,7 @@ public sealed class FileSelectionTests : IDisposable
         var paths = Paths(_selection.Select(FileSelector.Create(
             paths: ["real.cs", "sub", "does/not/exist.cs"])));
 
-        // Assert - only the real file survives; the directory and the missing path are omitted.
+        // Assert
         Assert.Equal(["real.cs"], paths);
     }
 
@@ -199,7 +199,7 @@ public sealed class FileSelectionTests : IDisposable
         Write("b.txt", "2");
         Write("sub/c.cs", "3");
 
-        // Act - dot optional and case-insensitive.
+        // Act
         var paths = Paths(_selection.Select(FileSelector.Create(extensions: [".CS"])));
 
         // Assert
@@ -217,7 +217,7 @@ public sealed class FileSelectionTests : IDisposable
         // Act
         var paths = Paths(_selection.Select(FileSelector.Create(glob: "src/*", extensions: ["cs"])));
 
-        // Assert - only files that match the glob AND carry the extension.
+        // Assert
         Assert.Equal(["src/a.cs", "src/a.g.cs"], paths);
     }
 
@@ -232,7 +232,7 @@ public sealed class FileSelectionTests : IDisposable
         // Act
         var paths = Paths(_selection.Select(FileSelector.Create(extensions: ["md"])));
 
-        // Assert - "Makefile" (no extension) and ".gitignore" (extension "gitignore") are both pruned.
+        // Assert
         Assert.Equal(["keep.md"], paths);
     }
 

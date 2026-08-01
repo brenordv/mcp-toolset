@@ -17,12 +17,15 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Search_AcrossRoots_ResultsCarryDistinctRootNames()
     {
+        // Arrange
         using var harness = new TextSearchHarness(TwoWorkspaces);
         harness.Write("a", "same.txt", "needle");
         harness.Write("b", "same.txt", "needle");
 
+        // Act
         var envelope = await harness.Search.InvokeAsync(pattern: "needle", glob: "*.txt", root: "@all");
 
+        // Assert
         var matches = envelope.Results.Cast<ContentMatch>().ToArray();
         Assert.Equal(2, matches.Length);
         Assert.Contains(matches, match => match is { Root: "a", Path: "same.txt" });
@@ -32,12 +35,15 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Find_DefaultScope_SearchesWorkspaceRootsNotPackage()
     {
+        // Arrange
         using var harness = new TextSearchHarness(AppAndCargo);
         harness.Write("app", "a.cs", "1");
         harness.Write("cargo", "b.cs", "2");
 
+        // Act
         var envelope = await harness.Find.InvokeAsync(glob: "*.cs");
 
+        // Assert
         Assert.Equal(["a.cs"], TextSearchHarness.Paths(envelope));
         Assert.Equal(["app"], TextSearchHarness.Roots(envelope));
     }
@@ -45,12 +51,15 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Find_PackagesTarget_SearchesPackageRoot()
     {
+        // Arrange
         using var harness = new TextSearchHarness(AppAndCargo);
         harness.Write("app", "a.cs", "1");
         harness.Write("cargo", "b.cs", "2");
 
+        // Act
         var envelope = await harness.Find.InvokeAsync(glob: "*.cs", root: "@packages");
 
+        // Assert
         Assert.Equal(["b.cs"], TextSearchHarness.Paths(envelope));
         Assert.Equal(["cargo"], TextSearchHarness.Roots(envelope));
         Assert.True((long)harness.Metrics.Summary()["package_targeting_total"] >= 1);
@@ -59,10 +68,13 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Find_UnknownRoot_IsInvalidArgument()
     {
+        // Arrange
         using var harness = new TextSearchHarness(AppAndCargo);
 
+        // Act
         var envelope = await harness.Find.InvokeAsync(glob: "*.cs", root: "nope");
 
+        // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.InvalidArgument, envelope.Error.Code);
     }
@@ -70,11 +82,14 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Search_PackageRootWithoutNarrowing_IsRefused()
     {
+        // Arrange
         using var harness = new TextSearchHarness(AppAndCargo);
         harness.Write("cargo", "b.rs", "needle");
 
+        // Act
         var envelope = await harness.Search.InvokeAsync(pattern: "needle", root: "@packages");
 
+        // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.InvalidArgument, envelope.Error.Code);
     }
@@ -82,12 +97,15 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Search_ExtensionsNarrowsPackageSearch_AndDenylistHolds()
     {
+        // Arrange
         using var harness = new TextSearchHarness(AppAndCargo);
         harness.Write("cargo", ".env", "TOKEN=secret");
         harness.Write("cargo", "ok.rs", "let TOKEN = 1;");
 
+        // Act
         var envelope = await harness.Search.InvokeAsync(pattern: "TOKEN", root: "@packages", extensions: ["rs", "env"]);
 
+        // Assert
         var matches = envelope.Results.Cast<ContentMatch>().ToArray();
         Assert.NotEmpty(matches);
         Assert.All(matches, match => Assert.Equal("ok.rs", match.Path));
@@ -96,6 +114,7 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Find_CrossRootPagination_ReturnsEachResultExactlyOnce()
     {
+        // Arrange
         using var harness = new TextSearchHarness(TwoWorkspaces);
         for (var i = 0; i < 3; i++)
         {
@@ -106,6 +125,8 @@ public sealed class MultiRootTests
         var seen = new List<(string Root, string Path)>();
         string cursor = null;
         var pages = 0;
+
+        // Act
         do
         {
             var envelope = await harness.Find.InvokeAsync(glob: "*.cs", root: "@all", max_files: 2, cursor: cursor);
@@ -116,6 +137,7 @@ public sealed class MultiRootTests
         }
         while (cursor is not null);
 
+        // Assert
         Assert.Equal(6, seen.Count);
         Assert.Equal(6, seen.Distinct().Count());
     }
@@ -123,6 +145,7 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Find_CursorForDifferentTarget_IsRefused()
     {
+        // Arrange
         using var harness = new TextSearchHarness(TwoWorkspaces);
         for (var i = 0; i < 3; i++)
         {
@@ -133,9 +156,10 @@ public sealed class MultiRootTests
         var page1 = await harness.Find.InvokeAsync(glob: "*.cs", root: "@all", max_files: 2);
         Assert.NotNull(page1.Cursor);
 
-        // A cursor issued for "@all" must not be honored for a different target.
+        // Act
         var envelope = await harness.Find.InvokeAsync(glob: "*.cs", root: "a", cursor: page1.Cursor);
 
+        // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.InvalidArgument, envelope.Error.Code);
     }
@@ -143,6 +167,7 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Search_CrossRootPagination_ReturnsEachMatchExactlyOnce()
     {
+        // Arrange
         using var harness = new TextSearchHarness(TwoWorkspaces);
         harness.Write("a", "f.txt", "x\nx");
         harness.Write("b", "f.txt", "x\nx");
@@ -150,6 +175,8 @@ public sealed class MultiRootTests
         var seen = new List<(string Root, int Line)>();
         string cursor = null;
         var pages = 0;
+
+        // Act
         do
         {
             var envelope = await harness.Search.InvokeAsync(pattern: "x", glob: "*.txt", root: "@all", max_results: 1, cursor: cursor);
@@ -160,6 +187,7 @@ public sealed class MultiRootTests
         }
         while (cursor is not null);
 
+        // Assert
         Assert.Equal(4, seen.Count);
         Assert.Equal(4, seen.Distinct().Count());
     }
@@ -167,9 +195,11 @@ public sealed class MultiRootTests
     [Fact]
     public async Task ReadLines_MultipleRoots_RequiresRoot()
     {
+        // Arrange
         using var harness = new TextSearchHarness(TwoWorkspaces);
         harness.Write("a", "x.txt", "l1\nl2");
 
+        // Act & Assert
         var missing = await harness.ReadLines.InvokeAsync(path: "x.txt");
         Assert.NotNull(missing.Error);
         Assert.Equal(ErrorCodes.InvalidArgument, missing.Error.Code);
@@ -182,11 +212,14 @@ public sealed class MultiRootTests
     [Fact]
     public async Task ReadLines_GroupTarget_IsRefused()
     {
+        // Arrange
         using var harness = new TextSearchHarness(TwoWorkspaces);
         harness.Write("a", "x.txt", "l1");
 
+        // Act
         var envelope = await harness.ReadLines.InvokeAsync(path: "x.txt", root: "@all");
 
+        // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.InvalidArgument, envelope.Error.Code);
     }
@@ -194,12 +227,13 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Find_PageEndsExactlyOnRootBoundary_ResumesIntoNextRoot()
     {
+        // Arrange
         using var harness = new TextSearchHarness(TwoWorkspaces);
         harness.Write("a", "a1.cs", "x");
         harness.Write("a", "a2.cs", "x");
         harness.Write("b", "b1.cs", "x");
 
-        // Roots sort a,b -> window a/a1,a/a2,b/b1. A page of 2 ends exactly on the a->b boundary.
+        // Act & Assert
         var page1 = await harness.Find.InvokeAsync(glob: "*.cs", root: "@all", max_files: 2);
         Assert.Equal(["a", "a"], TextSearchHarness.Roots(page1));
         Assert.True(page1.Truncated);
@@ -215,10 +249,13 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Search_AllTargetWithoutNarrowing_IsRefused()
     {
+        // Arrange
         using var harness = new TextSearchHarness(AppAndCargo);
 
+        // Act
         var envelope = await harness.Search.InvokeAsync(pattern: "x", root: "@all");
 
+        // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.InvalidArgument, envelope.Error.Code);
     }
@@ -226,11 +263,14 @@ public sealed class MultiRootTests
     [Fact]
     public async Task Find_MalformedCursor_IsRefused()
     {
+        // Arrange
         using var harness = new TextSearchHarness();
         harness.Write("a.cs", "x");
 
+        // Act
         var envelope = await harness.Find.InvokeAsync(glob: "*.cs", cursor: "not-valid-base64!!");
 
+        // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.InvalidArgument, envelope.Error.Code);
     }

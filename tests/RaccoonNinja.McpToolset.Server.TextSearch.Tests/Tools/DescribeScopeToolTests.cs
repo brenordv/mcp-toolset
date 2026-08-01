@@ -9,10 +9,13 @@ public sealed class DescribeScopeToolTests
     [Fact]
     public async Task DescribeScope_ReportsDenylistCapsAndEncoding()
     {
+        // Arrange
         using var harness = new TextSearchHarness();
 
+        // Act
         var envelope = await harness.Describe.InvokeAsync();
 
+        // Assert
         Assert.Null(envelope.Error);
         var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
         Assert.Contains("**/.git/**", info.DenylistPatterns);
@@ -27,10 +30,13 @@ public sealed class DescribeScopeToolTests
     [Fact]
     public async Task DescribeScope_ListsRootsByNameAndKind_NoAbsolutePath()
     {
+        // Arrange
         using var harness = new TextSearchHarness([("app", RootKind.Workspace), ("cargo", RootKind.Package)]);
 
+        // Act
         var envelope = await harness.Describe.InvokeAsync();
 
+        // Assert
         var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
         Assert.Equal(2, info.Roots.Count);
         Assert.Contains(info.Roots, root => root.Name == "app" && root.Kind == "workspace");

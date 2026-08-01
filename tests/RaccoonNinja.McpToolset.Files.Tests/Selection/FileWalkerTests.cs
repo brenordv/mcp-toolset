@@ -141,7 +141,7 @@ public sealed class FileWalkerTests : IDisposable
         // Act
         var paths = Paths(_walker.Walk(new FileWalkOptions()));
 
-        // Assert - the nested rule hides sub/a.tmp but not the root-level top.tmp.
+        // Assert
         Assert.Contains("sub/a.txt", paths);
         Assert.Contains("top.tmp", paths);
         Assert.DoesNotContain("sub/a.tmp", paths);
@@ -162,7 +162,7 @@ public sealed class FileWalkerTests : IDisposable
         // Act
         var result = _walker.Walk(new FileWalkOptions());
 
-        // Assert - the link is skipped and counted; its target's contents never leak into the walk.
+        // Assert
         Assert.Equal(["real.txt"], Paths(result));
         Assert.Equal(1, result.SkippedSymlinks);
     }
@@ -229,7 +229,7 @@ public sealed class FileWalkerTests : IDisposable
         // Act
         var paths = Paths(_walker.Walk(new FileWalkOptions { Start = "sub" }));
 
-        // Assert - paths stay root-relative even when the walk starts deeper.
+        // Assert
         Assert.Equal(["sub/x.txt"], paths);
     }
 

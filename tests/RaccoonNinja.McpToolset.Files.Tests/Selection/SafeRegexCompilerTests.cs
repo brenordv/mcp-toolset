@@ -53,7 +53,7 @@ public sealed class SafeRegexCompilerTests
         {
             CultureInfo.CurrentCulture = new CultureInfo("tr-TR");
 
-            // Act - without CultureInvariant, "index"/"INDEX" would not match case-insensitively under tr-TR.
+            // Act
             var compiled = SafeRegexCompiler.Compile("index", Defaults);
 
             // Assert
@@ -115,7 +115,7 @@ public sealed class SafeRegexCompilerTests
     [Fact]
     public void Compile_OversizedSingleBoundedQuantifier_Throws()
     {
-        // Arrange - a{2000} exceeds the 1,000,000 product cap only if the cap is lower; use an explicit cap.
+        // Arrange
         var options = new SafeRegexOptions { MaxRepetitionProduct = 1000 };
 
         // Act & Assert
@@ -125,7 +125,7 @@ public sealed class SafeRegexCompilerTests
     [Fact]
     public void Compile_NestedBoundedQuantifierProduct_Throws()
     {
-        // Arrange - (a{1000}){1000} multiplies to 1,000,000, over the default cap.
+        // Arrange
         // Act & Assert
         Assert.Throws<RegexCompilationException>(() => SafeRegexCompiler.Compile("(a{1000}){1000}", Defaults));
     }
@@ -144,7 +144,7 @@ public sealed class SafeRegexCompilerTests
     [Fact]
     public void Compile_BracesInsideCharacterClass_AreNotCountedAsQuantifiers()
     {
-        // Arrange - the {2000} here is literal characters inside the class, not a quantifier.
+        // Arrange
         var options = new SafeRegexOptions { MaxRepetitionProduct = 1000 };
 
         // Act

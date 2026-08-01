@@ -72,7 +72,7 @@ public sealed class IgnoreRulesTests
     [Fact]
     public void IsIgnored_ReexcludeAfterNegation_LastMatchWins()
     {
-        // Arrange: a later exclude overrides an earlier re-include.
+        // Arrange
         var rules = IgnoreRules.Parse(["*.log", "!keep.log", "keep.log"]);
 
         // Act
@@ -149,7 +149,7 @@ public sealed class IgnoreRulesTests
     [Fact]
     public void IsIgnored_EscapedTrailingSpace_IsPreservedInPattern()
     {
-        // Arrange: "with-space\ " keeps one trailing space; the unescaped run is stripped.
+        // Arrange
         var rules = IgnoreRules.Parse([@"with-space\   "]);
 
         // Act & Assert
@@ -160,7 +160,7 @@ public sealed class IgnoreRulesTests
     [Fact]
     public void IsIgnored_NestedBasePath_AnchorsRulesUnderThatDirectory()
     {
-        // Arrange: an ignore file living in "packages/app".
+        // Arrange
         var rules = IgnoreRules.Parse(["build/", "*.tmp"], basePath: "packages/app");
 
         // Act & Assert
@@ -173,7 +173,7 @@ public sealed class IgnoreRulesTests
     [Fact]
     public void Combine_LaterSetOverridesEarlier()
     {
-        // Arrange: a deep ignore file re-includes what a shallow one excludes.
+        // Arrange
         var shallow = IgnoreRules.Parse(["*.log"]);
         var deep = IgnoreRules.Parse(["!keep.log"]);
 
@@ -207,7 +207,7 @@ public sealed class IgnoreRulesTests
         // Act
         var actual = rules.IsIgnored("BUILD", isDirectory: true);
 
-        // Assert: case-sensitive on Linux, case-insensitive elsewhere (matches RootConfinement).
+        // Assert
         Assert.Equal(!OperatingSystem.IsLinux(), actual);
     }
 

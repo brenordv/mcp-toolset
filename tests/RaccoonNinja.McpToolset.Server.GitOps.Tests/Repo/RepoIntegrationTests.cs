@@ -15,34 +15,45 @@ public class RepoIntegrationTests
     }
 
     [Fact]
-    public async Task RepoRootResolver_Resolves_Fixture_Repo()
+    public async Task RepoRootResolver_ResolvesFixtureRepo()
     {
+        // Arrange
         var resolver = new RepoRootResolver();
         resolver.ResetCache();
+
+        // Act
         var first = await resolver.ResolveAsync(_fixture.RepoPath);
         var second = await resolver.ResolveAsync(_fixture.RepoPath);
+
+        // Assert
         Assert.False(first.CacheHit);
         Assert.True(second.CacheHit);
         Assert.Equal(Path.GetFullPath(_fixture.RepoPath), Path.GetFullPath(first.Root));
     }
 
     [Fact]
-    public async Task RepoRootResolver_Rejects_Relative_Cwd()
+    public async Task RepoRootResolver_RejectsRelativeCwd()
     {
+        // Arrange
         var resolver = new RepoRootResolver();
+
+        // Act & Assert
         await Assert.ThrowsAsync<RejectedArgumentException>(async () =>
             await resolver.ResolveAsync("relative-path"));
     }
 
     [Fact]
-    public async Task RepoRootResolver_Throws_When_Cwd_Is_Not_A_Repo()
+    public async Task RepoRootResolver_ThrowsWhenCwdIsNotARepo()
     {
+        // Arrange
         var temp = Path.Combine(Path.GetTempPath(), "non-repo-" + System.Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temp);
         try
         {
             var resolver = new RepoRootResolver();
             resolver.ResetCache();
+
+            // Act & Assert
             await Assert.ThrowsAsync<NotAGitRepositoryException>(async () =>
                 await resolver.ResolveAsync(temp));
         }
@@ -53,25 +64,36 @@ public class RepoIntegrationTests
     }
 
     [Fact]
-    public async Task RefVerifier_Resolves_Head_To_Sha()
+    public async Task RefVerifier_ResolvesHeadToSha()
     {
+        // Arrange
         var verifier = new RefVerifier();
+
+        // Act
         var sha = await verifier.VerifyAsync("HEAD", _fixture.RepoPath);
+
+        // Assert
         Assert.Equal(40, sha.Length);
     }
 
     [Fact]
-    public async Task RefVerifier_Throws_For_Bad_Ref()
+    public async Task RefVerifier_ThrowsForBadRef()
     {
+        // Arrange
         var verifier = new RefVerifier();
+
+        // Act & Assert
         await Assert.ThrowsAsync<RefNotFoundException>(async () =>
             await verifier.VerifyAsync("does-not-exist-zzz", _fixture.RepoPath));
     }
 
     [Fact]
-    public async Task RefVerifier_Rejects_Empty_And_Dash_Prefixed()
+    public async Task RefVerifier_RejectsEmptyAndDashPrefixed()
     {
+        // Arrange
         var verifier = new RefVerifier();
+
+        // Act & Assert
         await Assert.ThrowsAsync<RejectedArgumentException>(async () =>
             await verifier.VerifyAsync(string.Empty, _fixture.RepoPath));
         await Assert.ThrowsAsync<RejectedArgumentException>(async () =>

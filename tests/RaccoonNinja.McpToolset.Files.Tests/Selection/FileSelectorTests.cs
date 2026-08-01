@@ -46,7 +46,7 @@ public sealed class FileSelectorTests
         // Act
         var selector = FileSelector.Create(paths: []);
 
-        // Assert - a non-null paths, even empty, is Paths mode (so paths:[] selects nothing, not everything).
+        // Assert
         Assert.Equal(SelectionMode.Paths, selector.Mode);
     }
 

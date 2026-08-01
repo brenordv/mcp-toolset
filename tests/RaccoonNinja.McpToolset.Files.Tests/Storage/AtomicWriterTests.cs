@@ -40,7 +40,7 @@ public sealed class AtomicWriterTests : IDisposable
         // Act
         var outcome = AtomicWriter.WriteNew(destination, content);
 
-        // Assert - creates the parent directory and the file.
+        // Assert
         Assert.Equal(AtomicWriteOutcome.Written, outcome);
         Assert.Equal(content, File.ReadAllBytes(destination));
     }

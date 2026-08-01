@@ -66,7 +66,7 @@ public sealed class BlobStoreTests : IDisposable
         var first = _store.Put(content);
         var second = _store.Put(content);
 
-        // Assert - same reference, and only one blob file on disk.
+        // Assert
         Assert.Equal(first, second);
         Assert.Single(Directory.GetFiles(_root, "*", SearchOption.AllDirectories));
     }
@@ -181,7 +181,7 @@ public sealed class BlobStoreTests : IDisposable
     [Fact]
     public void Read_MatchesFileVaultContentHash()
     {
-        // Arrange - the blob reference must equal the BLAKE3 hex the vault store already computes.
+        // Arrange
         var content = Encoding.UTF8.GetBytes("cross-check with ContentHash");
         var expected = Blake3.Hasher.Hash(content).ToString();
 

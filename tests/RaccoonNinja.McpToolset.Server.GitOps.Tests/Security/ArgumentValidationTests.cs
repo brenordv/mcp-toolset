@@ -6,8 +6,9 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Security;
 public class ArgumentValidationTests
 {
     [Fact]
-    public void Null_And_Empty_Are_Accepted_As_Noops()
+    public void Null_AndEmptyAreAcceptedAsNoops()
     {
+        // Act & Assert
         ArgumentValidation.RejectIfUnsafeValue("x", null);
         ArgumentValidation.RejectIfUnsafeValue("x", string.Empty);
     }
@@ -17,26 +18,30 @@ public class ArgumentValidationTests
     [InlineData("HEAD")]
     [InlineData("v1.0")]
     [InlineData("with\tab")]
-    public void Safe_Values_Are_Accepted(string value)
+    public void Safe_ValuesAreAccepted(string value)
     {
+        // Act & Assert
         ArgumentValidation.RejectIfUnsafeValue("x", value);
     }
 
     [Fact]
-    public void Value_With_Nul_Is_Rejected()
+    public void Value_WithNulIsRejected()
     {
+        // Act & Assert
         Assert.Throws<RejectedArgumentException>(() => ArgumentValidation.RejectIfUnsafeValue("x", "a\0b"));
     }
 
     [Fact]
-    public void Value_With_Other_Control_Char_Is_Rejected()
+    public void Value_WithOtherControlCharIsRejected()
     {
+        // Act & Assert
         Assert.Throws<RejectedArgumentException>(() => ArgumentValidation.RejectIfUnsafeValue("x", "a\bb"));
     }
 
     [Fact]
-    public void Value_Starting_With_Dash_Is_Rejected()
+    public void Value_StartingWithDashIsRejected()
     {
+        // Act & Assert
         Assert.Throws<RejectedArgumentException>(() => ArgumentValidation.RejectIfUnsafeValue("x", "-evil"));
     }
 }
