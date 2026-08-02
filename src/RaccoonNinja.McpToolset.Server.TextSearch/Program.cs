@@ -30,12 +30,13 @@ public static class Program
         + "never leaves its configured base root, and never reads a secret (a non-overridable denylist "
         + "covers .env, keys, .git, and the like). Pass cwd (an absolute working directory inside the base "
         + "root) to scope a call to one project; omit it to search the whole base root, which is the heavy "
-        + "path. Paths are relative to cwd (or to the base root when cwd is omitted), in and out. Call "
-        + "describe_scope first for the caps, the ignore tiers, and the denylist. find_files lists files by "
-        + "glob (primary), regex, or explicit paths; inspect_files reports encoding and line shape; "
-        + "search_text greps line by line; read_lines returns a numbered slice. include_ignored takes globs "
-        + "that re-include otherwise-ignored paths (never secrets). List results paginate via the returned "
-        + "cursor (keep cwd stable across pages).";
+        + "path. Pass cwd @name (a package root from describe_scope) to search a dependency cache; add "
+        + "/<subpath> to scope to one package. Paths are relative to cwd (or to the base root when cwd is "
+        + "omitted), in and out. Call describe_scope first for the caps, the ignore tiers, the denylist, and "
+        + "the package roots. find_files lists files by glob (primary), regex, or explicit paths; "
+        + "inspect_files reports encoding and line shape; search_text greps line by line; read_lines returns "
+        + "a numbered slice. include_ignored takes globs that re-include otherwise-ignored paths (never "
+        + "secrets). List results paginate via the returned cursor (keep cwd stable across pages).";
 
     /// <summary>The process entrypoint.</summary>
     /// <param name="args">Command-line arguments (passed to the host builder; config comes from the environment).</param>
@@ -54,7 +55,7 @@ public static class Program
             resolver = ScopeResolver.Load(config);
             var caps = string.Create(
                 CultureInfo.InvariantCulture,
-                $"{config.CapsSummary()} defaultIgnore={resolver.DefaultIgnorePatterns.Count} denylist={resolver.Denylist.DescribePatterns().Count}");
+                $"{config.CapsSummary()} defaultIgnore={resolver.DefaultIgnorePatterns.Count} denylist={resolver.Denylist.DescribePatterns().Count} packageRoots={resolver.PackageRootNames.Count}");
             ServerEventLog.Scope(serverLogger, resolver.RootHash, caps);
         }
         catch (SearchStartupException ex)

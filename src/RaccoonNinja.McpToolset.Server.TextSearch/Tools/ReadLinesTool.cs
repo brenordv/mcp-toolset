@@ -26,12 +26,13 @@ public sealed class ReadLinesTool(ToolCommon common, SearchConfig config, ScopeR
     [Description(
         "Return a numbered slice of one text file, from start_line to end_line (both 1-based, inclusive). "
         + "The path is relative to cwd (an absolute working directory inside the base root); omit cwd to "
-        + "resolve the path against the base root. Leave end_line at 0 to read a capped span from "
+        + "resolve the path against the base root, or pass cwd @name/<subpath> (a package root from "
+        + "describe_scope) to read from a dependency cache. Leave end_line at 0 to read a capped span from "
         + "start_line. Binary files are refused; very long lines are truncated.")]
     public Task<ResultEnvelope> InvokeAsync(
         [Description("The path of the file to read, relative to cwd (or the base root when cwd is omitted).")]
         string path,
-        [Description("Absolute working directory inside the base root the path is relative to. Omit to resolve against the base root.")]
+        [Description("Absolute working directory inside the base root the path is relative to; or @name/<subpath> (a package root from describe_scope). Omit to resolve against the base root.")]
         string cwd = null,
         [Description("The first line to return (1-based). Default 1.")]
         int start_line = 1,

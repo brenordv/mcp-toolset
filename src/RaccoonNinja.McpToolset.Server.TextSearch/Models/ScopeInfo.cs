@@ -13,9 +13,13 @@ public sealed record ScopeInfo
     [JsonPropertyName("base_root")]
     public string BaseRoot { get; init; }
 
-    /// <summary>How scoping and paths work: <c>cwd</c> scoping, cwd-relative paths, the whole-base heavy path, and the scoped-ancestor-ignore caveat.</summary>
+    /// <summary>How scoping and paths work: <c>cwd</c> scoping, cwd-relative paths, the whole-base heavy path, <c>@name</c> package-root addressing, and the scoped-ancestor-ignore caveat.</summary>
     [JsonPropertyName("scope_model")]
     public string ScopeModel { get; init; }
+
+    /// <summary>The names of the configured read-only package roots, addressable with an <c>@name</c> <c>cwd</c> (empty when none). Names only, never a path.</summary>
+    [JsonPropertyName("package_roots")]
+    public IReadOnlyList<string> PackageRoots { get; init; } = [];
 
     /// <summary>The effective default-ignore patterns (empty when the tier is disabled).</summary>
     [JsonPropertyName("default_ignore")]

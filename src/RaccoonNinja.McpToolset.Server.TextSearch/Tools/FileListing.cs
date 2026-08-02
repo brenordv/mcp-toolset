@@ -39,7 +39,7 @@ internal static class FileListing
     /// <param name="windowTruncated">Whether the window was already capped during the walk.</param>
     /// <param name="skippedSymlinks">The skipped-symlink count to carry through.</param>
     /// <param name="config">The server config (supplies the window ceiling).</param>
-    /// <param name="scopeKey">The call's base-relative scope key, for cursor pinning.</param>
+    /// <param name="cursorScope">The call's cursor identity (kind plus scope key), for cursor pinning.</param>
     /// <param name="cursor">The incoming cursor, or null.</param>
     /// <param name="pageSize">The page size.</param>
     /// <returns>The page.</returns>
@@ -49,7 +49,7 @@ internal static class FileListing
         bool windowTruncated,
         int skippedSymlinks,
         SearchConfig config,
-        string scopeKey,
+        string cursorScope,
         string cursor,
         int pageSize)
     {
@@ -60,7 +60,7 @@ internal static class FileListing
             window = window.GetRange(0, config.MaxFilesCeiling);
         }
 
-        var afterKey = string.IsNullOrEmpty(cursor) ? null : Cursor.DecodeList(scopeKey, cursor);
+        var afterKey = string.IsNullOrEmpty(cursor) ? null : Cursor.DecodeList(cursorScope, cursor);
         var page = Paginator.ByKey(
             window,
             static file => file.Entry.RelativePath,
@@ -68,7 +68,7 @@ internal static class FileListing
             pageSize,
             windowTruncated);
 
-        var cursorOut = page.NextKey is null ? null : Cursor.EncodeList(scopeKey, page.NextKey);
+        var cursorOut = page.NextKey is null ? null : Cursor.EncodeList(cursorScope, page.NextKey);
         return new FileListPage(page.Items, page.Truncated, cursorOut, skippedSymlinks);
     }
 }

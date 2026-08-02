@@ -45,6 +45,21 @@ public sealed class MachinePrivacyTests
         }
     }
 
+    [Fact]
+    public async Task Search_PackageScope_SuccessEnvelopeCarriesNoAbsoluteCachePath()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness(packageRoots: ["nuget"]);
+        harness.WritePackage("nuget", "pkg/a.txt", "find me here");
+
+        // Act
+        var envelope = await harness.Search.InvokeAsync(pattern: "me", glob: "**/*.txt", cwd: "@nuget");
+
+        // Assert
+        Assert.NotEmpty(envelope.Results);
+        AssertNoAbsolutePath(harness.PackageDir("nuget"), envelope);
+    }
+
     private static void AssertNoAbsolutePath(string root, ResultEnvelope envelope)
     {
         var json = TextSearchHarness.ToJson(envelope);

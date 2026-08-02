@@ -13,9 +13,11 @@ public sealed class DescribeScopeTool(ToolCommon common, SearchConfig config, Sc
     private const string ScopeModelDescription =
         "Pass cwd (an absolute working directory inside the base root) to scope a call to one project; input "
         + "and output paths are then relative to cwd. Omit cwd to search the whole base root, the heavy path, "
-        + "with base-relative paths. Ignore tiers (the built-in default set, .gitignore, .mcpignore) between "
-        + "the base root and a scoped cwd are not consulted, so a scoped call can surface a non-secret file a "
-        + "parent .gitignore would hide; the secret denylist is independent and always applies.";
+        + "with base-relative paths. Pass cwd @name (a package root from package_roots) to search a dependency "
+        + "cache instead; add /<subpath> to scope to one package, e.g. @nuget/Newtonsoft.Json/13.0.1. Ignore "
+        + "tiers (the built-in default set, .gitignore, .mcpignore) between the base root and a scoped cwd are "
+        + "not consulted, so a scoped call can surface a non-secret file a parent .gitignore would hide; the "
+        + "secret denylist is independent and always applies.";
 
     /// <summary>Report the base root, scope model, ignore tiers, denylist, encoding, column unit, and every cap.</summary>
     /// <param name="cancellationToken">The cancellation token.</param>
@@ -23,9 +25,10 @@ public sealed class DescribeScopeTool(ToolCommon common, SearchConfig config, Sc
     [McpServerTool(Name = "describe_scope", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description(
         "Report the sandbox this server is confined to: the base root (by name only), how cwd scoping and "
-        + "cwd-relative paths work, the default ignore tier and the project ignore-file kinds honored, the "
-        + "non-overridable secret denylist, the default output encoding, the column unit, and every cap. Call "
-        + "this first to learn the scope model and limits.")]
+        + "cwd-relative paths work, any package roots (dependency caches, addressable with cwd @name), the "
+        + "default ignore tier and the project ignore-file kinds honored, the non-overridable secret denylist, "
+        + "the default output encoding, the column unit, and every cap. Call this first to learn the scope "
+        + "model and limits.")]
     public Task<ResultEnvelope> InvokeAsync(CancellationToken cancellationToken = default)
     {
         var ctx = common.MakeContext("describe_scope");
@@ -35,6 +38,7 @@ public sealed class DescribeScopeTool(ToolCommon common, SearchConfig config, Sc
             {
                 BaseRoot = resolver.BaseRootName,
                 ScopeModel = ScopeModelDescription,
+                PackageRoots = resolver.PackageRootNames,
                 DefaultIgnore = resolver.DefaultIgnorePatterns,
                 IgnoreFiles = [".gitignore", ".mcpignore"],
                 Denylist = [.. resolver.Denylist.DescribePatterns()],

@@ -30,9 +30,10 @@ public sealed class FindFilesTool(ToolCommon common, SearchConfig config, ScopeR
         "List files in the call's scope. Give exactly one of: glob (primary, e.g. \"**/*Test.cs\"), regex, "
         + "or an explicit paths list; give none to list everything. A glob with no slash matches the basename "
         + "at any depth (so \"*.cs\" is recursive). Pass cwd (an absolute working directory inside the base "
-        + "root) to scope the call to one project; omit it to search the whole base root, the heavy path. "
-        + "Paths (in and out) are relative to cwd, or to the base root when cwd is omitted. Page with the "
-        + "returned cursor (keep cwd stable across pages).")]
+        + "root) to scope the call to one project; omit it to search the whole base root, the heavy path. Pass "
+        + "cwd @name (a package root from describe_scope) to search a dependency cache; add /<subpath> to scope "
+        + "to one package. Paths (in and out) are relative to cwd, or to the base root when cwd is omitted. "
+        + "Page with the returned cursor (keep cwd stable across pages).")]
     public Task<ResultEnvelope> InvokeAsync(
         [Description("A glob over the scope-relative path, e.g. \"src/**/*.cs\". Exactly one of glob/regex/paths.")]
         string glob = null,
@@ -40,7 +41,7 @@ public sealed class FindFilesTool(ToolCommon common, SearchConfig config, ScopeR
         string regex = null,
         [Description("Explicit scope-relative paths to return. Exactly one of glob/regex/paths.")]
         string[] paths = null,
-        [Description("Absolute working directory inside the base root to scope this call to. Omit to search the whole base root (the heavy path).")]
+        [Description("Absolute working directory inside the base root to scope this call to; or @name (a package root from describe_scope), optionally @name/<subpath>, to search a dependency cache. Omit to search the whole base root (the heavy path).")]
         string cwd = null,
         [Description("File extensions to keep (dot optional, case-insensitive), e.g. [\"cs\",\"rs\"]. ANDed with the selector.")]
         string[] extensions = null,
@@ -58,10 +59,7 @@ public sealed class FindFilesTool(ToolCommon common, SearchConfig config, ScopeR
         return common.WrapAsync(ctx, () =>
         {
             var scope = resolver.Resolve(cwd);
-            if (string.IsNullOrWhiteSpace(cwd))
-            {
-                common.WholeBase(ctx);
-            }
+            common.ScopeEntered(ctx, cwd, scope);
 
             var selector = SelectorSupport.Build(config, glob, regex, paths, extensions, include_ignored, case_sensitive);
             if (!selector.IncludeIgnored.IsEmpty)
@@ -72,7 +70,7 @@ public sealed class FindFilesTool(ToolCommon common, SearchConfig config, ScopeR
             using var budget = SelectorSupport.CreateBudget(config, cancellationToken);
             var (files, windowTruncated, skippedSymlinks) = FileListing.Walk(scope, selector, config, budget.Token);
             var pageSize = SelectorSupport.PageSize(config, max_files);
-            var page = FileListing.Paginate(files, windowTruncated, skippedSymlinks, config, scope.ScopeKey, cursor, pageSize);
+            var page = FileListing.Paginate(files, windowTruncated, skippedSymlinks, config, scope.CursorScope, cursor, pageSize);
 
             ctx.Log(
                 LogLevel.Debug,

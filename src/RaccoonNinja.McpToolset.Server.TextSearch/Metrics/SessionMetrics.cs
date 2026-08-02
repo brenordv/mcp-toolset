@@ -19,6 +19,7 @@ public sealed class SessionMetrics
     private long _regexFallbacks;
     private long _truncations;
     private long _wholeBaseCalls;
+    private long _packageRootCalls;
     private long _includeIgnoredCalls;
 
     /// <summary>Record one completed tool call and its outcome (<c>ok</c> or <c>error</c>).</summary>
@@ -43,6 +44,9 @@ public sealed class SessionMetrics
 
     /// <summary>Record one call that searched the whole base root (no <c>cwd</c> scope, the heavy walk).</summary>
     public void RecordWholeBaseCall() => Interlocked.Increment(ref _wholeBaseCalls);
+
+    /// <summary>Record one call that targeted a package root (an <c>@name</c> <c>cwd</c>, an out-of-tree cache).</summary>
+    public void RecordPackageRootCall() => Interlocked.Increment(ref _packageRootCalls);
 
     /// <summary>Record one call that re-included otherwise-ignored paths (the "reaching into hidden files" signal).</summary>
     public void RecordIncludeIgnored() => Interlocked.Increment(ref _includeIgnoredCalls);
@@ -88,6 +92,7 @@ public sealed class SessionMetrics
             ["regex_fallbacks_total"] = Interlocked.Read(ref _regexFallbacks),
             ["truncations_total"] = Interlocked.Read(ref _truncations),
             ["whole_base_calls_total"] = Interlocked.Read(ref _wholeBaseCalls),
+            ["package_root_calls_total"] = Interlocked.Read(ref _packageRootCalls),
             ["include_ignored_calls_total"] = Interlocked.Read(ref _includeIgnoredCalls),
         };
     }

@@ -19,17 +19,36 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Tests.TestSupport;
 internal sealed class TextSearchHarness : IDisposable
 {
     private readonly List<string> _cleanup = [];
+    private readonly Dictionary<string, string> _packageDirs = new(StringComparer.OrdinalIgnoreCase);
 
     public TextSearchHarness(
         int? regexTimeoutMs = null,
         int? operationBudgetMs = null,
         string extraDeny = null,
-        string defaultIgnore = null)
+        string defaultIgnore = null,
+        IReadOnlyList<string> packageRoots = null)
     {
         Root = NewTempDirectory("base");
         Config = DefaultConfig(regexTimeoutMs, operationBudgetMs);
         var detector = new EncodingDetector();
-        Resolver = ScopeResolver.Create(Config, Root, defaultIgnore, extraDeny);
+
+        // Each package root is a fresh temp directory alongside (never under) the base, so overlap is
+        // impossible; they are registered by an explicit name=path alias.
+        string packageRootsValue = null;
+        if (packageRoots is { Count: > 0 })
+        {
+            var entries = new List<string>(packageRoots.Count);
+            foreach (var name in packageRoots)
+            {
+                var dir = NewTempDirectory($"pkg-{name}");
+                _packageDirs[name] = dir;
+                entries.Add($"{name}={dir}");
+            }
+
+            packageRootsValue = string.Join(';', entries);
+        }
+
+        Resolver = ScopeResolver.Create(Config, Root, defaultIgnore, extraDeny, packageRootsValue);
         Metrics = new SessionMetrics();
         var common = new ToolCommon(Metrics, NullLoggerFactory.Instance);
 
@@ -65,6 +84,17 @@ internal sealed class TextSearchHarness : IDisposable
         var full = Path.Combine(Root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(full);
         return full;
+    }
+
+    /// <summary>The absolute temp directory backing the named package root (from the constructor's <c>packageRoots</c>).</summary>
+    public string PackageDir(string name) => _packageDirs[name];
+
+    /// <summary>Write a UTF-8 text file under the named package root.</summary>
+    public void WritePackage(string name, string relativePath, string content)
+    {
+        var full = Path.Combine(_packageDirs[name], relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(full));
+        File.WriteAllBytes(full, Encoding.UTF8.GetBytes(content));
     }
 
     /// <summary>Write a UTF-8 text file under the base root.</summary>

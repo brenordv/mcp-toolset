@@ -10,6 +10,11 @@ git-ops working-directory pattern applied to search: the same knob set tight per
 of them, without configuring each project separately. Serve a second, disjoint tree by running a second
 instance.
 
+Optionally, register a few out-of-tree **package roots** (dependency caches like the NuGet, Cargo, or npm
+stores) so the same instance can search them too. Each is a named, read-only confined root addressed with a
+`cwd` of `@name` (the whole cache) or `@name/<subpath>` (one package). With none configured, the server
+behaves exactly as a base-root-only server.
+
 The whole design serves one property: **it stays safe when nobody is reading the calls anymore.** Two
 controls hold that line and no flag can turn them off:
 
@@ -41,9 +46,15 @@ searching the whole base root, which is the heavy path; paths are then relative 
 still says which project it is in. A `cwd` that escapes the base, is not a directory, or lands on or inside a
 protected directory is refused with a path-free error.
 
+**Targeting a package root.** If package roots are configured, pass `cwd` as `@name` to search a whole
+dependency cache, or `@name/<subpath>` to scope to one package (for example `@nuget/Newtonsoft.Json/13.0.1`).
+`describe_scope` lists the configured names. `@name`, `@name/`, and `@name/.` all mean the whole cache. Paths
+are then relative to the cache (or the subpath). An unknown name, or a subpath that escapes its cache, is
+refused with a path-free error; the same denylist and ignore tiers apply as under the base.
+
 | Tool             | Purpose                                                                 | Key parameters                                                                                                   |
 |------------------|-------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
-| `describe_scope` | Report the base root, scope model, ignore tiers, denylist, and caps.    | (none)                                                                                                           |
+| `describe_scope` | Report the base root, scope model, package roots, ignore tiers, denylist, and caps. | (none)                                                                                               |
 | `find_files`     | List scope-relative files with size and last-modified.                  | `glob` / `regex` / `paths`, `cwd`, `extensions`, `include_ignored`, `case_sensitive`, `max_files`, `cursor`      |
 | `inspect_files`  | Report encoding, BOM, line endings, final newline, and counts per file. | same selector                                                                                                    |
 | `search_text`    | Grep file contents line by line (literal or regex).                     | selector + `pattern`, `is_regex`, `context_lines`, `max_matches_per_file`, `max_results`, `files_only`, `cursor` |
@@ -101,21 +112,24 @@ working directory. A failure sets `error` and leaves `results` an empty list:
 | `IsBinary`                | The file is binary and cannot be read as text.                                                                                                         |
 | `TooLarge`                | The file is larger than the configured read limit.                                                                                                     |
 | `OperationBudgetExceeded` | The operation ran past its wall-clock budget; narrow the selector or pattern.                                                                          |
-| `InvalidArgument`         | An argument was missing, malformed, or out of range, including a malformed `cursor` or a `cwd` that escapes, is not a directory, or is denylisted.     |
+| `InvalidArgument`         | An argument was missing, malformed, or out of range, including a malformed `cursor`, a `cwd` that escapes, is not a directory, or is denylisted, an unknown package-root name, or a package subpath that escapes its cache. |
 | `InternalError`           | An unexpected fault; details go to the log, never the client.                                                                                          |
 
 ## Security model
 
 **In plain terms:**
 
-- The server can only ever read inside the base root you configured, and no argument, including `cwd`, can
-  widen past it.
+- The server can only ever read inside the base root, or a package root, you configured, and no argument,
+  including `cwd`, can widen past whichever one it targets.
 - It never writes anything.
 - It never reads a known secret file, and no option can change that. A `cwd` at or inside a denylisted
   directory is refused before it can become an effective root.
-- Symlinks that point outside the base root, or at a secret, are refused by their real target, not their
+- Symlinks that point outside a configured root, or at a secret, are refused by their real target, not their
   name.
-- No absolute path from your machine is ever returned to the model.
+- No two configured roots may overlap, checked against their real (symlink-resolved) paths, so no package
+  root can reach into the base or another cache.
+- No absolute path from your machine is ever returned to the model. Package roots are addressed by name, so a
+  cache's absolute path (which carries your home directory) never enters model context.
 
 **The reachable surface is everything under the base root, so keep the base tight.** The base root is the one
 boundary now, so the server refuses a dangerously broad base at startup: a filesystem or drive root, your
@@ -143,6 +157,37 @@ Three tiers decide which non-secret files a walk skips, applied least-specific f
 None of these is a security boundary: the secret denylist is independent and always applies. Glob-scoped
 `include_ignored` re-includes named ignored paths for one call and still never reaches a denylisted path.
 
+## Package roots
+
+Package roots let one instance also search out-of-tree dependency caches (the NuGet, Cargo, or npm stores,
+for example) without a per-project config. Set `MCP_TEXTSEARCH_PACKAGE_ROOTS` to a `;`-separated list of
+`name=path` entries (a bare path works too; the name is then the directory's basename):
+
+```
+MCP_TEXTSEARCH_PACKAGE_ROOTS="nuget=~/.nuget/packages;cargo=~/.cargo/registry/src;npm=~/.npm"
+```
+
+Each becomes its own read-only confined root with the same guards as the base: symlink-resolving
+confinement, the secret denylist, the ignore tiers, and the startup broad-root check. An agent then targets
+one by name:
+
+- `cwd: "@nuget"` searches the whole cache. `@name`, `@name/`, and `@name/.` are the same thing.
+- `cwd: "@nuget/Newtonsoft.Json/13.0.1"` scopes to one package; paths are relative to that subpath.
+
+Addressing by name is deliberate: the cache's absolute path (which carries your home directory) never
+reaches the model. `describe_scope` reports only the configured names, never a path or a basename derived
+from one, so prefer an explicit `name=path` for a cache whose directory name is itself revealing (a Cargo
+registry's `index.crates.io-<hash>`, say).
+
+Rules enforced at startup, all fatal:
+
+- Each path must be an existing directory and pass the same broad-root guard as the base (no filesystem or
+  drive root, no home directory, no denylisted segment in the path).
+- Names are unique (case-insensitive), non-empty, not `.` or `..`, must not start with `@`, and must not
+  contain a path separator.
+- No configured root may overlap another, checked against real (symlink-resolved) paths. A cache already
+  under the base root needs no package entry.
+
 **Scoped-ancestor-ignore caveat.** Because a `cwd` becomes the effective root, ignore files in directories
 *between* the base root and `cwd` are not consulted. A scoped call can therefore surface a non-secret file a
 parent `.gitignore` would have hidden; the whole-base walk (no `cwd`) does load each project's root ignore
@@ -156,6 +201,7 @@ All configurations are environment variables. Only the base root is required; ev
 | Variable                              | Default    | Meaning                                                                                                                                                                                                                                                |
 |---------------------------------------|------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `MCP_TEXTSEARCH_BASE_ROOT`            | (required) | The single confinement root: a bare absolute path to the directory that holds your projects. Fatal if unset, not an existing directory, or dangerously broad.                                                                                          |
+| `MCP_TEXTSEARCH_PACKAGE_ROOTS`        | (none)     | `;`-separated `name=path` (or bare path) read-only dependency caches, addressed with a `cwd` of `@name` or `@name/<subpath>`. Each must be an existing directory, pass the broad-root guard, have a valid unique name, and not overlap any other root. Fatal on any bad entry. |
 | `MCP_TEXTSEARCH_DEFAULT_IGNORE`       | (built-in) | `off` disables the built-in default ignore set; a file path replaces it with that file's patterns (a missing path is fatal); unset keeps the built-ins.                                                                                                |
 | `MCP_TEXTSEARCH_EXTRA_DENY`           | (none)     | `;`-separated additive deny patterns. A trailing `/` denies a bare directory segment at any depth; otherwise it is a file-name glob. It can only tighten the built-in denylist, never remove from it; absolute-looking or malformed entries are fatal. |
 | `MCP_TEXTSEARCH_MAX_FILES`            | 1000       | Default files returned per page.                                                                                                                                                                                                                       |
@@ -198,6 +244,7 @@ it. Set `MCP_TEXTSEARCH_BASE_ROOT` to the directory that holds your projects.
       "command": "/absolute/path/to/text-search",
       "env": {
         "MCP_TEXTSEARCH_BASE_ROOT": "/absolute/path/to/projects",
+        "MCP_TEXTSEARCH_PACKAGE_ROOTS": "nuget=~/.nuget/packages;cargo=~/.cargo/registry/src;npm=~/.npm",
         "MCP_TEXTSEARCH_EXTRA_DENY": "*.secret;private/"
       }
     }
@@ -213,7 +260,7 @@ model, the ignore tiers, the denylist, and the caps.
 ```
 Server.TextSearch/
 ├─ Program.cs            # host spine: logging, config, DI, tool registration
-├─ Configuration/        # SearchConfig (caps), ScopeResolver (base root + per-call cwd scope), CallScope, startup exception
+├─ Configuration/        # SearchConfig (caps), ScopeResolver (base root + package roots + per-call cwd scope), CallScope, ScopeKind, startup exception
 ├─ Envelope/             # ResultEnvelope, ErrorEnvelope, filters echo
 ├─ Errors/               # error codes + the domain exception
 ├─ Logging/              # StdoutSentinel, allowlist JSON formatter, bootstrap, metrics events

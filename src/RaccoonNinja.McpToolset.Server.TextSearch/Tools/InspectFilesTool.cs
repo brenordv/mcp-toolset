@@ -31,8 +31,9 @@ public sealed class InspectFilesTool(ToolCommon common, SearchConfig config, Sco
         "Report the text shape of the selected files: detected encoding and confidence, BOM, line endings "
         + "(lf/crlf/cr/mixed), whether the file ends with a newline, trailing-whitespace line count, line "
         + "count, size, and whether it is binary. The selector and cwd scoping are the same as find_files: "
-        + "pass cwd to scope to one project, omit it for the whole base root. Paths are relative to cwd (or "
-        + "the base root when omitted). Files too large to read are skipped.")]
+        + "pass cwd to scope to one project, omit it for the whole base root, or pass cwd @name (a package "
+        + "root from describe_scope, optionally @name/<subpath>) to inspect a dependency cache. Paths are "
+        + "relative to cwd (or the base root when omitted). Files too large to read are skipped.")]
     public Task<ResultEnvelope> InvokeAsync(
         [Description("A glob over the scope-relative path, e.g. \"src/**/*.cs\". Exactly one of glob/regex/paths.")]
         string glob = null,
@@ -40,7 +41,7 @@ public sealed class InspectFilesTool(ToolCommon common, SearchConfig config, Sco
         string regex = null,
         [Description("Explicit scope-relative paths to inspect. Exactly one of glob/regex/paths.")]
         string[] paths = null,
-        [Description("Absolute working directory inside the base root to scope this call to. Omit to search the whole base root (the heavy path).")]
+        [Description("Absolute working directory inside the base root to scope this call to; or @name (a package root from describe_scope), optionally @name/<subpath>, to inspect a dependency cache. Omit to search the whole base root (the heavy path).")]
         string cwd = null,
         [Description("File extensions to keep (dot optional, case-insensitive). ANDed with the selector.")]
         string[] extensions = null,
@@ -58,10 +59,7 @@ public sealed class InspectFilesTool(ToolCommon common, SearchConfig config, Sco
         return common.WrapAsync(ctx, () =>
         {
             var scope = resolver.Resolve(cwd);
-            if (string.IsNullOrWhiteSpace(cwd))
-            {
-                common.WholeBase(ctx);
-            }
+            common.ScopeEntered(ctx, cwd, scope);
 
             var selector = SelectorSupport.Build(config, glob, regex, paths, extensions, include_ignored, case_sensitive);
             if (!selector.IncludeIgnored.IsEmpty)
@@ -72,7 +70,7 @@ public sealed class InspectFilesTool(ToolCommon common, SearchConfig config, Sco
             using var budget = SelectorSupport.CreateBudget(config, cancellationToken);
             var (files, windowTruncated, skippedSymlinks) = FileListing.Walk(scope, selector, config, budget.Token);
             var pageSize = SelectorSupport.PageSize(config, max_files);
-            var page = FileListing.Paginate(files, windowTruncated, skippedSymlinks, config, scope.ScopeKey, cursor, pageSize);
+            var page = FileListing.Paginate(files, windowTruncated, skippedSymlinks, config, scope.CursorScope, cursor, pageSize);
 
             var results = new List<object>();
             foreach (var file in page.Items)

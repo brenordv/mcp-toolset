@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using RaccoonNinja.McpToolset.Server.TextSearch.Configuration;
 using RaccoonNinja.McpToolset.Server.TextSearch.Envelope;
 using RaccoonNinja.McpToolset.Server.TextSearch.Errors;
 using RaccoonNinja.McpToolset.Server.TextSearch.Logging;
@@ -53,6 +54,36 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
         ArgumentNullException.ThrowIfNull(ctx);
         metrics.RecordWholeBaseCall();
         ctx.Log(LogLevel.Debug, "whole_base");
+    }
+
+    /// <summary>Record that a call targeted a package root, as a counter and a path-free log line carrying only the name.</summary>
+    /// <param name="ctx">The call context.</param>
+    /// <param name="name">The package root's operator-chosen name (never a path or subpath).</param>
+    public void PackageRoot(CallContext ctx, string name)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        metrics.RecordPackageRootCall();
+        ctx.Log(
+            LogLevel.Debug,
+            "package_root",
+            extras: new Dictionary<string, object>(StringComparer.Ordinal) { [LogFields.PackageRoot] = name });
+    }
+
+    /// <summary>Record which root a selector-driven call entered: whole base (blank <c>cwd</c>) or a package root.</summary>
+    /// <param name="ctx">The call context.</param>
+    /// <param name="cwd">The raw <c>cwd</c> argument (blank means the whole base).</param>
+    /// <param name="scope">The resolved scope.</param>
+    public void ScopeEntered(CallContext ctx, string cwd, CallScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        if (string.IsNullOrWhiteSpace(cwd))
+        {
+            WholeBase(ctx);
+        }
+        else if (scope.Kind == ScopeKind.Package)
+        {
+            PackageRoot(ctx, scope.PackageName);
+        }
     }
 
     /// <summary>Record that a call re-included otherwise-ignored paths, as a counter and a log line.</summary>

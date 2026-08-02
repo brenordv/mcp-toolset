@@ -40,7 +40,8 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
         "Search file contents for a pattern, line by line (grep-style), across the call's scope. Choose the "
         + "files with the same selector as find_files (glob primary) and the same cwd scoping: pass cwd (an "
         + "absolute working directory inside the base root) to scope to one project, omit it to search the "
-        + "whole base root (the heavy path). Give `pattern` and set `is_regex` for a regex. Matching is per "
+        + "whole base root (the heavy path), or pass cwd @name (a package root from describe_scope, optionally "
+        + "@name/<subpath>) to search a dependency cache. Give `pattern` and set `is_regex` for a regex. Matching is per "
         + "line, so a pattern that spans a newline will not match. Returns {path, line, column (1-based), "
         + "text, match_start, match_end}; the path is relative to cwd (or the base root when omitted), and "
         + "column and offsets are UTF-16 code units. Set files_only to list matching files. Page with the "
@@ -56,7 +57,7 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
         string regex = null,
         [Description("Explicit scope-relative files to search. Exactly one of glob/regex/paths.")]
         string[] paths = null,
-        [Description("Absolute working directory inside the base root to scope this call to. Omit to search the whole base root (the heavy path).")]
+        [Description("Absolute working directory inside the base root to scope this call to; or @name (a package root from describe_scope), optionally @name/<subpath>, to search a dependency cache. Omit to search the whole base root (the heavy path).")]
         string cwd = null,
         [Description("File extensions to keep (dot optional, case-insensitive). ANDed with the selector.")]
         string[] extensions = null,
@@ -85,10 +86,7 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
             }
 
             var scope = resolver.Resolve(cwd);
-            if (string.IsNullOrWhiteSpace(cwd))
-            {
-                common.WholeBase(ctx);
-            }
+            common.ScopeEntered(ctx, cwd, scope);
 
             var selector = SelectorSupport.Build(config, glob, regex, paths, extensions, include_ignored, case_sensitive);
             if (!selector.IncludeIgnored.IsEmpty)
@@ -138,7 +136,7 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
         int pageSize,
         CancellationToken budgetToken)
     {
-        var skip = string.IsNullOrEmpty(cursor) ? 0 : Cursor.DecodeSearch(scope.ScopeKey, cursor);
+        var skip = string.IsNullOrEmpty(cursor) ? 0 : Cursor.DecodeSearch(scope.CursorScope, cursor);
 
         SelectorSupport.CheckBudget(config, budgetToken);
         var walk = SelectorSupport.Run(scope.Selection, selector, config, budgetToken);
@@ -185,7 +183,7 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
         // the match timeout (already a counted refusal) can shift that count, so paged results are
         // best-effort for such abusive patterns; confinement and leak guarantees are unaffected.
         var truncated = more || walk.Truncated;
-        var cursorOut = more ? Cursor.EncodeSearch(scope.ScopeKey, seen) : null;
+        var cursorOut = more ? Cursor.EncodeSearch(scope.CursorScope, seen) : null;
         return (new Page<object>(emitted, truncated, cursorOut), filesScanned);
     }
 
@@ -213,7 +211,7 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
             }
         }
 
-        var page = FileListing.Paginate(matched, walk.Truncated, skippedSymlinks: 0, config, scope.ScopeKey, cursor, pageSize);
+        var page = FileListing.Paginate(matched, walk.Truncated, skippedSymlinks: 0, config, scope.CursorScope, cursor, pageSize);
         var items = page.Items
             .Select(static file => (object)new FileHit
             {

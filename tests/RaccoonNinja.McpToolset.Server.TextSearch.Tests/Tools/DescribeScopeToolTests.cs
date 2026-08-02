@@ -58,4 +58,35 @@ public sealed class DescribeScopeToolTests
         var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
         Assert.Empty(info.DefaultIgnore);
     }
+
+    [Fact]
+    public async Task DescribeScope_WithPackageRoots_ListsNamesInOrder_NoAbsolutePath()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness(packageRoots: ["nuget", "cargo"]);
+
+        // Act
+        var envelope = await harness.Describe.InvokeAsync();
+
+        // Assert
+        var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
+        Assert.Equal(["nuget", "cargo"], info.PackageRoots);
+        Assert.Contains("@name", info.ScopeModel, StringComparison.Ordinal);
+        Assert.DoesNotContain(harness.PackageDir("nuget"), TextSearchHarness.ToJson(envelope), StringComparison.Ordinal);
+        Assert.DoesNotContain(harness.PackageDir("cargo"), TextSearchHarness.ToJson(envelope), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DescribeScope_NoPackageRoots_ReportsEmptyList()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+
+        // Act
+        var envelope = await harness.Describe.InvokeAsync();
+
+        // Assert
+        var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
+        Assert.Empty(info.PackageRoots);
+    }
 }
