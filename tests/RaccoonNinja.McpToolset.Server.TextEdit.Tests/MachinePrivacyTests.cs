@@ -41,9 +41,27 @@ public sealed class MachinePrivacyTests : IDisposable
             sourceEncoding: null,
             skippedSymlinks: 0,
             truncated: false,
+            _harness.Confinement,
             CancellationToken.None);
 
         // Assert
         Assert.DoesNotContain(_harness.Root, outcome.Files[0].Diff, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Replace_AbsoluteCwd_EnvelopeCarriesNoAbsolutePath()
+    {
+        // Arrange
+        _harness.WriteText("proj/a.txt", "hello world");
+        var cwd = _harness.Dir("proj");
+
+        // Act
+        var envelope = await _harness.Replace.InvokeAsync("world", "text-edit", cwd: cwd);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var json = System.Text.Json.JsonSerializer.Serialize(envelope);
+        Assert.DoesNotContain(_harness.Root, json, StringComparison.Ordinal);
+        Assert.DoesNotContain(_harness.Root.Replace("\\", "\\\\", StringComparison.Ordinal), json, StringComparison.Ordinal);
     }
 }

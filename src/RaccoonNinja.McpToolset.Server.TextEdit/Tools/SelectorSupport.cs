@@ -13,8 +13,7 @@ namespace RaccoonNinja.McpToolset.Server.TextEdit.Tools;
 /// </summary>
 internal static class SelectorSupport
 {
-    /// <summary>Build a validated selector; ignore rules always apply (the write path never bypasses them).</summary>
-    /// <param name="root">A root-relative subdirectory to scope the selection to, or null for the whole root.</param>
+    /// <summary>Build a validated selector over the scope; ignore rules always apply (the write path never bypasses them).</summary>
     /// <param name="glob">The glob pattern, or null.</param>
     /// <param name="regex">The regex, or null.</param>
     /// <param name="paths">The explicit paths, or null.</param>
@@ -24,7 +23,6 @@ internal static class SelectorSupport
     /// <returns>The validated selector.</returns>
     /// <exception cref="TextEditException">Thrown (as <c>SelectorInvalid</c>) when more than one of glob, regex, paths is given.</exception>
     public static FileSelector Build(
-        string root,
         string glob,
         string regex,
         string[] paths,
@@ -34,8 +32,10 @@ internal static class SelectorSupport
     {
         try
         {
+            // The effective root is the resolved scope, so the selector's own root is always null; a
+            // subdirectory is scoped through the cwd, not here.
             return FileSelector.Create(
-                root: root,
+                root: null,
                 glob: glob,
                 regex: regex,
                 paths: paths,
@@ -98,8 +98,8 @@ internal static class SelectorSupport
         return source;
     }
 
-    /// <summary>Build the safe echo of the selector arguments (user strings redacted, subdir and counts kept).</summary>
-    /// <param name="root">The subdirectory argument.</param>
+    /// <summary>Build the safe echo of the selector arguments (user strings redacted, scope key and counts kept).</summary>
+    /// <param name="scopeKey">The base-relative scope key (never the absolute or raw <c>cwd</c>).</param>
     /// <param name="glob">The glob argument.</param>
     /// <param name="regex">The regex argument.</param>
     /// <param name="paths">The paths argument.</param>
@@ -108,7 +108,7 @@ internal static class SelectorSupport
     /// <param name="dryRun">The dry-run flag.</param>
     /// <returns>The filters builder.</returns>
     public static FiltersAppliedBuilder Filters(
-        string root,
+        string scopeKey,
         string glob,
         string regex,
         string[] paths,
@@ -116,7 +116,7 @@ internal static class SelectorSupport
         bool caseSensitive,
         bool dryRun)
         => FiltersAppliedBuilder.Create()
-            .Value("root", root)
+            .Value("cwd", scopeKey)
             .Redact("glob", glob)
             .Redact("regex", regex)
             .Count("paths", paths?.Length ?? 0)

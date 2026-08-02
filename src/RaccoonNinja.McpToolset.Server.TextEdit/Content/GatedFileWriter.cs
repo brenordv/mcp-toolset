@@ -27,29 +27,29 @@ public sealed class GatedFileWriter
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     }
 
-    private readonly IRootResolver _root;
+    private readonly IRootResolver _baseRoot;
     private readonly ISecretDenylist _denylist;
     private readonly IEncodingDetector _detector;
     private readonly JournalStore _journal;
     private readonly EditConfig _config;
     private readonly string _rootName;
 
-    /// <summary>Create the writer bound to one root and its journal.</summary>
-    /// <param name="root">The confiner for the root.</param>
+    /// <summary>Create the writer bound to the base root and its journal.</summary>
+    /// <param name="baseRoot">The base confiner; every changed file's journaled path is derived relative to it.</param>
     /// <param name="denylist">The non-overridable secret denylist.</param>
     /// <param name="detector">The encoding detector.</param>
     /// <param name="journal">The mutation journal.</param>
     /// <param name="config">The server caps.</param>
-    /// <param name="rootName">The root's agent-facing name, recorded on each batch.</param>
+    /// <param name="rootName">The base root's agent-facing name, recorded on each batch.</param>
     public GatedFileWriter(
-        IRootResolver root,
+        IRootResolver baseRoot,
         ISecretDenylist denylist,
         IEncodingDetector detector,
         JournalStore journal,
         EditConfig config,
         string rootName)
     {
-        _root = root ?? throw new ArgumentNullException(nameof(root));
+        _baseRoot = baseRoot ?? throw new ArgumentNullException(nameof(baseRoot));
         _denylist = denylist ?? throw new ArgumentNullException(nameof(denylist));
         _detector = detector ?? throw new ArgumentNullException(nameof(detector));
         _journal = journal ?? throw new ArgumentNullException(nameof(journal));
@@ -67,6 +67,7 @@ public sealed class GatedFileWriter
     /// <param name="sourceEncoding">An explicit source encoding that bypasses the confidence gate, or <c>null</c> to auto-detect.</param>
     /// <param name="skippedSymlinks">The selector's skipped-symlink count, echoed into the outcome.</param>
     /// <param name="truncated">Whether selection hit its ceiling, echoed into the outcome.</param>
+    /// <param name="effective">The per-call effective confiner (the base root, or a <c>cwd</c> beneath it); every candidate is confined to it, so a scoped call cannot write outside its <c>cwd</c>.</param>
     /// <param name="cancellationToken">Checked between files so the operation budget can bound the batch.</param>
     /// <returns>The batch outcome.</returns>
     /// <exception cref="TextEditException">Thrown for an unknown source encoding or an expected-match-count mismatch (before any write).</exception>
@@ -80,10 +81,12 @@ public sealed class GatedFileWriter
         string sourceEncoding,
         int skippedSymlinks,
         bool truncated,
+        IRootResolver effective,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(relativePaths);
         ArgumentNullException.ThrowIfNull(transform);
+        ArgumentNullException.ThrowIfNull(effective);
 
         var codec = ResolveSourceEncoding(sourceEncoding);
         var outcomes = new List<FileOutcome>(relativePaths.Count);
@@ -93,7 +96,7 @@ public sealed class GatedFileWriter
         foreach (var relativePath in relativePaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var preparation = PrepareFile(relativePath, transform, codec, dryRun);
+            var preparation = PrepareFile(relativePath, transform, codec, dryRun, effective);
             totalMatches += preparation.MatchCount;
             outcomes.Add(preparation.Outcome);
             if (preparation.Write is not null)
@@ -183,36 +186,55 @@ public sealed class GatedFileWriter
         return batchId;
     }
 
-    private Preparation PrepareFile(string relativePath, ITextTransform transform, SourceCodec codec, bool dryRun)
+    private Preparation PrepareFile(string relativePath, ITextTransform transform, SourceCodec codec, bool dryRun, IRootResolver effective)
     {
         ConfinedPath confined;
         try
         {
-            confined = _root.Confine(relativePath, "path");
+            // Confine against the effective (cwd) root: this is the per-call write firewall, so a candidate
+            // outside the scoped cwd (even an explicit "../other" path) is refused here.
+            confined = effective.Confine(relativePath, "path");
         }
         catch (PathConfinementException)
         {
             return Refusal(relativePath, RefusalReason.OutOfRoot);
         }
 
+        // Everything reported and journaled uses the base-relative path, derived once through the base
+        // confiner (which also re-validates base containment), so the whole write/undo path stays in one
+        // coherent frame. confined.RelativePath is relative to the effective root and is used only for the
+        // ignore evaluation, which anchors there.
+        string baseRelative;
+        try
+        {
+            baseRelative = _baseRoot.Confine(confined.RealPath, "path").RelativePath;
+        }
+        catch (PathConfinementException)
+        {
+            // confined.RealPath was already verified inside the effective root (itself under base), so this
+            // cannot fail short of a sub-millisecond TOCTOU symlink swap. Report a clean, counted refusal
+            // rather than letting it surface as a generic internal error.
+            return Refusal(relativePath, RefusalReason.OutOfRoot);
+        }
+
         if (!confined.Exists)
         {
-            return Refusal(confined.RelativePath, RefusalReason.NotFound);
+            return Refusal(baseRelative, RefusalReason.NotFound);
         }
 
-        if (_denylist.IsDeniedFile(confined.RelativePath))
+        if (_denylist.IsDeniedFile(baseRelative))
         {
-            return Refusal(confined.RelativePath, RefusalReason.Denied);
+            return Refusal(baseRelative, RefusalReason.Denied);
         }
 
-        if (PathIgnoreEvaluator.IsIgnored(_root.CanonicalRoot, confined.RelativePath))
+        if (PathIgnoreEvaluator.IsIgnored(effective.CanonicalRoot, confined.RelativePath))
         {
-            return Refusal(confined.RelativePath, RefusalReason.Ignored);
+            return Refusal(baseRelative, RefusalReason.Ignored);
         }
 
         if (Directory.Exists(confined.RealPath))
         {
-            return Refusal(confined.RelativePath, RefusalReason.IsDirectory);
+            return Refusal(baseRelative, RefusalReason.IsDirectory);
         }
 
         byte[] bytes;
@@ -221,22 +243,22 @@ public sealed class GatedFileWriter
             bytes = ReadCapped(confined.RealPath, out var tooLarge);
             if (tooLarge)
             {
-                return Refusal(confined.RelativePath, RefusalReason.TooLarge);
+                return Refusal(baseRelative, RefusalReason.TooLarge);
             }
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            return Refusal(confined.RelativePath, RefusalReason.NotFound);
+            return Refusal(baseRelative, RefusalReason.NotFound);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
-            return Refusal(confined.RelativePath, RefusalReason.IoError);
+            return Refusal(baseRelative, RefusalReason.IoError);
         }
 
         var detected = _detector.Detect(bytes);
         if (detected.IsBinary)
         {
-            return Refusal(confined.RelativePath, RefusalReason.Binary);
+            return Refusal(baseRelative, RefusalReason.Binary);
         }
 
         Encoding encoding;
@@ -252,7 +274,7 @@ public sealed class GatedFileWriter
         {
             if (detected.Confidence < _config.RewriteConfidence)
             {
-                return Refusal(confined.RelativePath, RefusalReason.LowConfidenceEncoding);
+                return Refusal(baseRelative, RefusalReason.LowConfidenceEncoding);
             }
 
             encoding = detected.Encoding;
@@ -268,7 +290,7 @@ public sealed class GatedFileWriter
         }
         catch (RegexMatchTimeoutException)
         {
-            return Refusal(confined.RelativePath, RefusalReason.RegexTimeout);
+            return Refusal(baseRelative, RefusalReason.RegexTimeout);
         }
 
         var withBom = result.BomOverride ?? detected.HasBom;
@@ -281,7 +303,7 @@ public sealed class GatedFileWriter
         {
             return new Preparation
             {
-                Outcome = new FileOutcome { Path = confined.RelativePath, Changed = false },
+                Outcome = new FileOutcome { Path = baseRelative, Changed = false },
                 Write = null,
                 MatchCount = result.MatchCount,
             };
@@ -292,12 +314,12 @@ public sealed class GatedFileWriter
             // The read is capped, but a transform can expand past the cap (for example lf -> crlf near the
             // limit). Refuse rather than write an oversized post-image: undo reads under the same cap and
             // would skip a file larger than it as a hash mismatch, leaving the change unrevertable.
-            return Refusal(confined.RelativePath, RefusalReason.TooLarge);
+            return Refusal(baseRelative, RefusalReason.TooLarge);
         }
 
         var write = new PreparedWrite
         {
-            RelativePath = confined.RelativePath,
+            RelativePath = baseRelative,
             RealPath = confined.RealPath,
             PreImage = bytes,
             PreHash = Blake3.Hasher.Hash(bytes).ToString(),
@@ -312,9 +334,9 @@ public sealed class GatedFileWriter
         {
             Outcome = new FileOutcome
             {
-                Path = confined.RelativePath,
+                Path = baseRelative,
                 Changed = true,
-                Diff = dryRun ? UnifiedDiff.Format(text, result.NewText, confined.RelativePath) : null,
+                Diff = dryRun ? UnifiedDiff.Format(text, result.NewText, baseRelative) : null,
             },
             Write = write,
             MatchCount = result.MatchCount,

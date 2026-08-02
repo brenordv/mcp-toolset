@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -47,7 +48,7 @@ public static class Program
         var serverLogger = ServerEventLog.ForServer(Log.Logger);
 
         EditConfig config;
-        RootRegistry registry;
+        ScopeResolver resolver;
         SecretDenylist denylist;
         JournalStore journal;
         GatedFileWriter writer;
@@ -55,10 +56,10 @@ public static class Program
         try
         {
             config = EditConfig.Load();
-            denylist = new SecretDenylist();
-            registry = RootRegistry.Load(denylist);
+            resolver = ScopeResolver.Load();
+            denylist = resolver.Denylist;
 
-            var journalPaths = JournalPaths.Resolve(registry.Confinement);
+            var journalPaths = JournalPaths.Resolve(resolver.BaseConfinement);
             journal = new JournalStore(journalPaths);
             try
             {
@@ -70,10 +71,13 @@ public static class Program
             }
 
             var detector = new EncodingDetector();
-            writer = new GatedFileWriter(registry.Confinement, denylist, detector, journal, config, registry.Name);
-            undoer = new Undoer(registry.Confinement, denylist, journal, config.MaxFileBytes);
+            writer = new GatedFileWriter(resolver.BaseConfinement, denylist, detector, journal, config, resolver.BaseRootName);
+            undoer = new Undoer(resolver.BaseConfinement, denylist, journal, config.MaxFileBytes);
 
-            ServerEventLog.Scope(serverLogger, RootHash(registry), config.CapsSummary());
+            var caps = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{config.CapsSummary()} defaultIgnore={resolver.DefaultIgnorePatterns.Count} denylist={resolver.Denylist.DescribePatterns().Count}");
+            ServerEventLog.Scope(serverLogger, resolver.RootHash, caps);
         }
         catch (EditStartupException ex)
         {
@@ -89,7 +93,7 @@ public static class Program
 
         builder.Services.AddSingleton(metrics);
         builder.Services.AddSingleton(config);
-        builder.Services.AddSingleton(registry);
+        builder.Services.AddSingleton(resolver);
         builder.Services.AddSingleton<ISecretDenylist>(denylist);
         builder.Services.AddSingleton(journal);
         builder.Services.AddSingleton(writer);
@@ -136,8 +140,4 @@ public static class Program
 
         return exitCode;
     }
-
-    /// <summary>An 8-char hash of the canonical root, so the scope log correlates without leaking the path.</summary>
-    private static string RootHash(RootRegistry registry)
-        => LogScrubbing.HashedValue(registry.Confinement.CanonicalRoot);
 }
