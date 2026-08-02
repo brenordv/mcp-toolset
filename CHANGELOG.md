@@ -1,5 +1,8 @@
 # Toolset Changelog
 
+## v8
+- Improved `text-edit` MCP server to handle multiple projects more efficiently.
+
 ## v7
 - Improved `text-search` MCP server to handle multiple projects more efficiently.
 

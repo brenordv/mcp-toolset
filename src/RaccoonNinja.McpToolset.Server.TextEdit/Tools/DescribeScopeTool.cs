@@ -1,24 +1,34 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
-using RaccoonNinja.McpToolset.Files.Security;
 using RaccoonNinja.McpToolset.Server.TextEdit.Configuration;
 using RaccoonNinja.McpToolset.Server.TextEdit.Envelope;
 using RaccoonNinja.McpToolset.Server.TextEdit.Models;
 
 namespace RaccoonNinja.McpToolset.Server.TextEdit.Tools;
 
-/// <summary>The <c>describe_scope</c> tool: reports the single root, the denylist, the caps, and the journal retention, with no absolute path.</summary>
+/// <summary>The <c>describe_scope</c> tool: reports the base root, scope model, ignore tiers, denylist, journal retention, and caps, with no absolute path.</summary>
 [McpServerToolType]
-public sealed class DescribeScopeTool(ToolCommon common, EditConfig config, RootRegistry registry, ISecretDenylist denylist)
+public sealed class DescribeScopeTool(ToolCommon common, EditConfig config, ScopeResolver resolver)
 {
-    /// <summary>Report the editable root, the ignore-file kinds, the denylist, the default encoding, the column unit, and every cap.</summary>
+    private const string ScopeModelDescription =
+        "Pass cwd (an absolute working directory inside the base root) to scope a call to one project; "
+        + "explicit paths are then relative to cwd and confined to it, so a scoped edit cannot write outside "
+        + "its project. Omit cwd to edit across the whole base root. Reported, journaled, and undoable paths "
+        + "are always relative to the base root (a batch is base-scoped), so undo and list_recent_batches are "
+        + "base-global, not cwd-scoped. Ignore tiers (the built-in default set, .gitignore, .mcpignore) "
+        + "between the base root and a scoped cwd are not consulted; the secret denylist is independent and "
+        + "always applies.";
+
+    /// <summary>Report the base root, scope model, ignore tiers, denylist, encoding, column unit, journal retention, and every cap.</summary>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A single-item envelope carrying the scope description.</returns>
     [McpServerTool(Name = "describe_scope", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description(
-        "Report the sandbox this server may edit: the single root (name and kind), the ignore-file kinds "
-        + "honored on the write path, the non-overridable secret denylist, the default output encoding, the "
-        + "column unit, the journal retention, and every cap. Call this first to learn the root and limits.")]
+        "Report the sandbox this server may edit: the base root (by name only), how cwd scoping works "
+        + "(cwd-relative input, base-relative reporting, base-global undo), the default ignore tier and the "
+        + "project ignore-file kinds honored, the non-overridable secret denylist, the default output "
+        + "encoding, the column unit, the journal retention, and every cap. Call this first to learn the "
+        + "scope model and limits.")]
     public Task<ResultEnvelope> InvokeAsync(CancellationToken cancellationToken = default)
     {
         var ctx = common.MakeContext("describe_scope");
@@ -26,9 +36,11 @@ public sealed class DescribeScopeTool(ToolCommon common, EditConfig config, Root
         {
             var info = new ScopeInfo
             {
-                Roots = registry.Describe(),
+                BaseRoot = resolver.BaseRootName,
+                ScopeModel = ScopeModelDescription,
+                DefaultIgnore = resolver.DefaultIgnorePatterns,
                 IgnoreFiles = [".gitignore", ".mcpignore"],
-                DenylistPatterns = [.. denylist.DescribePatterns()],
+                DenylistPatterns = [.. resolver.Denylist.DescribePatterns()],
                 DefaultEncoding = "utf-8",
                 ColumnUnit = "utf-16 code units",
                 DenylistedOmitted = true,

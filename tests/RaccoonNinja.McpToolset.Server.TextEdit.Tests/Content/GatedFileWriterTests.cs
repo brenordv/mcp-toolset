@@ -1,3 +1,4 @@
+using RaccoonNinja.McpToolset.Files.Security;
 using RaccoonNinja.McpToolset.Server.TextEdit.Content;
 using RaccoonNinja.McpToolset.Server.TextEdit.Errors;
 using RaccoonNinja.McpToolset.Server.TextEdit.Tests.TestSupport;
@@ -140,8 +141,8 @@ public sealed class GatedFileWriterTests : IDisposable
         harness.WriteBytes("u.txt", [0x68, 0x00, 0x69, 0x00]);
 
         // Act
-        var refused = harness.Writer.Apply("replace_text", ["u.txt"], new Replacer("hi", "yo", false, false, harness.Config), "t", null, false, null, 0, false, CancellationToken.None);
-        var allowed = harness.Writer.Apply("replace_text", ["u.txt"], new Replacer("hi", "yo", false, false, harness.Config), "t", null, false, "utf-16le", 0, false, CancellationToken.None);
+        var refused = harness.Writer.Apply("replace_text", ["u.txt"], new Replacer("hi", "yo", false, false, harness.Config), "t", null, false, null, 0, false, harness.Confinement, CancellationToken.None);
+        var allowed = harness.Writer.Apply("replace_text", ["u.txt"], new Replacer("hi", "yo", false, false, harness.Config), "t", null, false, "utf-16le", 0, false, harness.Confinement, CancellationToken.None);
 
         // Assert
         Assert.Equal(RefusalReason.LowConfidenceEncoding, refused.Files[0].Reason);
@@ -158,7 +159,7 @@ public sealed class GatedFileWriterTests : IDisposable
         // Act
         // Assert
         Assert.Throws<TextEditException>(() =>
-            _harness.Writer.Apply("replace_text", ["a.txt"], replacer, "t", expectedMatchCount: 5, dryRun: false, sourceEncoding: null, skippedSymlinks: 0, truncated: false, CancellationToken.None));
+            _harness.Writer.Apply("replace_text", ["a.txt"], replacer, "t", expectedMatchCount: 5, dryRun: false, sourceEncoding: null, skippedSymlinks: 0, truncated: false, _harness.Confinement, CancellationToken.None));
         Assert.Equal("hello world", _harness.ReadText("a.txt"));
     }
 
@@ -170,7 +171,7 @@ public sealed class GatedFileWriterTests : IDisposable
         var replacer = Replace("world", "text-edit");
 
         // Act
-        var outcome = _harness.Writer.Apply("replace_text", ["a.txt"], replacer, "t", null, dryRun: true, null, 0, false, CancellationToken.None);
+        var outcome = _harness.Writer.Apply("replace_text", ["a.txt"], replacer, "t", null, dryRun: true, null, 0, false, _harness.Confinement, CancellationToken.None);
 
         // Assert
         Assert.Null(outcome.BatchId);
@@ -208,6 +209,43 @@ public sealed class GatedFileWriterTests : IDisposable
         // Assert
         Assert.True(outcome.Files[0].Changed);
         Assert.Equal("a\r\nb\nc\r", _harness.ReadText("m.txt"));
+    }
+
+    [Fact]
+    public void Apply_EffectiveConfinerIsTheWriteGate_RefusesPathEscapingCwd()
+    {
+        // Arrange
+        _harness.WriteText("sibling.txt", "hello world");
+        var effective = new RootConfinement(_harness.Dir("proj"));
+        var replacer = Replace("world", "text");
+
+        // Act: the writer confines every candidate against the effective (cwd) root, so a path escaping it
+        // is refused even though it stays inside the base.
+        var outcome = _harness.Writer.Apply(
+            "replace_text", ["../sibling.txt"], replacer, "t", null, false, null, 0, false, effective, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(RefusalReason.OutOfRoot, outcome.Files[0].Reason);
+        Assert.Equal("hello world", _harness.ReadText("sibling.txt"));
+    }
+
+    [Fact]
+    public void Apply_ChangedFile_JournalsBaseRelativePathWhenScopedToCwd()
+    {
+        // Arrange
+        _harness.WriteText("proj/a.txt", "hello world");
+        var effective = new RootConfinement(_harness.Dir("proj"));
+        var replacer = Replace("world", "text");
+
+        // Act: selection yields the cwd-relative "a.txt", but the outcome and journal use the base-relative path.
+        var outcome = _harness.Writer.Apply(
+            "replace_text", ["a.txt"], replacer, "t", null, false, null, 0, false, effective, CancellationToken.None);
+
+        // Assert
+        Assert.True(outcome.Files[0].Changed);
+        Assert.Equal("proj/a.txt", outcome.Files[0].Path);
+        var rows = _harness.Journal.GetBatchFiles(outcome.BatchId.Value);
+        Assert.Equal("proj/a.txt", Assert.Single(rows).Path);
     }
 
     private Replacer Replace(string pattern, string replacement)

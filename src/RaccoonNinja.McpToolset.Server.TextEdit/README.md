@@ -1,19 +1,24 @@
 # text-edit MCP server
 
-A local stdio MCP server that gives an agent root-confined text mutation with hash-gated undo. It is the
-mutating half of the toolset, the opposite of `text-search`: **search sees more, edit reaches less.** It
-points at one repository, its write tools are meant to stay on prompt rather than blanket-approved, and
-every write passes a gate whose two rules no flag can disable. Recoverability comes from an append-only
-journal, so any batch can be rolled back.
+A local stdio MCP server that gives an agent base-root-confined text mutation with hash-gated undo. It is
+the mutating half of the toolset, the counterpart to `text-search`: **search sees more, edit reaches less.**
+It shares text-search's base-root model (point it at a directory that holds your projects; a per-call `cwd`
+scopes an edit to one project) but has **no package roots**, because a package root is a read-only
+dependency cache and a write tool must never edit into one. Its write tools are meant to stay on prompt
+rather than blanket-approved, and every write passes a gate whose two rules no flag can disable.
+Recoverability comes from an append-only journal, so any batch can be rolled back.
 
-It never leaves its configured root, and it never writes a secret. Two controls hold that line and no flag
-can turn them off:
+It never leaves its configured base root, and it never writes a secret. Two controls hold that line and no
+flag can turn them off:
 
-- **Root confinement.** Every path is resolved through every symbolic link and junction and refused if its
-  real target escapes the root. Undo re-checks this on every restore, because a journal path is untrusted
-  input.
+- **Base-root confinement, with a per-call firewall.** Every path, including the per-call `cwd`, is resolved
+  through every symbolic link and junction and refused if its real target escapes the base root. When a
+  `cwd` is given it becomes a tighter per-call ceiling: an edit scoped to one project cannot write another,
+  even via an explicit `../other` path. Undo re-checks confinement on every restore, because a journal path
+  is untrusted input.
 - **A secret denylist.** `.env`, private keys, `.git/`, `.ssh/`, cloud credentials, and the like are never
-  written, however the path is spelled or symlinked.
+  written, however the path is spelled or symlinked. An operator can add patterns (never remove built-ins)
+  with `MCP_TEXTEDIT_EXTRA_DENY`.
 
 ## Why use it
 
@@ -22,19 +27,27 @@ can turn them off:
 | An agent shells out to `sed -i` with a loose path; a bad glob can rewrite `.git/hooks/*` or a key file. | Five typed tools, root-confined, that refuse a secret file structurally and journal every change they make.        |
 | A regex from the model rewrites the wrong thing and there is no clean way back.                          | Every batch is journaled with a pre-image; `undo_batch` restores it, skipping any file changed since.              |
 | An overeager replacement corrupts a BOM-less UTF-16 file or unifies a mixed-ending file's terminators.  | Encoding is detected and round-tripped byte-faithfully; line endings are preserved unless you ask to change them.  |
-| Absolute paths from your machine leak into the model's context.                                         | Paths are root-relative, in and out, in every result and in the journal.                                           |
+| Absolute paths from your machine leak into the model's context.                                         | Paths are base-relative, in and out, in every result and in the journal.                                           |
 
 ## Tools
 
-Call `describe_scope` first to learn the root and the caps. The two selector tools share one selector:
-give exactly one of `glob` (primary), `regex`, or `paths`, or none to mean "everything under the root",
-optionally narrowed by `extensions`. A glob with no `/` matches the basename at any depth, so `*.cs` is
-recursive. Ignore rules (`.gitignore`/`.mcpignore`) always apply; there is no `include_ignored` on the write
-path.
+Call `describe_scope` first to learn the base root, the scope model, and the caps. The two selector tools
+share one selector: give exactly one of `glob` (primary), `regex`, or `paths`, or none to mean "everything
+in the scope", optionally narrowed by `extensions`. A glob with no `/` matches the basename at any depth, so
+`*.cs` is recursive. Ignore rules (`.gitignore`/`.mcpignore`) always apply; there is no `include_ignored` on
+the write path.
+
+**Scoping a call.** The optional `cwd` argument is an absolute working directory inside the base root. Pass
+it to scope an edit to one project: the selector and every write are confined to that `cwd`, so a scoped
+edit cannot touch another project even with an explicit `../other` path, and explicit `paths` are taken
+relative to `cwd`. Omit `cwd` to edit across the whole base root. Reported, journaled, and undoable paths
+are always **base-relative** (a batch is base-scoped), so `undo_batch` and `list_recent_batches` are
+base-global, not scoped to any `cwd`. A `cwd` that escapes the base, is not a directory, or lands on or
+inside a protected directory is refused with a path-free error.
 
 | Tool                                   | Purpose                                                                          | Annotation                          |
 |----------------------------------------|----------------------------------------------------------------------------------|-------------------------------------|
-| `describe_scope`                       | Report the root, the denylist, the default encoding, the caps, and the journal retention. | ReadOnly                   |
+| `describe_scope`                       | Report the base root, scope model, denylist, default encoding, caps, and journal retention. | ReadOnly                |
 | `normalize_files`                      | Trim trailing whitespace, rewrite line endings, fix the final newline, strip a BOM. | Destructive=false, Idempotent      |
 | `replace_text`                         | Replace a literal or regex pattern (regex back-references) across the selection.  | Destructive=true                    |
 | `list_recent_batches`                  | List the recent undoable batches, newest first.                                  | ReadOnly                            |
@@ -84,7 +97,7 @@ single element carrying the batch id, the counts, and the per-file entries.
     }
   ],
   "count": 1,
-  "filters_applied": { "glob": "<provided>", "case_sensitive": false, "dry_run": false },
+  "filters_applied": { "cwd": ".", "glob": "<provided>", "case_sensitive": false, "dry_run": false },
   "error": null                       // set instead of results on failure
 }
 ```
@@ -105,24 +118,33 @@ a `reason`).
 | `ExpectedMatchCountMismatch`| The rewritable-match count did not equal `expected_match_count`; nothing was written.            |
 | `BatchNotFound`             | No batch exists for the supplied id.                                                              |
 | `OperationBudgetExceeded`   | The operation ran past its wall-clock budget; narrow the selector or pattern.                    |
-| `InvalidArgument`           | An argument was missing, malformed, or out of range (including an unknown `source_encoding`).    |
+| `InvalidArgument`           | An argument was missing, malformed, or out of range (including an unknown `source_encoding`, or a `cwd` that escapes the base, is not a directory, or is denylisted). |
 | `InternalError`             | An unexpected fault; details go to the log, never the client.                                    |
 
 ## Security model
 
 **In plain terms:**
 
-- The server can only ever write inside the single root you configured, and no argument can widen past it.
-- It never writes a known secret file, and no option can change that.
-- Symlinks that point outside the root, or at a secret, are refused by their real target, not their name.
+- The server can only ever write inside the base root you configured, and no argument can widen past it. A
+  per-call `cwd` narrows it further: a scoped edit cannot write outside that project, even via an explicit
+  `../other` path.
+- It never writes a known secret file, and no option can change that (`MCP_TEXTEDIT_EXTRA_DENY` only adds).
+- Symlinks that point outside the base, or at a secret, are refused by their real target, not their name.
 - Every write is journaled with a pre-image, so a batch can be undone even after a crash mid-batch.
 - Undo is a second write path, so it re-runs confinement and the denylist on every stored journal path
   before restoring; the hash gate is layered on top, not a substitute.
 - No absolute path from your machine is ever returned to the model or written into the journal.
 
-**The journal lives outside the root** (in platform app-data, keyed by a hash of the canonical root), so
-this server's own write tools cannot alter its pre-images. That siting is enforced at startup: if the
-journal directory would resolve inside the root, the server refuses to start.
+**The reachable write surface is the whole base root, so keep the base tight.** As with text-search, the
+server refuses a dangerously broad base at startup: a filesystem or drive root, your home directory, a base
+whose own path carries a denylisted segment, or a base placed directly on a protected parent directory.
+Because the write tools stay on prompt (each change is reviewed), a base spanning several projects is
+workable, but a `cwd` per edit keeps each change contained.
+
+**The journal lives outside the base** (in platform app-data, keyed by a hash of the canonical base root),
+so this server's own write tools cannot alter its pre-images, and it survives a `git clean` of the repo.
+That siting is enforced at startup: if the journal directory would resolve inside the base, the server
+refuses to start.
 
 **The limit, stated plainly:** the boundary is the filename denylist plus confinement, not content
 inspection. `replace_text` will happily rewrite a `const TOKEN = "..."` sitting in an ordinary source file,
@@ -132,11 +154,13 @@ than editing any source the agent may edit, but keep it in mind when granting th
 
 ## Configuration
 
-All configuration is environment variables. The root is required; everything else has a default.
+All configuration is environment variables. The base root is required; everything else has a default.
 
 | Variable                                | Default    | Meaning                                                                                   |
 |-----------------------------------------|------------|-------------------------------------------------------------------------------------------|
-| `MCP_TEXTEDIT_ROOTS`                    | (required) | The single root: a bare path or a `name=path` alias. Exactly one; a second repo is a second server. |
+| `MCP_TEXTEDIT_BASE_ROOT`                | (required) | The single confinement root: a bare absolute path to the directory holding your projects. Fatal if unset, not an existing directory, or dangerously broad. |
+| `MCP_TEXTEDIT_EXTRA_DENY`               | (none)     | `;`-separated additive deny patterns. A trailing `/` denies a bare directory segment at any depth; otherwise a file-name glob. Tightens the built-in denylist only; absolute-looking or malformed entries are fatal. |
+| `MCP_TEXTEDIT_DEFAULT_IGNORE`           | (built-in) | `off` disables the built-in default ignore set; a file path replaces it with that file's patterns (a missing path is fatal); unset keeps the built-ins. |
 | `MCP_TEXTEDIT_MAX_FILES`                | 1000       | Default number of files a selector call acts on.                                          |
 | `MCP_TEXTEDIT_MAX_FILES_CEILING`        | 10000      | Hard ceiling the per-call file count is clamped to.                                       |
 | `MCP_TEXTEDIT_MAX_FILE_BYTES`           | 5242880    | Largest file read or rewritten (5 MiB).                                                   |
@@ -147,8 +171,10 @@ All configuration is environment variables. The root is required; everything els
 | `MCP_TEXTEDIT_JOURNAL_RETENTION_BATCHES`| 50         | Number of most-recent batches the journal keeps.                                          |
 | `MCP_TEXTEDIT_JOURNAL_RETENTION_HOURS`  | 48         | Age past which a batch is eligible for pruning.                                           |
 
-A root's name defaults to its basename. Alias a root whose basename would be unhelpful or
-machine-identifying, since the name reaches the model. Names starting with `@` are reserved.
+Point `MCP_TEXTEDIT_BASE_ROOT` at the directory that holds your projects (the same one you would give
+text-search), and an agent passes `cwd` (the absolute path of one project inside it) to scope an edit. The
+base basename reaches the model through `describe_scope`, so avoid a base directory whose name is
+machine-identifying. There are no package roots: point a second, disjoint tree at a second instance.
 
 ### Logging
 
@@ -166,7 +192,7 @@ as a length and a hash, never verbatim.
 ## Adding it to Claude Code
 
 Publish a self-contained build (see the repo release workflow) or `dotnet run` the project, then register
-it. Set `MCP_TEXTEDIT_ROOTS` to the one repository it may edit.
+it. Set `MCP_TEXTEDIT_BASE_ROOT` to the directory that holds the projects it may edit.
 
 ```jsonc
 {
@@ -174,7 +200,8 @@ it. Set `MCP_TEXTEDIT_ROOTS` to the one repository it may edit.
     "text-edit": {
       "command": "/path/to/text-edit",
       "env": {
-        "MCP_TEXTEDIT_ROOTS": "app=/path/to/app"
+        "MCP_TEXTEDIT_BASE_ROOT": "/absolute/path/to/projects",
+        "MCP_TEXTEDIT_EXTRA_DENY": "*.generated.cs;private/"
       }
     }
   }
@@ -183,14 +210,14 @@ it. Set `MCP_TEXTEDIT_ROOTS` to the one repository it may edit.
 
 Keep the write tools on prompt (do not blanket-approve `replace_text`); their MCP annotations mark
 `replace_text` destructive so a client can prompt for it. Verify by asking the agent to call
-`describe_scope`; it should report the root, the caps, and the journal retention.
+`describe_scope`; it should report the base root, the scope model, the caps, and the journal retention.
 
 ## Project layout
 
 ```
 Server.TextEdit/
 ├─ Program.cs            # host spine: logging, config, DI singletons, journal open, tool registration
-├─ Configuration/        # EditConfig (caps), RootRegistry (single root), startup exception
+├─ Configuration/        # EditConfig (caps), ScopeResolver (base root + per-call cwd scope), EditScope, startup exception
 ├─ Envelope/             # ResultEnvelope, ErrorEnvelope, filters echo
 ├─ Errors/               # error codes + the domain exception
 ├─ Logging/              # StdoutSentinel, allowlist JSON formatter, bootstrap, metrics events

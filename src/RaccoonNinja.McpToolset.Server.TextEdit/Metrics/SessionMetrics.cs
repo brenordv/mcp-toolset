@@ -22,6 +22,7 @@ public sealed class SessionMetrics
     private long _batchesCommitted;
     private long _filesChanged;
     private long _filesRestored;
+    private long _wholeBaseCalls;
 
     /// <summary>Record one completed tool call and its outcome (<c>ok</c> or <c>error</c>).</summary>
     /// <param name="tool">The tool name.</param>
@@ -53,6 +54,9 @@ public sealed class SessionMetrics
             Interlocked.Add(ref _filesChanged, changed);
         }
     }
+
+    /// <summary>Record one call that edited the whole base root (no <c>cwd</c> scope, the widest write).</summary>
+    public void RecordWholeBaseCall() => Interlocked.Increment(ref _wholeBaseCalls);
 
     /// <summary>Record files restored by an undo operation.</summary>
     /// <param name="restored">The number of files restored.</param>
@@ -107,6 +111,7 @@ public sealed class SessionMetrics
             ["batches_committed_total"] = Interlocked.Read(ref _batchesCommitted),
             ["files_changed_total"] = Interlocked.Read(ref _filesChanged),
             ["files_restored_total"] = Interlocked.Read(ref _filesRestored),
+            ["whole_base_calls_total"] = Interlocked.Read(ref _wholeBaseCalls),
         };
     }
 

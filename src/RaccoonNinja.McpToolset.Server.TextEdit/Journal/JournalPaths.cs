@@ -93,8 +93,9 @@ public sealed class JournalPaths
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Fail closed: a journal that cannot be locked to the current user must not hold plaintext
-            // pre-images, so refuse to start rather than proceed with a possibly world-readable store.
-            throw new EditStartupException($"could not restrict journal directory permissions: {ex.Message}");
+            // pre-images, so refuse to start rather than proceed with a possibly world-readable store. The
+            // message stays path-free: ex.Message can carry the home-based journal path.
+            throw new EditStartupException("could not restrict journal directory permissions to the current user");
         }
     }
 

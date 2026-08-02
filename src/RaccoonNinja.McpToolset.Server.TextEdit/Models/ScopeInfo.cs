@@ -4,14 +4,23 @@ namespace RaccoonNinja.McpToolset.Server.TextEdit.Models;
 
 /// <summary>
 /// The payload of <c>describe_scope</c>: the sandbox an agent may mutate, described without any absolute
-/// path. The single root is listed by name and kind; every effective cap and the journal retention are
-/// reported so the agent can shape its calls up front.
+/// path. It names the base root by basename, explains the <c>cwd</c> scope model, and lists the ignore
+/// tiers, the secret denylist, the journal retention, and every effective cap so the agent can shape its
+/// calls up front.
 /// </summary>
 public sealed record ScopeInfo
 {
-    /// <summary>The single editable root, by name and kind (never an absolute path).</summary>
-    [JsonPropertyName("roots")]
-    public IReadOnlyList<RootDescriptor> Roots { get; init; } = [];
+    /// <summary>The base root's basename (never an absolute path).</summary>
+    [JsonPropertyName("base_root")]
+    public string BaseRoot { get; init; }
+
+    /// <summary>How scoping and paths work: <c>cwd</c> scoping, cwd-relative input, base-relative reporting, base-global undo, and the scoped-ancestor-ignore caveat.</summary>
+    [JsonPropertyName("scope_model")]
+    public string ScopeModel { get; init; }
+
+    /// <summary>The effective default-ignore patterns (empty when the tier is disabled).</summary>
+    [JsonPropertyName("default_ignore")]
+    public IReadOnlyList<string> DefaultIgnore { get; init; } = [];
 
     /// <summary>The ignore-file kinds honored on the write path.</summary>
     [JsonPropertyName("ignore_files")]

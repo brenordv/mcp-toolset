@@ -34,6 +34,15 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
             extras: new Dictionary<string, object>(StringComparer.Ordinal) { [LogFields.RefusalReason] = reason });
     }
 
+    /// <summary>Record that a call edited the whole base root (no <c>cwd</c> scope, the widest write), as a counter and a log line.</summary>
+    /// <param name="ctx">The call context.</param>
+    public void WholeBase(CallContext ctx)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        metrics.RecordWholeBaseCall();
+        ctx.Log(LogLevel.Debug, "whole_base");
+    }
+
     /// <summary>Record a regex match-timeout hit as a first-class refusal signal.</summary>
     /// <param name="ctx">The call context.</param>
     public void RegexTimeout(CallContext ctx)
@@ -137,6 +146,13 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
         {
             metrics.RecordToolCall(ctx.Tool, "error");
             metrics.RecordDurationMs((int)stopwatch.ElapsedMilliseconds);
+            if (ex.RefusalReason is not null)
+            {
+                // A boundary refusal (for example a cwd escaping the base) is counted in refusals_total and
+                // emits a refusal log line in addition to the generic tool_error.
+                Refusal(ctx, ex.RefusalReason);
+            }
+
             ctx.Log(
                 LogLevel.Warning,
                 "tool_error",

@@ -12,10 +12,15 @@ public sealed class TextEditException : Exception
     /// <param name="code">One of <see cref="ErrorCodes"/>.</param>
     /// <param name="message">A caller-facing message with no machine-identifying content.</param>
     /// <param name="detail">Optional structured detail; copied defensively.</param>
-    public TextEditException(string code, string message, IDictionary<string, object> detail = null)
+    /// <param name="refusalReason">
+    /// When set, marks this error as a boundary refusal so it is counted in <c>refusals_total</c> (for
+    /// example <c>cwd_outside_base</c>); <c>null</c> for an ordinary error.
+    /// </param>
+    public TextEditException(string code, string message, IDictionary<string, object> detail = null, string refusalReason = null)
         : base(message)
     {
         Code = code;
+        RefusalReason = refusalReason;
         Detail = detail is null
             ? new Dictionary<string, object>(StringComparer.Ordinal)
             : new Dictionary<string, object>(detail, StringComparer.Ordinal);
@@ -23,6 +28,9 @@ public sealed class TextEditException : Exception
 
     /// <summary>The stable error code (see <see cref="ErrorCodes"/>).</summary>
     public string Code { get; }
+
+    /// <summary>The boundary-refusal reason when this error is a refusal (counted in <c>refusals_total</c>); otherwise <c>null</c>.</summary>
+    public string RefusalReason { get; }
 
     /// <summary>Structured, machine-privacy-safe detail carried into the failure envelope.</summary>
     public IDictionary<string, object> Detail { get; }

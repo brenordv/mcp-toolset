@@ -4,8 +4,8 @@ namespace RaccoonNinja.McpToolset.Server.TextEdit.Configuration;
 
 /// <summary>
 /// Resolved runtime caps for one server process. Every cap has an environment override and is surfaced
-/// through <c>describe_scope</c>. The confinement root itself is owned by <see cref="RootRegistry"/>, not
-/// here.
+/// through <c>describe_scope</c>. The base root and per-call scope resolution are owned by
+/// <see cref="ScopeResolver"/>, not here.
 /// </summary>
 public sealed record EditConfig
 {
