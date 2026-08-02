@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Files.Selection;
 using RaccoonNinja.McpToolset.Files.Text;
@@ -7,24 +8,25 @@ using RaccoonNinja.McpToolset.Server.TextSearch.Configuration;
 using RaccoonNinja.McpToolset.Server.TextSearch.Content;
 using RaccoonNinja.McpToolset.Server.TextSearch.Envelope;
 using RaccoonNinja.McpToolset.Server.TextSearch.Errors;
+using RaccoonNinja.McpToolset.Server.TextSearch.Logging;
 using RaccoonNinja.McpToolset.Server.TextSearch.Models;
 using RaccoonNinja.McpToolset.Server.TextSearch.Paging;
 
 namespace RaccoonNinja.McpToolset.Server.TextSearch.Tools;
 
-/// <summary>The <c>search_text</c> tool: line-oriented literal or regex search across the targeted roots.</summary>
+/// <summary>The <c>search_text</c> tool: line-oriented literal or regex search across the call's scope.</summary>
 [McpServerToolType]
-public sealed class SearchTextTool(ToolCommon common, SearchConfig config, RootRegistry registry, IEncodingDetector detector)
+public sealed class SearchTextTool(ToolCommon common, SearchConfig config, ScopeResolver resolver, IEncodingDetector detector)
 {
-    /// <summary>Search file contents for a literal or regex pattern, line by line, across the targeted roots.</summary>
+    /// <summary>Search file contents for a literal or regex pattern, line by line, across the call's scope.</summary>
     /// <param name="pattern">The content pattern to find.</param>
     /// <param name="is_regex">Whether <paramref name="pattern"/> is a regex.</param>
     /// <param name="glob">A glob selecting which files to search.</param>
     /// <param name="regex">A regex selecting which files to search (over the path, not the content).</param>
     /// <param name="paths">Explicit files to search.</param>
-    /// <param name="root">The target root: a name, <c>@packages</c>, <c>@all</c>, or omitted (all workspace roots).</param>
+    /// <param name="cwd">An absolute working directory inside the base root to scope the call to; omit for the whole base root.</param>
     /// <param name="extensions">File extensions to keep (dot optional).</param>
-    /// <param name="include_ignored">Whether to include ignored files.</param>
+    /// <param name="include_ignored">Globs that re-include otherwise-ignored paths for this call; never bypasses the secret denylist.</param>
     /// <param name="case_sensitive">Whether both file matching and content matching are case-sensitive.</param>
     /// <param name="context_lines">Lines of context around each match; clamped to the ceiling.</param>
     /// <param name="max_matches_per_file">The per-file match cap; clamped to the ceiling.</param>
@@ -35,14 +37,15 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, RootR
     /// <returns>An envelope of matches (or matching files) with pagination metadata.</returns>
     [McpServerTool(Name = "search_text", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description(
-        "Search file contents for a pattern, line by line (grep-style), across the targeted roots. Choose "
-        + "the files with the same selector as find_files (glob primary) and the same root targeting "
-        + "(name, \"@packages\", \"@all\", or omitted for all workspace roots); a package-root search must "
-        + "be narrowed by glob, regex, paths, or extensions. Give `pattern` and set `is_regex` for a "
-        + "regex. Matching is per line, so a pattern that spans a newline will not match. Returns "
-        + "{root, path, line, column (1-based), text, match_start, match_end}; column and offsets are "
-        + "UTF-16 code units. Set files_only to list matching files. Page with the returned cursor "
-        + "(keep files_only and root stable across pages).")]
+        "Search file contents for a pattern, line by line (grep-style), across the call's scope. Choose the "
+        + "files with the same selector as find_files (glob primary) and the same cwd scoping: pass cwd (an "
+        + "absolute working directory inside the base root) to scope to one project, omit it to search the "
+        + "whole base root (the heavy path), or pass cwd @name (a package root from describe_scope, optionally "
+        + "@name/<subpath>) to search a dependency cache. Give `pattern` and set `is_regex` for a regex. Matching is per "
+        + "line, so a pattern that spans a newline will not match. Returns {path, line, column (1-based), "
+        + "text, match_start, match_end}; the path is relative to cwd (or the base root when omitted), and "
+        + "column and offsets are UTF-16 code units. Set files_only to list matching files. Page with the "
+        + "returned cursor (keep files_only and cwd stable across pages).")]
     public Task<ResultEnvelope> InvokeAsync(
         [Description("The content pattern to find. Required, non-empty.")]
         string pattern,
@@ -52,14 +55,14 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, RootR
         string glob = null,
         [Description("A regex selecting which files to search (over the path, not the content). Exactly one of glob/regex/paths.")]
         string regex = null,
-        [Description("Explicit root-relative files to search. Exactly one of glob/regex/paths.")]
+        [Description("Explicit scope-relative files to search. Exactly one of glob/regex/paths.")]
         string[] paths = null,
-        [Description("Target root: a name, \"@packages\", \"@all\", or omitted for all workspace roots.")]
-        string root = null,
-        [Description("File extensions to keep (dot optional, case-insensitive). ANDed with the selector; narrows package searches.")]
+        [Description("Absolute working directory inside the base root to scope this call to; or @name (a package root from describe_scope), optionally @name/<subpath>, to search a dependency cache. Omit to search the whole base root (the heavy path).")]
+        string cwd = null,
+        [Description("File extensions to keep (dot optional, case-insensitive). ANDed with the selector.")]
         string[] extensions = null,
-        [Description("Include files matched by ignore rules. Default false; never bypasses the secret denylist.")]
-        bool include_ignored = false,
+        [Description("Globs that re-include otherwise-ignored paths for this call, e.g. [\"node_modules/**\"]. Omit/empty keeps every ignore tier; never bypasses the secret denylist.")]
+        string[] include_ignored = null,
         [Description("Match case-sensitively (both file selection and content). Default false.")]
         bool case_sensitive = false,
         [Description("Lines of context to include before and after each match. Default 0; clamped to the ceiling.")]
@@ -70,7 +73,7 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, RootR
         int max_results = 0,
         [Description("Return one entry per matching file instead of each match. Default false.")]
         bool files_only = false,
-        [Description("Opaque pagination cursor from a previous response; keep files_only and root stable across pages.")]
+        [Description("Opaque pagination cursor from a previous response; keep files_only and cwd stable across pages.")]
         string cursor = null,
         CancellationToken cancellationToken = default)
     {
@@ -82,12 +85,13 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, RootR
                 throw TextSearchException.InvalidArgument("pattern must not be empty");
             }
 
-            var targets = registry.Resolve(root);
+            var scope = resolver.Resolve(cwd);
+            common.ScopeEntered(ctx, cwd, scope);
+
             var selector = SelectorSupport.Build(config, glob, regex, paths, extensions, include_ignored, case_sensitive);
-            SelectorSupport.EnsureNarrowedForPackages(targets, selector);
-            if (SelectorSupport.TargetsPackage(targets))
+            if (!selector.IncludeIgnored.IsEmpty)
             {
-                common.PackageTargeted(ctx);
+                common.IncludeIgnoredUsed(ctx);
             }
 
             var matcher = BuildMatcher(ctx, pattern, is_regex, case_sensitive);
@@ -97,103 +101,76 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, RootR
             using var budget = SelectorSupport.CreateBudget(config, cancellationToken);
 
             var filters = SelectorSupport
-                .Filters(root, glob, regex, paths, extensions, include_ignored, case_sensitive)
+                .Filters(scope.ScopeKey, glob, regex, paths, extensions, include_ignored, case_sensitive)
                 .Redact("pattern", pattern)
                 .Flag("is_regex", is_regex)
                 .Number("context_lines", contextLines)
                 .Flag("files_only", files_only)
                 .Build();
 
-            var result = files_only
-                ? SearchFilesOnly(ctx, targets, selector, matcher, root, cursor, pageSize, budget.Token)
-                : SearchMatches(ctx, targets, selector, matcher, contextLines, perFileCap, root, cursor, pageSize, budget.Token);
+            var (page, filesScanned) = files_only
+                ? SearchFilesOnly(ctx, scope, selector, matcher, cursor, pageSize, budget.Token)
+                : SearchMatches(ctx, scope, selector, matcher, contextLines, perFileCap, cursor, pageSize, budget.Token);
+
+            ctx.Log(
+                LogLevel.Debug,
+                "files_scanned",
+                extras: new Dictionary<string, object>(StringComparer.Ordinal) { [LogFields.FilesScanned] = filesScanned });
 
             return Task.FromResult(ToolCommon.ListSuccess(
-                result.Items,
-                truncated: result.Truncated,
-                cursor: result.Cursor,
+                page.Items,
+                truncated: page.Truncated,
+                cursor: page.Cursor,
                 filtersApplied: filters));
         });
     }
 
-    private Page<object> SearchMatches(
+    private (Page<object> Page, int FilesScanned) SearchMatches(
         CallContext ctx,
-        IReadOnlyList<RootSpec> targets,
+        CallScope scope,
         FileSelector selector,
         LineMatcher matcher,
         int contextLines,
         int perFileCap,
-        string target,
         string cursor,
         int pageSize,
         CancellationToken budgetToken)
     {
-        var (cursorRoot, skip) = string.IsNullOrEmpty(cursor) ? (null, 0) : Cursor.DecodeSearch(target, cursor);
-        var resuming = cursorRoot is not null;
-        var reachedCursorRoot = !resuming;
+        var skip = string.IsNullOrEmpty(cursor) ? 0 : Cursor.DecodeSearch(scope.CursorScope, cursor);
+
+        SelectorSupport.CheckBudget(config, budgetToken);
+        var walk = SelectorSupport.Run(scope.Selection, selector, config, budgetToken);
         var emitted = new List<object>();
         var more = false;
-        var windowTruncated = false;
-        string lastRoot = null;
-        var lastOffset = 0;
+        var seen = 0;
+        var filesScanned = 0;
 
-        foreach (var spec in targets)
+        foreach (var entry in walk.Entries)
         {
             SelectorSupport.CheckBudget(config, budgetToken);
-
-            int rootSkip;
-            if (!reachedCursorRoot)
+            var outcome = SearchOne(ctx, scope.Reader, entry, matcher, contextLines, perFileCap);
+            filesScanned++;
+            if (outcome is null)
             {
-                if (!spec.Name.Equals(cursorRoot, StringComparison.OrdinalIgnoreCase))
+                continue;
+            }
+
+            foreach (var match in outcome.Matches)
+            {
+                if (seen < skip)
                 {
+                    seen++;
                     continue;
                 }
 
-                reachedCursorRoot = true;
-                rootSkip = skip;
-            }
-            else
-            {
-                rootSkip = 0;
-            }
-
-            var walk = SelectorSupport.Run(spec.Selection, selector, config, budgetToken);
-            windowTruncated |= walk.Truncated;
-            var seenInRoot = 0;
-
-            foreach (var entry in walk.Entries)
-            {
-                SelectorSupport.CheckBudget(config, budgetToken);
-                var outcome = SearchOne(ctx, spec.Reader, entry, matcher, contextLines, perFileCap);
-                if (outcome is null)
+                if (emitted.Count >= pageSize)
                 {
-                    continue;
-                }
-
-                foreach (var match in outcome.Matches)
-                {
-                    if (seenInRoot < rootSkip)
-                    {
-                        seenInRoot++;
-                        continue;
-                    }
-
-                    if (emitted.Count >= pageSize)
-                    {
-                        more = true;
-                        break;
-                    }
-
-                    emitted.Add(match with { Root = spec.Name, Path = entry.RelativePath });
-                    seenInRoot++;
-                    lastRoot = spec.Name;
-                    lastOffset = seenInRoot;
-                }
-
-                if (more)
-                {
+                    more = true;
                     break;
                 }
+
+                emitted.Add(match with { Path = entry.RelativePath });
+                seen++;
             }
 
             if (more)
@@ -202,58 +179,48 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, RootR
             }
         }
 
-        if (resuming && !reachedCursorRoot)
-        {
-            throw TextSearchException.InvalidArgument("cursor is for a different query");
-        }
-
-        // The per-root offset cursor assumes a stable per-file match count across pages. A pattern that
-        // trips the match timeout (already a counted refusal) can shift that count, so paged results are
+        // The scope-offset cursor assumes a stable per-file match count across pages. A pattern that trips
+        // the match timeout (already a counted refusal) can shift that count, so paged results are
         // best-effort for such abusive patterns; confinement and leak guarantees are unaffected.
-        var truncated = more || windowTruncated;
-        var cursorOut = more ? Cursor.EncodeSearch(target, lastRoot, lastOffset) : null;
-        return new Page<object>(emitted, truncated, cursorOut);
+        var truncated = more || walk.Truncated;
+        var cursorOut = more ? Cursor.EncodeSearch(scope.CursorScope, seen) : null;
+        return (new Page<object>(emitted, truncated, cursorOut), filesScanned);
     }
 
-    private Page<object> SearchFilesOnly(
+    private (Page<object> Page, int FilesScanned) SearchFilesOnly(
         CallContext ctx,
-        IReadOnlyList<RootSpec> targets,
+        CallScope scope,
         FileSelector selector,
         LineMatcher matcher,
-        string target,
         string cursor,
         int pageSize,
         CancellationToken budgetToken)
     {
+        SelectorSupport.CheckBudget(config, budgetToken);
+        var walk = SelectorSupport.Run(scope.Selection, selector, config, budgetToken);
         var matched = new List<FlatFile>();
-        var windowTruncated = false;
-        for (var rootIndex = 0; rootIndex < targets.Count; rootIndex++)
+        var filesScanned = 0;
+        foreach (var entry in walk.Entries)
         {
             SelectorSupport.CheckBudget(config, budgetToken);
-            var walk = SelectorSupport.Run(targets[rootIndex].Selection, selector, config, budgetToken);
-            windowTruncated |= walk.Truncated;
-            foreach (var entry in walk.Entries)
+            var outcome = SearchOne(ctx, scope.Reader, entry, matcher, contextLines: 0, perFileCap: 1);
+            filesScanned++;
+            if (outcome is not null && outcome.Matches.Count > 0)
             {
-                SelectorSupport.CheckBudget(config, budgetToken);
-                var outcome = SearchOne(ctx, targets[rootIndex].Reader, entry, matcher, contextLines: 0, perFileCap: 1);
-                if (outcome is not null && outcome.Matches.Count > 0)
-                {
-                    matched.Add(new FlatFile(rootIndex, targets[rootIndex].Name, entry));
-                }
+                matched.Add(new FlatFile(entry));
             }
         }
 
-        var page = FileListing.Paginate(matched, windowTruncated, skippedSymlinks: 0, config, target, cursor, pageSize);
+        var page = FileListing.Paginate(matched, walk.Truncated, skippedSymlinks: 0, config, scope.CursorScope, cursor, pageSize);
         var items = page.Items
             .Select(static file => (object)new FileHit
             {
-                Root = file.RootName,
                 Path = file.Entry.RelativePath,
                 Size = file.Entry.Size,
                 LastModified = file.Entry.LastModifiedUtc.ToString("o", CultureInfo.InvariantCulture),
             })
             .ToList();
-        return new Page<object>(items, page.Truncated, page.Cursor);
+        return (new Page<object>(items, page.Truncated, page.Cursor), filesScanned);
     }
 
     private FileSearchOutcome SearchOne(CallContext ctx, GatedFileReader reader, WalkEntry entry, LineMatcher matcher, int contextLines, int perFileCap)

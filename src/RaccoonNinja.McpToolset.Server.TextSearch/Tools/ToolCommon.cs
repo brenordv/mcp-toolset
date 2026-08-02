@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using RaccoonNinja.McpToolset.Server.TextSearch.Configuration;
 using RaccoonNinja.McpToolset.Server.TextSearch.Envelope;
 using RaccoonNinja.McpToolset.Server.TextSearch.Errors;
 using RaccoonNinja.McpToolset.Server.TextSearch.Logging;
@@ -46,13 +47,52 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
             extras: new Dictionary<string, object>(StringComparer.Ordinal) { [LogFields.RefusalReason] = "regex_timeout" });
     }
 
-    /// <summary>Record that a call reached into a package root, both as a counter and a per-call log line.</summary>
+    /// <summary>Record that a call searched the whole base root (no <c>cwd</c> scope), as a counter and a log line.</summary>
     /// <param name="ctx">The call context.</param>
-    public void PackageTargeted(CallContext ctx)
+    public void WholeBase(CallContext ctx)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        metrics.RecordPackageTargeting();
-        ctx.Log(LogLevel.Debug, "package_targeted");
+        metrics.RecordWholeBaseCall();
+        ctx.Log(LogLevel.Debug, "whole_base");
+    }
+
+    /// <summary>Record that a call targeted a package root, as a counter and a path-free log line carrying only the name.</summary>
+    /// <param name="ctx">The call context.</param>
+    /// <param name="name">The package root's operator-chosen name (never a path or subpath).</param>
+    public void PackageRoot(CallContext ctx, string name)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        metrics.RecordPackageRootCall();
+        ctx.Log(
+            LogLevel.Debug,
+            "package_root",
+            extras: new Dictionary<string, object>(StringComparer.Ordinal) { [LogFields.PackageRoot] = name });
+    }
+
+    /// <summary>Record which root a selector-driven call entered: whole base (blank <c>cwd</c>) or a package root.</summary>
+    /// <param name="ctx">The call context.</param>
+    /// <param name="cwd">The raw <c>cwd</c> argument (blank means the whole base).</param>
+    /// <param name="scope">The resolved scope.</param>
+    public void ScopeEntered(CallContext ctx, string cwd, CallScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        if (string.IsNullOrWhiteSpace(cwd))
+        {
+            WholeBase(ctx);
+        }
+        else if (scope.Kind == ScopeKind.Package)
+        {
+            PackageRoot(ctx, scope.PackageName);
+        }
+    }
+
+    /// <summary>Record that a call re-included otherwise-ignored paths, as a counter and a log line.</summary>
+    /// <param name="ctx">The call context.</param>
+    public void IncludeIgnoredUsed(CallContext ctx)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        metrics.RecordIncludeIgnored();
+        ctx.Log(LogLevel.Debug, "include_ignored");
     }
 
     /// <summary>Record that an agent regex fell back from the non-backtracking to the backtracking engine.</summary>
@@ -98,6 +138,13 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
         {
             metrics.RecordToolCall(ctx.Tool, "error");
             metrics.RecordDurationMs((int)stopwatch.ElapsedMilliseconds);
+            if (ex.RefusalReason is not null)
+            {
+                // A boundary refusal (for example a cwd escaping the base) is counted in refusals_total and
+                // emits a refusal log line in addition to the generic tool_error.
+                Refusal(ctx, ex.RefusalReason);
+            }
+
             ctx.Log(
                 LogLevel.Warning,
                 "tool_error",

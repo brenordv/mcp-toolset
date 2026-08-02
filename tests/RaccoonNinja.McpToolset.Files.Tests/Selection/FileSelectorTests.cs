@@ -89,10 +89,10 @@ public sealed class FileSelectorTests
     {
         // Arrange
         // Act
-        var selector = FileSelector.Create(glob: "*.cs", includeIgnored: true, caseSensitive: true, maxFiles: 42);
+        var selector = FileSelector.Create(glob: "*.cs", includeIgnored: IncludeGlobSet.Compile(["node_modules/**"]), caseSensitive: true, maxFiles: 42);
 
         // Assert
-        Assert.True(selector.IncludeIgnored);
+        Assert.False(selector.IncludeIgnored.IsEmpty);
         Assert.True(selector.CaseSensitive);
         Assert.Equal(42, selector.MaxFiles);
     }

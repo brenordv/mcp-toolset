@@ -1,19 +1,16 @@
 using System.Text.Json.Serialization;
+using RaccoonNinja.McpToolset.Server.TextSearch.Models;
 
 namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
 
 /// <summary>
 /// One search hit, and the wire shape <c>search_text</c> returns. Offsets are line-relative UTF-16
 /// code units: <see cref="Column"/> is 1-based, <see cref="MatchStart"/>/<see cref="MatchEnd"/> are
-/// 0-based into the line's text. The path is root-relative.
+/// 0-based into the line's text. The path is scope-relative.
 /// </summary>
-public sealed record ContentMatch
+public sealed record ContentMatch : IHasPath
 {
-    /// <summary>The name of the root the file is in.</summary>
-    [JsonPropertyName("root")]
-    public string Root { get; init; }
-
-    /// <summary>The path relative to <see cref="Root"/> of the file the match is in.</summary>
+    /// <summary>The <c>/</c>-separated path of the file the match is in, relative to the call's scope (the <c>cwd</c>, or the base root when it is omitted).</summary>
     [JsonPropertyName("path")]
     public string Path { get; init; }
 

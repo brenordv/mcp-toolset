@@ -1,21 +1,23 @@
 using System.ComponentModel;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Files.Text;
 using RaccoonNinja.McpToolset.Server.TextSearch.Configuration;
 using RaccoonNinja.McpToolset.Server.TextSearch.Content;
 using RaccoonNinja.McpToolset.Server.TextSearch.Envelope;
 using RaccoonNinja.McpToolset.Server.TextSearch.Errors;
+using RaccoonNinja.McpToolset.Server.TextSearch.Logging;
 using RaccoonNinja.McpToolset.Server.TextSearch.Models;
 
 namespace RaccoonNinja.McpToolset.Server.TextSearch.Tools;
 
-/// <summary>The <c>read_lines</c> tool: return a numbered, span-capped slice of one text file in one root.</summary>
+/// <summary>The <c>read_lines</c> tool: return a numbered, span-capped slice of one text file in the call's scope.</summary>
 [McpServerToolType]
-public sealed class ReadLinesTool(ToolCommon common, SearchConfig config, RootRegistry registry, IEncodingDetector detector)
+public sealed class ReadLinesTool(ToolCommon common, SearchConfig config, ScopeResolver resolver, IEncodingDetector detector)
 {
-    /// <summary>Return lines <paramref name="start_line"/> through <paramref name="end_line"/> of a file in one root.</summary>
-    /// <param name="path">The root-relative file path.</param>
-    /// <param name="root">The root the file is in; omit only when a single root is configured.</param>
+    /// <summary>Return lines <paramref name="start_line"/> through <paramref name="end_line"/> of a file in the call's scope.</summary>
+    /// <param name="path">The scope-relative file path.</param>
+    /// <param name="cwd">An absolute working directory inside the base root the path is relative to; omit for the base root.</param>
     /// <param name="start_line">The first line (1-based).</param>
     /// <param name="end_line">The last line (1-based); 0 reads a full span from the start.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
@@ -23,14 +25,15 @@ public sealed class ReadLinesTool(ToolCommon common, SearchConfig config, RootRe
     [McpServerTool(Name = "read_lines", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description(
         "Return a numbered slice of one text file, from start_line to end_line (both 1-based, inclusive). "
-        + "The file lives in exactly one root: give its `root` name (omit only when a single root is "
-        + "configured; a group like \"@all\" is not valid here). Leave end_line at 0 to read a capped span "
-        + "from start_line. Binary files are refused; very long lines are truncated.")]
+        + "The path is relative to cwd (an absolute working directory inside the base root); omit cwd to "
+        + "resolve the path against the base root, or pass cwd @name/<subpath> (a package root from "
+        + "describe_scope) to read from a dependency cache. Leave end_line at 0 to read a capped span from "
+        + "start_line. Binary files are refused; very long lines are truncated.")]
     public Task<ResultEnvelope> InvokeAsync(
-        [Description("The root-relative path of the file to read.")]
+        [Description("The path of the file to read, relative to cwd (or the base root when cwd is omitted).")]
         string path,
-        [Description("The name of the root the file is in; omit only when a single root is configured.")]
-        string root = null,
+        [Description("Absolute working directory inside the base root the path is relative to; or @name/<subpath> (a package root from describe_scope). Omit to resolve against the base root.")]
+        string cwd = null,
         [Description("The first line to return (1-based). Default 1.")]
         int start_line = 1,
         [Description("The last line to return (1-based, inclusive). 0 (default) reads a capped span from start_line.")]
@@ -55,13 +58,8 @@ public sealed class ReadLinesTool(ToolCommon common, SearchConfig config, RootRe
                 throw TextSearchException.InvalidArgument("end_line must be 0 or at least start_line");
             }
 
-            var spec = ResolveSingleRoot(root);
-            if (spec.Kind == RootKind.Package)
-            {
-                common.PackageTargeted(ctx);
-            }
-
-            var document = LoadOrRefuse(ctx, spec.Reader, path);
+            var scope = resolver.Resolve(cwd);
+            var document = LoadOrRefuse(ctx, scope.Reader, path);
             var lineCount = document.LineCount;
 
             // Compute in long so a near-int.MaxValue start_line cannot overflow the span arithmetic.
@@ -75,8 +73,13 @@ public sealed class ReadLinesTool(ToolCommon common, SearchConfig config, RootRe
                 lines.Add(new NumberedLine(number, Cap(document.Lines[number - 1].Content)));
             }
 
+            ctx.Log(
+                LogLevel.Debug,
+                "files_scanned",
+                extras: new Dictionary<string, object>(StringComparer.Ordinal) { [LogFields.FilesScanned] = 1 });
+
             var filters = FiltersAppliedBuilder.Create()
-                .Value("root", spec.Name)
+                .Value("cwd", scope.ScopeKey)
                 .Redact("path", path)
                 .Number("start_line", start_line)
                 .Number("end_line", end)
@@ -85,25 +88,6 @@ public sealed class ReadLinesTool(ToolCommon common, SearchConfig config, RootRe
             var truncated = end < lineCount;
             return Task.FromResult(ToolCommon.ListSuccess(lines, truncated: truncated, filtersApplied: filters));
         });
-    }
-
-    private RootSpec ResolveSingleRoot(string root)
-    {
-        if (!string.IsNullOrWhiteSpace(root))
-        {
-            if (root.Equals(RootRegistry.PackagesTarget, StringComparison.OrdinalIgnoreCase)
-                || root.Equals(RootRegistry.AllTarget, StringComparison.OrdinalIgnoreCase))
-            {
-                throw TextSearchException.InvalidArgument("read_lines targets a single file; give a specific root name, not a group");
-            }
-
-            return registry.Resolve(root)[0];
-        }
-
-        var workspace = registry.Resolve(null);
-        return workspace.Count == 1
-            ? workspace[0]
-            : throw TextSearchException.InvalidArgument("more than one root is configured; specify the file's root");
     }
 
     private TextDocument LoadOrRefuse(CallContext ctx, GatedFileReader reader, string path)

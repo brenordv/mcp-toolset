@@ -40,6 +40,9 @@ public static class LogFields
     /// <summary>How many files a single operation opened for reading.</summary>
     public const string FilesScanned = "files_scanned";
 
+    /// <summary>The operator-chosen name of the package root a call targeted (never a path or subpath).</summary>
+    public const string PackageRoot = "package_root";
+
     /// <summary>An 8-char hash of the canonical root, so records correlate without leaking the path.</summary>
     public const string RootHash = "root_hash";
 
@@ -62,7 +65,7 @@ public static class LogFields
     public static readonly IReadOnlySet<string> Allowed = new HashSet<string>(StringComparer.Ordinal)
     {
         Ts, Level, Event, Tool, CallId, ErrorCode, DurationMs, Truncated,
-        RefusalReason, RegexFallback, FilesScanned, RootHash, Message,
+        RefusalReason, RegexFallback, FilesScanned, PackageRoot, RootHash, Message,
         ExceptionTail, MetricsSummary, Service,
     };
 }

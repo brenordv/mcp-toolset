@@ -1,4 +1,3 @@
-using System.Globalization;
 using RaccoonNinja.McpToolset.Files.Selection;
 using RaccoonNinja.McpToolset.Server.TextSearch.Configuration;
 using RaccoonNinja.McpToolset.Server.TextSearch.Envelope;
@@ -8,32 +7,45 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Tools;
 
 /// <summary>
 /// Shared plumbing for the selector-driven tools: build a validated <see cref="FileSelector"/> from the
-/// wire arguments (the target root is resolved separately, so the selector's own root is always null and
-/// a subdirectory is scoped with a glob), run the per-root selection, clamp the page size, enforce the
-/// package-search narrowing rule, bound the operation, and echo arguments safely. It maps the
-/// <c>.Files</c> exceptions to the server's typed errors, always with a static, path-free message.
+/// wire arguments (the effective root is the resolved scope, so the selector's own root is always null and
+/// a subdirectory is scoped with a glob), run the scoped selection, clamp the page size, bound the
+/// operation, and echo arguments safely. It maps the <c>.Files</c> exceptions to the server's typed errors,
+/// always with a static, path-free message.
 /// </summary>
 internal static class SelectorSupport
 {
-    /// <summary>Build a validated selector over the full window; the target root is applied per-root, not here.</summary>
+    /// <summary>Build a validated selector over the scope; the include-ignored globs are compiled here.</summary>
     /// <param name="config">The server config.</param>
     /// <param name="glob">The glob pattern, or null.</param>
     /// <param name="regex">The regex, or null.</param>
     /// <param name="paths">The explicit paths, or null.</param>
     /// <param name="extensions">The extension filter, or null.</param>
-    /// <param name="includeIgnored">Whether to bypass ignore rules.</param>
+    /// <param name="includeIgnored">The globs re-including otherwise-ignored paths, or null/empty for none.</param>
     /// <param name="caseSensitive">Whether matching is case-sensitive.</param>
     /// <returns>The selector.</returns>
-    /// <exception cref="TextSearchException">Thrown (as <c>SelectorInvalid</c>) when more than one selector is given.</exception>
+    /// <exception cref="TextSearchException">
+    /// Thrown (as <c>PatternInvalid</c>) when an include-ignored glob is malformed, or (as <c>SelectorInvalid</c>)
+    /// when more than one selector is given.
+    /// </exception>
     public static FileSelector Build(
         SearchConfig config,
         string glob,
         string regex,
         string[] paths,
         string[] extensions,
-        bool includeIgnored,
+        string[] includeIgnored,
         bool caseSensitive)
     {
+        IncludeGlobSet includeSet;
+        try
+        {
+            includeSet = IncludeGlobSet.Compile(includeIgnored);
+        }
+        catch (RegexCompilationException ex)
+        {
+            throw TextSearchException.PatternInvalid(ex.Message);
+        }
+
         try
         {
             return FileSelector.Create(
@@ -41,7 +53,7 @@ internal static class SelectorSupport
                 glob: glob,
                 regex: regex,
                 paths: paths,
-                includeIgnored: includeIgnored,
+                includeIgnored: includeSet,
                 caseSensitive: caseSensitive,
                 maxFiles: config.MaxFilesCeiling,
                 extensions: extensions);
@@ -52,8 +64,8 @@ internal static class SelectorSupport
         }
     }
 
-    /// <summary>Run the selection for one root, mapping <c>.Files</c> failures to typed, path-free errors.</summary>
-    /// <param name="selection">The root's selection service.</param>
+    /// <summary>Run the scope's selection, mapping <c>.Files</c> failures to typed, path-free errors.</summary>
+    /// <param name="selection">The scope's selection service.</param>
     /// <param name="selector">The validated selector.</param>
     /// <param name="config">The server config (regex timeout and operation budget).</param>
     /// <param name="budgetToken">A token cancelled at the operation deadline, bounding the walk by time.</param>
@@ -74,53 +86,6 @@ internal static class SelectorSupport
             throw TextSearchException.OperationBudgetExceeded((int)config.OperationBudget.TotalMilliseconds);
         }
     }
-
-    /// <summary>Refuse a search that reaches a package root without any narrowing filter.</summary>
-    /// <param name="targets">The resolved target roots.</param>
-    /// <param name="selector">The validated selector.</param>
-    /// <exception cref="TextSearchException">Thrown (as <c>InvalidArgument</c>) when a package target is unnarrowed.</exception>
-    public static void EnsureNarrowedForPackages(IReadOnlyList<RootSpec> targets, FileSelector selector)
-    {
-        var reachesPackage = false;
-        foreach (var target in targets)
-        {
-            if (target.Kind == RootKind.Package)
-            {
-                reachesPackage = true;
-                break;
-            }
-        }
-
-        var narrowed = selector.Mode != SelectionMode.All || selector.Extensions is not null;
-        if (reachesPackage && !narrowed)
-        {
-            throw TextSearchException.InvalidArgument(
-                "a search that reaches a package root must be narrowed by glob, regex, paths, or extensions");
-        }
-    }
-
-    /// <summary>Whether any resolved target is a package root (for the package-access metric).</summary>
-    /// <param name="targets">The resolved target roots.</param>
-    /// <returns><c>true</c> when a package root is targeted.</returns>
-    public static bool TargetsPackage(IReadOnlyList<RootSpec> targets)
-    {
-        foreach (var target in targets)
-        {
-            if (target.Kind == RootKind.Package)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>The composite ordinal pagination key for a file at <paramref name="rootIndex"/> in the target set.</summary>
-    /// <param name="rootIndex">The root's index within the resolved target set.</param>
-    /// <param name="relativePath">The file's root-relative path.</param>
-    /// <returns>The composite key.</returns>
-    public static string Key(int rootIndex, string relativePath)
-        => string.Create(CultureInfo.InvariantCulture, $"{rootIndex:D6}\0{relativePath}");
 
     /// <summary>Clamp the requested page size to <c>[1, ceiling]</c>, defaulting when unset.</summary>
     /// <param name="config">The server config.</param>
@@ -160,29 +125,29 @@ internal static class SelectorSupport
         }
     }
 
-    /// <summary>Build the safe echo of the selector arguments (user strings redacted, target and counts kept).</summary>
-    /// <param name="root">The target root argument.</param>
+    /// <summary>Build the safe echo of the selector arguments (user strings redacted, scope key and counts kept).</summary>
+    /// <param name="scopeKey">The base-relative scope key (never the absolute <c>cwd</c>).</param>
     /// <param name="glob">The glob argument.</param>
     /// <param name="regex">The regex argument.</param>
-    /// <param name="paths">The paths' argument.</param>
-    /// <param name="extensions">The extensions' argument.</param>
-    /// <param name="includeIgnored">They include-ignored flag.</param>
+    /// <param name="paths">The paths argument.</param>
+    /// <param name="extensions">The extensions argument.</param>
+    /// <param name="includeIgnored">The include-ignored globs argument (echoed as a count).</param>
     /// <param name="caseSensitive">The case-sensitive flag.</param>
-    /// <returns>The filters' builder.</returns>
+    /// <returns>The filters builder.</returns>
     public static FiltersAppliedBuilder Filters(
-        string root,
+        string scopeKey,
         string glob,
         string regex,
         string[] paths,
         string[] extensions,
-        bool includeIgnored,
+        string[] includeIgnored,
         bool caseSensitive)
         => FiltersAppliedBuilder.Create()
-            .Value("root", root)
+            .Value("cwd", scopeKey)
             .Redact("glob", glob)
             .Redact("regex", regex)
             .Count("paths", paths?.Length ?? 0)
             .Count("extensions", extensions?.Length ?? 0)
-            .Flag("include_ignored", includeIgnored)
+            .Count("include_ignored", includeIgnored?.Length ?? 0)
             .Flag("case_sensitive", caseSensitive);
 }

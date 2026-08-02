@@ -4,22 +4,34 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Models;
 
 /// <summary>
 /// The payload of <c>describe_scope</c>: the sandbox an agent operates in, described without any
-/// absolute path. Roots are listed by name and kind; every effective cap is reported so the agent can
-/// shape its calls up front.
+/// absolute path. It names the base root by basename, explains the <c>cwd</c> scope model, and lists the
+/// ignore tiers, the secret denylist, and every effective cap so the agent can shape its calls up front.
 /// </summary>
 public sealed record ScopeInfo
 {
-    /// <summary>The allowed roots, by name and kind (never an absolute path).</summary>
-    [JsonPropertyName("roots")]
-    public IReadOnlyList<RootDescriptor> Roots { get; init; } = [];
+    /// <summary>The base root's basename (never an absolute path).</summary>
+    [JsonPropertyName("base_root")]
+    public string BaseRoot { get; init; }
 
-    /// <summary>The ignore-file kinds honored (off by default only via <c>include_ignored</c>).</summary>
+    /// <summary>How scoping and paths work: <c>cwd</c> scoping, cwd-relative paths, the whole-base heavy path, <c>@name</c> package-root addressing, and the scoped-ancestor-ignore caveat.</summary>
+    [JsonPropertyName("scope_model")]
+    public string ScopeModel { get; init; }
+
+    /// <summary>The names of the configured read-only package roots, addressable with an <c>@name</c> <c>cwd</c> (empty when none). Names only, never a path.</summary>
+    [JsonPropertyName("package_roots")]
+    public IReadOnlyList<string> PackageRoots { get; init; } = [];
+
+    /// <summary>The effective default-ignore patterns (empty when the tier is disabled).</summary>
+    [JsonPropertyName("default_ignore")]
+    public IReadOnlyList<string> DefaultIgnore { get; init; } = [];
+
+    /// <summary>The project ignore-file kinds honored, least specific first.</summary>
     [JsonPropertyName("ignore_files")]
     public IReadOnlyList<string> IgnoreFiles { get; init; } = [];
 
-    /// <summary>The non-overridable secret denylist patterns.</summary>
-    [JsonPropertyName("denylist_patterns")]
-    public IReadOnlyList<string> DenylistPatterns { get; init; } = [];
+    /// <summary>The non-overridable secret denylist patterns (built-ins plus any operator extensions).</summary>
+    [JsonPropertyName("denylist")]
+    public IReadOnlyList<string> Denylist { get; init; } = [];
 
     /// <summary>The default output encoding (UTF-8, no BOM).</summary>
     [JsonPropertyName("default_encoding")]

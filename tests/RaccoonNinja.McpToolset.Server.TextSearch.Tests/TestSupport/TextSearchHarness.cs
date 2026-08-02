@@ -1,70 +1,70 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
-using RaccoonNinja.McpToolset.Files.Security;
 using RaccoonNinja.McpToolset.Files.Text;
 using RaccoonNinja.McpToolset.Server.TextSearch.Configuration;
 using RaccoonNinja.McpToolset.Server.TextSearch.Envelope;
 using RaccoonNinja.McpToolset.Server.TextSearch.Metrics;
+using RaccoonNinja.McpToolset.Server.TextSearch.Models;
 using RaccoonNinja.McpToolset.Server.TextSearch.Tools;
 
 namespace RaccoonNinja.McpToolset.Server.TextSearch.Tests.TestSupport;
 
 /// <summary>
-/// A disposable text-search server over one or more fresh temp roots, with all five tools wired to real
-/// collaborators through a real <see cref="RootRegistry"/> (built env-free). Tools are exercised
-/// in-process: write files into a named root, call <c>InvokeAsync</c>, assert on the envelope.
+/// A disposable text-search server over one fresh temp base root, with all five tools wired to real
+/// collaborators through a real <see cref="ScopeResolver"/> (built env-free). Tools are exercised
+/// in-process: write files under the base root (or a subdirectory), optionally pass a <c>cwd</c>, call
+/// <c>InvokeAsync</c>, assert on the envelope.
 /// </summary>
 internal sealed class TextSearchHarness : IDisposable
 {
     private readonly List<string> _cleanup = [];
-    private readonly Dictionary<string, string> _dirs = new(StringComparer.OrdinalIgnoreCase);
-
-    public TextSearchHarness(int? regexTimeoutMs = null, int? operationBudgetMs = null)
-        : this([("root", RootKind.Workspace)], regexTimeoutMs, operationBudgetMs)
-    {
-    }
+    private readonly Dictionary<string, string> _packageDirs = new(StringComparer.OrdinalIgnoreCase);
 
     public TextSearchHarness(
-        IReadOnlyList<(string Name, RootKind Kind)> roots,
         int? regexTimeoutMs = null,
-        int? operationBudgetMs = null)
+        int? operationBudgetMs = null,
+        string extraDeny = null,
+        string defaultIgnore = null,
+        IReadOnlyList<string> packageRoots = null)
     {
-        var workspace = new List<string>();
-        var package = new List<string>();
-        foreach (var (name, kind) in roots)
+        Root = NewTempDirectory("base");
+        Config = DefaultConfig(regexTimeoutMs, operationBudgetMs);
+        var detector = new EncodingDetector();
+
+        // Each package root is a fresh temp directory alongside (never under) the base, so overlap is
+        // impossible; they are registered by an explicit name=path alias.
+        string packageRootsValue = null;
+        if (packageRoots is { Count: > 0 })
         {
-            var dir = NewTempDirectory(name);
-            _dirs[name] = dir;
-            (kind == RootKind.Workspace ? workspace : package).Add($"{name}={dir}");
+            var entries = new List<string>(packageRoots.Count);
+            foreach (var name in packageRoots)
+            {
+                var dir = NewTempDirectory($"pkg-{name}");
+                _packageDirs[name] = dir;
+                entries.Add($"{name}={dir}");
+            }
+
+            packageRootsValue = string.Join(';', entries);
         }
 
-        DefaultRoot = roots.First(root => root.Kind == RootKind.Workspace).Name;
-        Config = DefaultConfig(regexTimeoutMs, operationBudgetMs);
-        var denylist = new SecretDenylist();
-        var detector = new EncodingDetector();
-        Registry = RootRegistry.Create(
-            Config,
-            denylist,
-            string.Join(';', workspace),
-            package.Count > 0 ? string.Join(';', package) : null);
+        Resolver = ScopeResolver.Create(Config, Root, defaultIgnore, extraDeny, packageRootsValue);
         Metrics = new SessionMetrics();
         var common = new ToolCommon(Metrics, NullLoggerFactory.Instance);
 
-        Describe = new DescribeScopeTool(common, Config, Registry, denylist);
-        Find = new FindFilesTool(common, Config, Registry);
-        Inspect = new InspectFilesTool(common, Config, Registry, detector);
-        Search = new SearchTextTool(common, Config, Registry, detector);
-        ReadLines = new ReadLinesTool(common, Config, Registry, detector);
+        Describe = new DescribeScopeTool(common, Config, Resolver);
+        Find = new FindFilesTool(common, Config, Resolver);
+        Inspect = new InspectFilesTool(common, Config, Resolver, detector);
+        Search = new SearchTextTool(common, Config, Resolver, detector);
+        ReadLines = new ReadLinesTool(common, Config, Resolver, detector);
     }
 
-    public string DefaultRoot { get; }
-
-    public string Root => _dirs[DefaultRoot];
+    /// <summary>The absolute temp directory backing the base root.</summary>
+    public string Root { get; }
 
     public SearchConfig Config { get; }
 
-    public RootRegistry Registry { get; }
+    public ScopeResolver Resolver { get; }
 
     public SessionMetrics Metrics { get; }
 
@@ -78,36 +78,40 @@ internal sealed class TextSearchHarness : IDisposable
 
     public ReadLinesTool ReadLines { get; }
 
-    /// <summary>The absolute temp directory backing a named root.</summary>
-    public string RootDir(string root) => _dirs[root];
-
-    /// <summary>Write a UTF-8 text file into the default root.</summary>
-    public void Write(string relativePath, string content)
-        => WriteBytes(DefaultRoot, relativePath, Encoding.UTF8.GetBytes(content));
-
-    /// <summary>Write a UTF-8 text file into a named root.</summary>
-    public void Write(string root, string relativePath, string content)
-        => WriteBytes(root, relativePath, Encoding.UTF8.GetBytes(content));
-
-    /// <summary>Write raw bytes into the default root.</summary>
-    public void WriteBytes(string relativePath, byte[] content)
-        => WriteBytes(DefaultRoot, relativePath, content);
-
-    /// <summary>Write raw bytes into a named root.</summary>
-    public void WriteBytes(string root, string relativePath, byte[] content)
+    /// <summary>The absolute path of a subdirectory under the base root, created if needed. Pass it as a <c>cwd</c>.</summary>
+    public string Dir(string relativePath)
     {
-        var full = Path.Combine(_dirs[root], relativePath.Replace('/', Path.DirectorySeparatorChar));
+        var full = Path.Combine(Root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(full);
+        return full;
+    }
+
+    /// <summary>The absolute temp directory backing the named package root (from the constructor's <c>packageRoots</c>).</summary>
+    public string PackageDir(string name) => _packageDirs[name];
+
+    /// <summary>Write a UTF-8 text file under the named package root.</summary>
+    public void WritePackage(string name, string relativePath, string content)
+    {
+        var full = Path.Combine(_packageDirs[name], relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(full));
+        File.WriteAllBytes(full, Encoding.UTF8.GetBytes(content));
+    }
+
+    /// <summary>Write a UTF-8 text file under the base root.</summary>
+    public void Write(string relativePath, string content)
+        => WriteBytes(relativePath, Encoding.UTF8.GetBytes(content));
+
+    /// <summary>Write raw bytes under the base root.</summary>
+    public void WriteBytes(string relativePath, byte[] content)
+    {
+        var full = Path.Combine(Root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(full));
         File.WriteAllBytes(full, content);
     }
 
-    /// <summary>The root-relative paths of every result item exposing a <c>Path</c> property.</summary>
+    /// <summary>The scope-relative paths of every result item exposing a <c>Path</c> property.</summary>
     public static string[] Paths(ResultEnvelope envelope)
-        => envelope.Results.Select(item => (string)item.GetType().GetProperty("Path").GetValue(item)).ToArray();
-
-    /// <summary>The root names of every result item exposing a <c>Root</c> property.</summary>
-    public static string[] Roots(ResultEnvelope envelope)
-        => envelope.Results.Select(item => (string)item.GetType().GetProperty("Root").GetValue(item)).ToArray();
+        => envelope.Results.Select(item => ((IHasPath)item).Path).ToArray();
 
     /// <summary>Serialize an envelope to JSON, the way the SDK sends it to the client.</summary>
     public static string ToJson(ResultEnvelope envelope)

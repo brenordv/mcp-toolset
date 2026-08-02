@@ -123,10 +123,92 @@ public sealed class FileWalkerTests : IDisposable
         Write("app.log", "l");
 
         // Act
-        var paths = Paths(_walker.Walk(new FileWalkOptions { IncludeIgnored = true }));
+        var paths = Paths(_walker.Walk(new FileWalkOptions { IncludeIgnored = IncludeGlobSet.Compile(["**"]) }));
 
         // Assert
         Assert.Contains("app.log", paths);
+    }
+
+    [Fact]
+    public void Walk_DefaultIgnoreTier_PrunesWithoutProjectIgnoreFile()
+    {
+        // Arrange
+        Write("node_modules/lib.js", "x");
+        Write("src/app.js", "y");
+        var walker = new FileWalker(new RootConfinement(_rootDir), new SecretDenylist(), IgnoreRules.Parse(["node_modules/"]));
+
+        // Act
+        var paths = Paths(walker.Walk(new FileWalkOptions()));
+
+        // Assert
+        Assert.Equal(["src/app.js"], paths);
+    }
+
+    [Fact]
+    public void Walk_ProjectGitignoreNegation_OverridesDefaultTier()
+    {
+        // Arrange
+        Write("build/out.txt", "o");
+        Write(".gitignore", "!build/\n");
+        var walker = new FileWalker(new RootConfinement(_rootDir), new SecretDenylist(), IgnoreRules.Parse(["build/"]));
+
+        // Act
+        var paths = Paths(walker.Walk(new FileWalkOptions()));
+
+        // Assert
+        Assert.Contains("build/out.txt", paths);
+    }
+
+    [Fact]
+    public void Walk_IncludeGlob_ReachesNestedIgnoredFileWithoutSurfacingSiblings()
+    {
+        // Arrange
+        Write("node_modules/lodash/index.js", "a");
+        Write("node_modules/react/index.js", "b");
+        Write("bin/tool.txt", "c");
+        Write("src/app.js", "d");
+        var walker = new FileWalker(new RootConfinement(_rootDir), new SecretDenylist(), IgnoreRules.Parse(["node_modules/", "bin/"]));
+
+        // Act
+        var paths = Paths(walker.Walk(new FileWalkOptions { IncludeIgnored = IncludeGlobSet.Compile(["node_modules/lodash/**"]) }));
+
+        // Assert
+        Assert.Contains("node_modules/lodash/index.js", paths);
+        Assert.DoesNotContain("node_modules/react/index.js", paths);
+        Assert.DoesNotContain("bin/tool.txt", paths);
+        Assert.Contains("src/app.js", paths);
+    }
+
+    [Fact]
+    public void Walk_IncludeGlob_NeverReIncludesDenylistedDirectory()
+    {
+        // Arrange
+        Write(".git/config", "secret");
+        Write("src/app.js", "ok");
+        var walker = new FileWalker(new RootConfinement(_rootDir), new SecretDenylist(), IgnoreRules.Parse(["node_modules/"]));
+
+        // Act
+        var paths = Paths(walker.Walk(new FileWalkOptions { IncludeIgnored = IncludeGlobSet.Compile([".git/**", "**"]) }));
+
+        // Assert
+        Assert.DoesNotContain(".git/config", paths);
+        Assert.Contains("src/app.js", paths);
+    }
+
+    [Fact]
+    public void Walk_IncludeAll_ReIncludesIgnoredFilesButNotDenylisted()
+    {
+        // Arrange
+        Write("node_modules/pkg/main.js", "m");
+        Write(".env", "SECRET=1");
+        var walker = new FileWalker(new RootConfinement(_rootDir), new SecretDenylist(), IgnoreRules.Parse(["node_modules/"]));
+
+        // Act
+        var paths = Paths(walker.Walk(new FileWalkOptions { IncludeIgnored = IncludeGlobSet.Compile(["**"]) }));
+
+        // Assert
+        Assert.Contains("node_modules/pkg/main.js", paths);
+        Assert.DoesNotContain(".env", paths);
     }
 
     [Fact]
