@@ -65,6 +65,27 @@ public sealed class PackageRootTests
     }
 
     [Fact]
+    public async Task Search_PackageSubpathBelowRegistryHashLevel_ReturnsSubpathRelativePaths()
+    {
+        // Arrange: the real cargo registry nests packages under an index.crates.io-<hash> directory, so a
+        // scoped cwd carries two subpath levels (the hash dir and the package-version dir) before the
+        // package's own tree.
+        using var harness = new TextSearchHarness(packageRoots: ["cargo"]);
+        harness.WritePackage("cargo", "index.crates.io-1949cf8c6b5b557f/egui-0.34.3/src/style.rs", "fn text_edit_bg_color() {}");
+        harness.WritePackage("cargo", "index.crates.io-1949cf8c6b5b557f/serde-1.0.0/src/lib.rs", "fn text_edit_bg_color() {}");
+
+        // Act
+        var envelope = await harness.Search.InvokeAsync(
+            pattern: "text_edit_bg_color",
+            glob: "**/*.rs",
+            cwd: "@cargo/index.crates.io-1949cf8c6b5b557f/egui-0.34.3");
+
+        // Assert
+        var match = Assert.IsType<ContentMatch>(Assert.Single(envelope.Results));
+        Assert.Equal("src/style.rs", match.Path);
+    }
+
+    [Fact]
     public async Task ReadLines_FromPackageRoot_ResolvesPathRelativeToCache()
     {
         // Arrange
