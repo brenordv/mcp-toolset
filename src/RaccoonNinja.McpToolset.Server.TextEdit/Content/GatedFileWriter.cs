@@ -202,8 +202,8 @@ public sealed class GatedFileWriter
 
         // Everything reported and journaled uses the base-relative path, derived once through the base
         // confiner (which also re-validates base containment), so the whole write/undo path stays in one
-        // coherent frame. confined.RelativePath is relative to the effective root and is used only for the
-        // ignore evaluation, which anchors there.
+        // coherent frame. The ignore evaluation also anchors at the base root using this base-relative path,
+        // so a cwd-scoped call still honors ancestor .gitignore/.mcpignore rules above the cwd.
         string baseRelative;
         try
         {
@@ -227,7 +227,7 @@ public sealed class GatedFileWriter
             return Refusal(baseRelative, RefusalReason.Denied);
         }
 
-        if (PathIgnoreEvaluator.IsIgnored(effective.CanonicalRoot, confined.RelativePath))
+        if (PathIgnoreEvaluator.IsIgnored(_baseRoot.CanonicalRoot, baseRelative))
         {
             return Refusal(baseRelative, RefusalReason.Ignored);
         }

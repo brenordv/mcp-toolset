@@ -33,6 +33,14 @@ public sealed record ScopeInfo
     [JsonPropertyName("denylist")]
     public IReadOnlyList<string> Denylist { get; init; } = [];
 
+    /// <summary>Whether content-based secret detection is on: a file whose content matches a detector is withheld regardless of its name.</summary>
+    [JsonPropertyName("content_scan_enabled")]
+    public bool ContentScanEnabled { get; init; }
+
+    /// <summary>The active content-scan detector ids (names only, never a matched value; empty when scanning is off).</summary>
+    [JsonPropertyName("content_scan_detectors")]
+    public IReadOnlyList<string> ContentScanDetectors { get; init; } = [];
+
     /// <summary>The default output encoding (UTF-8, no BOM).</summary>
     [JsonPropertyName("default_encoding")]
     public string DefaultEncoding { get; init; }

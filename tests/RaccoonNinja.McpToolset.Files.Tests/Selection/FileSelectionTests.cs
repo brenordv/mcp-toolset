@@ -80,7 +80,7 @@ public sealed class FileSelectionTests : IDisposable
     }
 
     [Fact]
-    public void Select_IncludeIgnored_BypassesIgnoreButNotDenylist()
+    public void Select_IncludeIgnored_DoesNotReIncludeGitignoredOrDenylisted()
     {
         // Arrange
         Write(".gitignore", "*.log\n");
@@ -91,7 +91,7 @@ public sealed class FileSelectionTests : IDisposable
         var paths = Paths(_selection.Select(FileSelector.Create(includeIgnored: IncludeGlobSet.Compile(["**"]))));
 
         // Assert
-        Assert.Contains("skip.log", paths);
+        Assert.DoesNotContain("skip.log", paths);
         Assert.DoesNotContain(".env", paths);
     }
 

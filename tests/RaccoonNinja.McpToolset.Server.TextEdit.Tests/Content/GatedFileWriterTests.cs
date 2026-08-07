@@ -119,6 +119,35 @@ public sealed class GatedFileWriterTests : IDisposable
     }
 
     [Fact]
+    public void Apply_AncestorGitignore_RefusesWriteInScopedCwd()
+    {
+        // Arrange: the .gitignore sits at the base root, ABOVE the scoped cwd. The ignore check anchors at
+        // the base root, so a cwd-scoped write must still refuse the ancestor-ignored file.
+        _harness.WriteText(".gitignore", "appsettings.Production.json\n");
+        _harness.WriteText("proj/appsettings.Production.json", "hello world");
+        var scope = _harness.Resolver.Resolve(_harness.Dir("proj"));
+        var replacer = Replace("world", "text");
+
+        // Act
+        var outcome = _harness.Writer.Apply(
+            "replace_text",
+            ["appsettings.Production.json"],
+            replacer,
+            "test",
+            expectedMatchCount: null,
+            dryRun: false,
+            sourceEncoding: null,
+            skippedSymlinks: 0,
+            truncated: false,
+            scope.Effective,
+            CancellationToken.None);
+
+        // Assert
+        Assert.Equal(RefusalReason.Ignored, outcome.Files.Single().Reason);
+        Assert.Equal("hello world", _harness.ReadText("proj/appsettings.Production.json"));
+    }
+
+    [Fact]
     public void Apply_Utf16NoBom_RoundTripsPreservingEncoding()
     {
         // Arrange

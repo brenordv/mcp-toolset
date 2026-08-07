@@ -31,6 +31,9 @@ public static class ErrorCodes
     /// <summary>An argument was missing, malformed, or out of range.</summary>
     public const string InvalidArgument = nameof(InvalidArgument);
 
+    /// <summary>The file's content matched a secret detector and was withheld.</summary>
+    public const string WithheldSecret = nameof(WithheldSecret);
+
     /// <summary>An unexpected internal error; details go to the log, never the client.</summary>
     public const string InternalError = nameof(InternalError);
 }

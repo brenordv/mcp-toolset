@@ -26,7 +26,7 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
     /// <param name="paths">Explicit files to search.</param>
     /// <param name="cwd">An absolute working directory inside the base root to scope the call to; omit for the whole base root.</param>
     /// <param name="extensions">File extensions to keep (dot optional).</param>
-    /// <param name="include_ignored">Globs that re-include otherwise-ignored paths for this call; never bypasses the secret denylist.</param>
+    /// <param name="include_ignored">Globs that re-include otherwise-ignored paths (built-in default tier only, e.g. node_modules); never re-includes a .gitignore/.mcpignore path, and never bypasses the secret denylist.</param>
     /// <param name="case_sensitive">Whether both file matching and content matching are case-sensitive.</param>
     /// <param name="context_lines">Lines of context around each match; clamped to the ceiling.</param>
     /// <param name="max_matches_per_file">The per-file match cap; clamped to the ceiling.</param>
@@ -61,7 +61,7 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
         string cwd = null,
         [Description("File extensions to keep (dot optional, case-insensitive). ANDed with the selector.")]
         string[] extensions = null,
-        [Description("Globs that re-include otherwise-ignored paths for this call, e.g. [\"node_modules/**\"]. Omit/empty keeps every ignore tier; never bypasses the secret denylist.")]
+        [Description("Globs that re-include otherwise-ignored paths for this call, e.g. [\"node_modules/**\"]. Re-includes only the built-in default tier; never re-includes a .gitignore/.mcpignore path, and never bypasses the secret denylist.")]
         string[] include_ignored = null,
         [Description("Match case-sensitively (both file selection and content). Default false.")]
         bool case_sensitive = false,

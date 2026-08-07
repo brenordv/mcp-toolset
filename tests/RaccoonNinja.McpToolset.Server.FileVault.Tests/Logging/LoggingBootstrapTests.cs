@@ -101,4 +101,25 @@ public sealed class LoggingBootstrapTests : IDisposable
         // Assert
         Assert.True(File.Exists(logPath));
     }
+
+    [Fact]
+    public void Build_LogFile_IsUtf8WithoutBom()
+    {
+        // Arrange
+        var logPath = Path.Combine(_root, "logs", "nobom.log");
+        var env = new Dictionary<string, string> { [LoggingConstants.EnvLogFile] = logPath };
+
+        // Act
+        using (var logger = LoggingBootstrap.Build(env))
+        {
+            logger.Information("{Event}", "smoke");
+        }
+
+        // Assert
+        var bytes = File.ReadAllBytes(logPath);
+        var hasBom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+        Assert.False(hasBom);
+        Assert.NotEmpty(bytes);
+        Assert.Equal((byte)'{', bytes[0]);
+    }
 }

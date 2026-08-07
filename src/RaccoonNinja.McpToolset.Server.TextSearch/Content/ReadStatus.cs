@@ -23,4 +23,10 @@ public enum ReadStatus
 
     /// <summary>The file could not be opened or read (locked, permission, mid-read I/O error).</summary>
     IoError = 7,
+
+    /// <summary>The path is ignored by a <c>.gitignore</c>/<c>.mcpignore</c> rule; it is never read.</summary>
+    Ignored = 8,
+
+    /// <summary>The file's content matched a secret detector and is withheld.</summary>
+    SecretContent = 9,
 }

@@ -33,6 +33,7 @@ public sealed class SecretDenylist : ISecretDenylist
         ".netrc", "_netrc", ".git-credentials",
         "*.tfstate", "*.tfvars", ".npmrc", ".pypirc", ".htpasswd",
         "secrets.*", "*.credentials",
+        "*.settings.json",
     ];
 
     private static readonly Regex[] FileGlobs =

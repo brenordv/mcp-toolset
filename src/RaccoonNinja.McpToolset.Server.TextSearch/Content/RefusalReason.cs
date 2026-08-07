@@ -15,6 +15,8 @@ internal static class RefusalReason
             ReadStatus.IsDirectory => "not_a_file",
             ReadStatus.TooLarge => "too_large",
             ReadStatus.IoError => "io_error",
+            ReadStatus.Ignored => "ignored",
+            ReadStatus.SecretContent => "secret_content",
             _ => "unknown",
         };
 }
