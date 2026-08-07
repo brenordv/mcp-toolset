@@ -97,11 +97,16 @@ public sealed class ReadLinesTool(ToolCommon common, SearchConfig config, ScopeR
         {
             common.Refusal(ctx, RefusalReason.From(read.Status));
 
-            // Denied/out-of-root/io are reported as "not found" so a single-path read is not an
-            // existence oracle for a secret; a real size overflow is reported honestly.
-            throw read.Status == ReadStatus.TooLarge
-                ? new TextSearchException(ErrorCodes.TooLarge, "file is larger than the configured read limit")
-                : new TextSearchException(ErrorCodes.NotFound, "file not found");
+            // Denied/ignored/out-of-root/io are reported as "not found" so a single-path read is not an
+            // existence oracle for a secret or a hidden file. A size overflow is reported honestly, and a
+            // content-scan withhold is reported distinctly because the file is listable (its name is not the
+            // secret), so the caller may legitimately need to know why the content was withheld.
+            throw read.Status switch
+            {
+                ReadStatus.TooLarge => new TextSearchException(ErrorCodes.TooLarge, "file is larger than the configured read limit"),
+                ReadStatus.SecretContent => new TextSearchException(ErrorCodes.WithheldSecret, "file appears to contain a secret and was withheld"),
+                _ => new TextSearchException(ErrorCodes.NotFound, "file not found"),
+            };
         }
 
         var document = TextDocument.Load(read.Bytes, detector);

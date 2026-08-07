@@ -63,11 +63,19 @@ public sealed record SearchConfig
     /// <summary>The wall-clock budget for one whole operation across the file set.</summary>
     public TimeSpan OperationBudget { get; init; }
 
+    /// <summary>Whether content-based secret detection withholds files whose content matches a detector (default true).</summary>
+    public bool SecretScanEnabled { get; init; } = true;
+
+    /// <summary>Whether the higher-false-positive aggressive detector layer is enabled (default false).</summary>
+    public bool SecretScanAggressive { get; init; }
+
     /// <summary>Resolve the caps from the process environment.</summary>
     /// <returns>The resolved configuration.</returns>
     /// <exception cref="SearchStartupException">Thrown when a numeric override is present but invalid.</exception>
     public static SearchConfig Load()
-        => new()
+    {
+        var (secretScanEnabled, secretScanAggressive) = ParseSecretScan("MCP_TEXTSEARCH_SECRET_SCAN");
+        return new SearchConfig
         {
             MaxFilesDefault = ParseInt("MCP_TEXTSEARCH_MAX_FILES", DefaultMaxFiles),
             MaxFilesCeiling = ParseInt("MCP_TEXTSEARCH_MAX_FILES_CEILING", DefaultMaxFilesCeiling),
@@ -78,7 +86,10 @@ public sealed record SearchConfig
             MaxLineSpan = ParseInt("MCP_TEXTSEARCH_MAX_LINE_SPAN", DefaultMaxLineSpan),
             RegexTimeout = TimeSpan.FromMilliseconds(ParseInt("MCP_TEXTSEARCH_REGEX_TIMEOUT_MS", DefaultRegexTimeoutMs)),
             OperationBudget = TimeSpan.FromMilliseconds(ParseInt("MCP_TEXTSEARCH_OP_BUDGET_MS", DefaultOperationBudgetMs)),
+            SecretScanEnabled = secretScanEnabled,
+            SecretScanAggressive = secretScanAggressive,
         };
+    }
 
     /// <summary>A short, path-free summary of the effective caps for the startup scope log line.</summary>
     /// <returns>The cap summary.</returns>
@@ -111,5 +122,17 @@ public sealed record SearchConfig
         return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
             ? parsed
             : throw new SearchStartupException($"{key}='{raw}' is not a valid positive byte count");
+    }
+
+    private static (bool Enabled, bool Aggressive) ParseSecretScan(string key)
+    {
+        var raw = Environment.GetEnvironmentVariable(key)?.Trim().ToLowerInvariant();
+        return raw switch
+        {
+            null or "" or "on" or "true" => (true, false),
+            "off" or "false" => (false, false),
+            "aggressive" => (true, true),
+            _ => throw new SearchStartupException($"{key}='{raw}' must be one of: on, off, aggressive"),
+        };
     }
 }

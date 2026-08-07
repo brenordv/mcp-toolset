@@ -58,4 +58,16 @@ public sealed record ReadOutcome
     /// <summary>An I/O failure opening or reading the file.</summary>
     /// <returns>The outcome.</returns>
     public static ReadOutcome IoError() => new() { Status = ReadStatus.IoError };
+
+    /// <summary>A path ignored by a <c>.gitignore</c>/<c>.mcpignore</c> rule.</summary>
+    /// <param name="relativePath">The root-relative path.</param>
+    /// <returns>The outcome.</returns>
+    public static ReadOutcome Ignored(string relativePath)
+        => new() { Status = ReadStatus.Ignored, RelativePath = relativePath };
+
+    /// <summary>A file whose content matched a secret detector and is withheld.</summary>
+    /// <param name="relativePath">The root-relative path.</param>
+    /// <returns>The outcome.</returns>
+    public static ReadOutcome SecretContent(string relativePath)
+        => new() { Status = ReadStatus.SecretContent, RelativePath = relativePath };
 }

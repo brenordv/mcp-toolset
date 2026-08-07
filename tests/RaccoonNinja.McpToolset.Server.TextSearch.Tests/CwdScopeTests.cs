@@ -148,7 +148,7 @@ public sealed class CwdScopeTests
     }
 
     [Fact]
-    public async Task Find_IncludeIgnoredGlob_ReIncludesIgnoredFile_AndIsCounted()
+    public async Task Find_IncludeIgnoredGlob_DoesNotReIncludeGitignored_ButIsStillCounted()
     {
         // Arrange
         using var harness = new TextSearchHarness();
@@ -158,9 +158,40 @@ public sealed class CwdScopeTests
         // Act
         var envelope = await harness.Find.InvokeAsync(glob: "*.log", include_ignored: ["*.log"]);
 
-        // Assert
-        Assert.Equal(["skip.log"], TextSearchHarness.Paths(envelope));
+        // Assert: include_ignored can no longer re-include a .gitignore'd file, but the call is still counted.
+        Assert.Empty(TextSearchHarness.Paths(envelope));
         Assert.True((long)harness.Metrics.Summary()["include_ignored_calls_total"] >= 1);
+    }
+
+    [Fact]
+    public async Task Find_IncludeIgnoredGlob_StillReIncludesDefaultTier()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("node_modules/pkg/index.js", "x");
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(glob: "**/*.js", include_ignored: ["node_modules/**"]);
+
+        // Assert: node_modules is default-tier ignored (not a .gitignore rule), so it stays re-includable.
+        Assert.Equal(["node_modules/pkg/index.js"], TextSearchHarness.Paths(envelope));
+    }
+
+    [Fact]
+    public async Task Find_AncestorGitignoreDirectory_HidesSubtreeInScopedCwd()
+    {
+        // Arrange: a base-root .gitignore ignores the whole secrets/ directory. A call scoped into it must
+        // return nothing: the ignore file sits above the cwd (a directory rule), and the boundary is anchored
+        // at the base root, not the cwd.
+        using var harness = new TextSearchHarness();
+        harness.Write(".gitignore", "secrets/\n");
+        harness.Write("secrets/api-key.txt", "SECRET");
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(glob: "*", cwd: harness.Dir("secrets"));
+
+        // Assert
+        Assert.Empty(TextSearchHarness.Paths(envelope));
     }
 
     [Fact]

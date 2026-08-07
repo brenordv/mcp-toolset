@@ -1,5 +1,12 @@
 # Toolset Changelog
 
+## v9
+- Made `.gitignore`/`.mcpignore` an un-overridable boundary in `text-search` and `text-edit`: an ignored file is never returned or edited, enforced at the read gate, the `paths[]` gate, listing, and the write gate. `include_ignored` now re-includes only the built-in default tier (`node_modules`, `bin`, `obj`, ...) and can never re-include a `.gitignore`/`.mcpignore` path, and a scoped `cwd` call now also honors ignore rules in directories above the `cwd`.
+- Added content-based secret detection to `text-search`: a file whose content matches a known secret shape (private keys; AWS/Azure/GCP/Google keys; Slack/GitHub/Stripe/SendGrid tokens; URL-userinfo credentials) is withheld from `read_lines`, `search_text`, and `inspect_files` regardless of its name, while it still appears in `find_files` listings. On by default; `MCP_TEXTSEARCH_SECRET_SCAN=off` disables it and `=aggressive` adds higher-false-positive detectors (JWTs, generic password assignments). Disclosed in `describe_scope`.
+- Closed a secret-exposure gap in `text-search` and `text-edit`: `local.settings.json` (the Azure Functions local config, which by convention holds connection strings and access keys) is now on the non-overridable secret denylist. `include_ignored` can no longer surface the file or leak its content through a search context window.
+- Fixed the server log files, which were written as UTF-8 with a byte order mark. The rolling file sink now writes BOM-less UTF-8. This affects newly created and rolled log files; existing logs keep their BOM.
+- Added per-platform publish convenience wrappers under `eng/`: `publish-windows`, `publish-linux`, `publish-macos` (osx-arm64), and `publish-macos-x64` (osx-x64), each in both `.ps1` and `.sh`. They delegate to `eng/publish.ps1` / `eng/publish.sh` with a fixed RID.
+
 ## v8
 - Improved `text-edit` MCP server to handle multiple projects more efficiently.
 

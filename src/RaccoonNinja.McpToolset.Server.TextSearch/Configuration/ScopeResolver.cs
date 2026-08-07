@@ -1,5 +1,6 @@
 using RaccoonNinja.McpToolset.Files.Security;
 using RaccoonNinja.McpToolset.Files.Selection;
+using RaccoonNinja.McpToolset.Files.Text;
 using RaccoonNinja.McpToolset.Server.TextSearch.Content;
 using RaccoonNinja.McpToolset.Server.TextSearch.Errors;
 using RaccoonNinja.McpToolset.Server.TextSearch.Logging;
@@ -59,6 +60,7 @@ public sealed class ScopeResolver
     private readonly SecretDenylist _denylist;
     private readonly IgnoreRules _defaultIgnore;
     private readonly SearchConfig _config;
+    private readonly ISecretContentScanner _scanner;
     private readonly CallScope _baseScope;
     private readonly Dictionary<string, PackageRoot> _packageRoots;
     private readonly IReadOnlyList<string> _packageRootNames;
@@ -74,13 +76,16 @@ public sealed class ScopeResolver
         _denylist = denylist;
         _defaultIgnore = defaultIgnore;
         _config = config;
-        _baseScope = BuildScope(baseRoot, ScopeKind.Base, ".");
+        _scanner = config.SecretScanEnabled
+            ? new SecretContentScanner(new EncodingDetector(), config.SecretScanAggressive)
+            : NullSecretContentScanner.Instance;
+        _baseScope = BuildScope(baseRoot, ScopeKind.Base, ".", baseRoot, string.Empty);
 
         var map = new Dictionary<string, PackageRoot>(packageRoots.Count, StringComparer.OrdinalIgnoreCase);
         var names = new List<string>(packageRoots.Count);
         foreach (var (name, confinement) in packageRoots)
         {
-            var wholeScope = BuildScope(confinement, ScopeKind.Package, $"{PackagePrefix}{name}");
+            var wholeScope = BuildScope(confinement, ScopeKind.Package, $"{PackagePrefix}{name}", confinement, string.Empty);
             map[name] = new PackageRoot(name, confinement, wholeScope);
             names.Add(name);
         }
@@ -97,6 +102,12 @@ public sealed class ScopeResolver
 
     /// <summary>The effective default-ignore patterns, empty when the tier is disabled.</summary>
     public IReadOnlyList<string> DefaultIgnorePatterns => _defaultIgnore.Patterns;
+
+    /// <summary>Whether content-based secret detection is enabled, for the scope description.</summary>
+    public bool ContentScanEnabled => _config.SecretScanEnabled;
+
+    /// <summary>The active content-scan detector ids (names only, never a matched value), for the scope description.</summary>
+    public IReadOnlyList<string> ContentScanDetectors => _scanner.DetectorIds;
 
     /// <summary>The operator-chosen names of the configured package roots, in configuration order (never a path).</summary>
     public IReadOnlyList<string> PackageRootNames => _packageRootNames;
@@ -245,13 +256,18 @@ public sealed class ScopeResolver
             throw Outside(kind);
         }
 
-        return BuildScope(effective, kind, displayScopeKey(confined.RelativePath));
+        // The anchor is the parent root the effective scope was confined under (the base root, or a package
+        // root), and the prefix is the effective scope's path relative to it. Together they let the project
+        // ignore boundary be evaluated root-down from the anchor even though the walk/read are re-rooted at
+        // the scoped cwd, so ancestor .gitignore/.mcpignore rules above the cwd still apply.
+        var prefix = confined.RelativePath == "." ? string.Empty : confined.RelativePath;
+        return BuildScope(effective, kind, displayScopeKey(confined.RelativePath), confiner, prefix);
     }
 
-    private CallScope BuildScope(RootConfinement confinement, ScopeKind kind, string scopeKey)
+    private CallScope BuildScope(RootConfinement confinement, ScopeKind kind, string scopeKey, RootConfinement anchor, string prefix)
     {
-        var selection = new FileSelection(confinement, _denylist, _defaultIgnore);
-        var reader = new GatedFileReader(confinement, _denylist, _config.MaxFileBytes);
+        var selection = new FileSelection(confinement, _denylist, _defaultIgnore, anchor, prefix);
+        var reader = new GatedFileReader(confinement, _denylist, _config.MaxFileBytes, anchor, prefix, _scanner);
         return new CallScope(selection, reader, kind, scopeKey);
     }
 

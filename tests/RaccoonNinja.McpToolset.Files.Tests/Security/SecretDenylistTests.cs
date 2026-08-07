@@ -32,6 +32,8 @@ public sealed class SecretDenylistTests
     [InlineData("secrets.json")]
     [InlineData("config/secrets.yaml")]
     [InlineData("db.credentials")]
+    [InlineData("local.settings.json")]
+    [InlineData("src/MyFunc/local.settings.json")]
     public void IsDeniedFile_SecretBasename_ReturnsTrue(string path)
     {
         // Arrange
@@ -71,6 +73,8 @@ public sealed class SecretDenylistTests
     [InlineData(".config/app.json")]
     [InlineData("env.example")]
     [InlineData("docs/architecture.md")]
+    [InlineData("appsettings.json")]
+    [InlineData("appsettings.Development.json")]
     public void IsDeniedFile_OrdinarySourceOrConfig_ReturnsFalse(string path)
     {
         // Arrange
@@ -86,6 +90,7 @@ public sealed class SecretDenylistTests
     [InlineData("ID_RSA")]
     [InlineData("Server.PEM")]
     [InlineData(".SSH/known_hosts")]
+    [InlineData("Local.Settings.JSON")]
     public void IsDeniedFile_IsAlwaysCaseInsensitive(string path)
     {
         // Arrange

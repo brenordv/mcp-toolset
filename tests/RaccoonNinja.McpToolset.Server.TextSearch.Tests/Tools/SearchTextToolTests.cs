@@ -162,6 +162,33 @@ public sealed class SearchTextToolTests
     }
 
     [Fact]
+    public async Task Search_IncludeIgnored_NeverExposesLocalSettingsSecret()
+    {
+        // Arrange
+        // A gitignored local.settings.json holds a secret. include_ignored pierces the gitignore tier,
+        // but the secret denylist must still prune the file so that no match and no context line ever
+        // surfaces the adjacent secret.
+        using var harness = new TextSearchHarness();
+        harness.Write(".gitignore", "local.settings.json\n");
+        harness.Write(
+            "local.settings.json",
+            "{\n  \"Values\": {\n    \"PerformanceTestEnabled\": \"true\",\n    \"StorageConnectionString\": \"AccountKey=FAKE_LEAKED_KEY_do_not_surface\"\n  }\n}");
+        harness.Write("notes.txt", "PerformanceTestEnabled is referenced in this ordinary file");
+
+        // Act
+        var envelope = await harness.Search.InvokeAsync(
+            pattern: "PerformanceTestEnabled",
+            include_ignored: ["**/local.settings.json"],
+            context_lines: 2);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.DoesNotContain("local.settings.json", TextSearchHarness.Paths(envelope));
+        Assert.DoesNotContain("FAKE_LEAKED_KEY_do_not_surface", TextSearchHarness.ToJson(envelope));
+        Assert.Contains("notes.txt", TextSearchHarness.Paths(envelope));
+    }
+
+    [Fact]
     public async Task Search_OperationBudgetExceeded_IsReported()
     {
         // Arrange

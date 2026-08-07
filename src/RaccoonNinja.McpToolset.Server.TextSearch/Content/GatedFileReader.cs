@@ -1,4 +1,5 @@
 using RaccoonNinja.McpToolset.Files.Security;
+using RaccoonNinja.McpToolset.Files.Selection;
 
 namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
 
@@ -10,10 +11,13 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
 /// and mapped to a typed outcome so no absolute path from a .NET exception message can escape into
 /// model context.
 /// </summary>
-public sealed class GatedFileReader(IRootResolver root, ISecretDenylist denylist, long maxBytes)
+public sealed class GatedFileReader(IRootResolver root, ISecretDenylist denylist, long maxBytes, IRootResolver anchor = null, string prefix = null, ISecretContentScanner scanner = null)
 {
     private readonly IRootResolver _root = root ?? throw new ArgumentNullException(nameof(root));
     private readonly ISecretDenylist _denylist = denylist ?? throw new ArgumentNullException(nameof(denylist));
+    private readonly IRootResolver _anchor = anchor ?? root;
+    private readonly string _prefix = prefix ?? string.Empty;
+    private readonly ISecretContentScanner _scanner = scanner ?? NullSecretContentScanner.Instance;
 
     /// <summary>Confine, denylist-check, size-cap, and read <paramref name="relativePath"/>.</summary>
     /// <param name="relativePath">A root-relative or in-root path to read.</param>
@@ -42,8 +46,28 @@ public sealed class GatedFileReader(IRootResolver root, ISecretDenylist denylist
             return ReadOutcome.Denied(confined.RelativePath);
         }
 
-        return ReadBytes(confined.RealPath, confined.RelativePath);
+        // The project ignore boundary is anchored at the base root (not the effective scope), so a scoped
+        // read still honors ancestor .gitignore/.mcpignore rules and no caller can read an ignored file.
+        if (PathIgnoreEvaluator.IsIgnored(_anchor.CanonicalRoot, ToBaseRelative(confined.RelativePath)))
+        {
+            return ReadOutcome.Ignored(confined.RelativePath);
+        }
+
+        var outcome = ReadBytes(confined.RealPath, confined.RelativePath);
+
+        // Content scan runs last, on the bytes actually read, so a file whose content looks like a secret is
+        // withheld even when its name and location are innocuous. Ignored/denylisted files never reach here.
+        if (outcome.IsOk && _scanner.Scan(outcome.Bytes).IsSecret)
+        {
+            return ReadOutcome.SecretContent(confined.RelativePath);
+        }
+
+        return outcome;
     }
+
+    /// <summary>Rebase a scope-relative path onto the base anchor for ignore evaluation.</summary>
+    private string ToBaseRelative(string relativePath)
+        => _prefix.Length == 0 ? relativePath : string.Concat(_prefix, "/", relativePath);
 
     // Only reached after Read() confirmed confined.Exists, i.e. Path.Exists(RealPath), which is false for
     // a null, empty, or whitespace path; so realPath here is always a real, non-empty absolute path.

@@ -26,10 +26,11 @@ internal sealed class TextSearchHarness : IDisposable
         int? operationBudgetMs = null,
         string extraDeny = null,
         string defaultIgnore = null,
-        IReadOnlyList<string> packageRoots = null)
+        IReadOnlyList<string> packageRoots = null,
+        bool secretScan = true)
     {
         Root = NewTempDirectory("base");
-        Config = DefaultConfig(regexTimeoutMs, operationBudgetMs);
+        Config = DefaultConfig(regexTimeoutMs, operationBudgetMs, secretScan);
         var detector = new EncodingDetector();
 
         // Each package root is a fresh temp directory alongside (never under) the base, so overlap is
@@ -144,7 +145,7 @@ internal sealed class TextSearchHarness : IDisposable
         return dir;
     }
 
-    private static SearchConfig DefaultConfig(int? regexTimeoutMs, int? operationBudgetMs)
+    private static SearchConfig DefaultConfig(int? regexTimeoutMs, int? operationBudgetMs, bool secretScan)
         => new()
         {
             MaxFilesDefault = SearchConfig.DefaultMaxFiles,
@@ -156,5 +157,6 @@ internal sealed class TextSearchHarness : IDisposable
             MaxLineSpan = SearchConfig.DefaultMaxLineSpan,
             RegexTimeout = TimeSpan.FromMilliseconds(regexTimeoutMs ?? SearchConfig.DefaultRegexTimeoutMs),
             OperationBudget = TimeSpan.FromMilliseconds(operationBudgetMs ?? SearchConfig.DefaultOperationBudgetMs),
+            SecretScanEnabled = secretScan,
         };
 }

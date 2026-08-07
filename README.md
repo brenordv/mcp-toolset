@@ -17,7 +17,7 @@ network round-trips beyond the local process the assistant already talks to.
 
 - **[git-ops](src/RaccoonNinja.McpToolset.Server.GitOps/README.md)**: Local, read-only Git inspection; status, history, diffs, blame, and search exposed as typed tools that return JSON. The assistant never drives `git` through a shell, and no writing subcommands are wired up.
 - **[file-vault](src/RaccoonNinja.McpToolset.Server.FileVault/README.md)**: A personal, cross-conversation file vault: versioned notes in a local SQLite + snapshot store, with optimistic concurrency, tags, full-text search, hierarchy, and structure-aware markdown/JSON/YAML edits. Drop-in port of the Rust `vault-mcp` server, same on-disk store.
-- **[text-search](src/RaccoonNinja.McpToolset.Server.TextSearch/README.md)**: Local, read-only, root-confined text search and inspection; `describe_scope`, `find_files`, `inspect_files`, `search_text`, and `read_lines` as typed tools that replace the `find`/`grep`/`cat` habit. Every path is resolved through all symlinks and confined to its configured roots, a non-overridable denylist keeps secret files unread, and results stay root-relative so no absolute path from your machine reaches the model. Supports multiple named roots plus opt-in package roots for grepping cached dependency sources.
+- **[text-search](src/RaccoonNinja.McpToolset.Server.TextSearch/README.md)**: Local, read-only, root-confined text search and inspection; `describe_scope`, `find_files`, `inspect_files`, `search_text`, and `read_lines` as typed tools that replace the `find`/`grep`/`cat` habit. Every path is resolved through all symlinks and confined to its configured roots, a non-overridable denylist keeps secret files unread while content-based detection additionally withholds files whose contents match a known secret shape, and results stay root-relative so no absolute path from your machine reaches the model. Supports multiple named roots plus opt-in package roots for grepping cached dependency sources.
 - **[text-edit](src/RaccoonNinja.McpToolset.Server.TextEdit/README.md)**: The mutating counterpart to text-search: root-confined text edits (`normalize_files`, `replace_text`) with hash-gated undo (`list_recent_batches`, `undo_batch`/`undo_last_batch`). It points at one repository, keeps its write tools on prompt, refuses secret files via the same non-overridable denylist, round-trips encodings and line endings faithfully, and journals every change to an append-only store sited outside the root so a batch can be rolled back even after a mid-batch crash.
 
 ## Repository layout
@@ -66,6 +66,18 @@ To build self-contained, single-file executables locally (the same shape the rel
 ./eng/publish.sh                  # win-x64, linux-x64, osx-arm64 -> dist/<rid>/
 ./eng/publish.sh win-x64          # a single platform
 ```
+
+To publish a single platform without remembering its RID, use a per-platform convenience wrapper (one per shell). Each delegates to the main script above:
+
+```bash
+# PowerShell                     # Bash
+./eng/publish-windows.ps1        ./eng/publish-windows.sh      # win-x64
+./eng/publish-linux.ps1          ./eng/publish-linux.sh        # linux-x64
+./eng/publish-macos.ps1          ./eng/publish-macos.sh        # osx-arm64 (Apple Silicon)
+./eng/publish-macos-x64.ps1      ./eng/publish-macos-x64.sh    # osx-x64 (Intel)
+```
+
+The bash wrappers also work as `bash eng/publish-linux.sh` if the executable bit is not set. Configuration passes through the same way as the main scripts (`-Configuration Debug` for PowerShell, `CONFIGURATION=Debug` for bash).
 
 Each server becomes one self-contained executable: the .NET runtime and the native SQLite/BLAKE3 libraries are embedded, so there is nothing else to install to run it. The single-file settings live in `eng/ServerPublish.props`.
 

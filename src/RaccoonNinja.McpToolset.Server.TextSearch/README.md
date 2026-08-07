@@ -24,6 +24,12 @@ controls hold that line and no flag can turn them off:
   read, however, the path is spelled or symlinked. A `cwd` that points at or inside a denylisted directory is
   refused too, so it cannot become an effective root that sheds the protected segment.
 
+Layered on top and on by default, **content-based secret detection** withholds a file whose *content* matches
+a known secret shape (private keys, cloud provider keys, common service tokens, URL-embedded credentials) from
+`read_lines`, `search_text`, and `inspect_files`, even when its name looks innocuous. Unlike the two controls
+above, it can be turned off (`MCP_TEXTSEARCH_SECRET_SCAN=off`) or widened (`=aggressive`), so treat it as a
+strong default rather than a structural guarantee. It never removes a file from `find_files` listings.
+
 ## Why use it
 
 | Without it                                                                                                              | With it                                                                                                                 |
@@ -35,7 +41,7 @@ controls hold that line and no flag can turn them off:
 
 ## Tools
 
-Call `describe_scope` first to learn the base root, how `cwd` scoping works, the "ignore" tiers, the denylist,
+Call `describe_scope` first to learn the base root, how `cwd` scoping works, the "ignore" tiers, the denylist, whether content-based secret detection is on,
 and the caps. The three multi-file tools share one selector: give exactly one of `glob` (primary), `regex`,
 or `paths`, or none to mean "everything in the scope", optionally narrowed by `extensions`. A glob with no
 `/` matches the basename at any depth, so `*.cs` is recursive.
@@ -54,7 +60,7 @@ refused with a path-free error; the same denylist and ignore tiers apply as unde
 
 | Tool             | Purpose                                                                 | Key parameters                                                                                                   |
 |------------------|-------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
-| `describe_scope` | Report the base root, scope model, package roots, ignore tiers, denylist, and caps. | (none)                                                                                               |
+| `describe_scope` | Report the base root, scope model, package roots, ignore tiers, denylist, content-scan status, and caps. | (none)                                                                                               |
 | `find_files`     | List scope-relative files with size and last-modified.                  | `glob` / `regex` / `paths`, `cwd`, `extensions`, `include_ignored`, `case_sensitive`, `max_files`, `cursor`      |
 | `inspect_files`  | Report encoding, BOM, line endings, final newline, and counts per file. | same selector                                                                                                    |
 | `search_text`    | Grep file contents line by line (literal or regex).                     | selector + `pattern`, `is_regex`, `context_lines`, `max_matches_per_file`, `max_results`, `files_only`, `cursor` |
@@ -68,9 +74,9 @@ refused with a path-free error; the same denylist and ignore tiers apply as unde
   `match_end` are offsets into the line.
 - **`include_ignored` takes globs, not a boolean.** Pass globs (for example `["node_modules/**"]`) to
   re-include otherwise-ignored paths for one call; omit or pass an empty list to keep every ignore tier in
-  force. It never bypasses the secret denylist, which runs first and independently. It is the clearest
-  erosion of the auto-approval property because ignored files are exactly where local secrets live, so the
-  denylist carries the whole load when it is on.
+  force. It only ever re-includes the built-in default tier: a `.gitignore` or `.mcpignore` match is a hard
+  boundary it can never cross, and it never reaches the secret denylist or content scan, which run first and
+  independently.
 - **Denylisted files are omitted, not flagged.** Reporting that a credential file exists is itself a useful
   recon, so the tools stay silent about it.
 - **List results paginate.** When `truncated` is true and a `cursor` is returned, pass the cursor back for
@@ -137,10 +143,14 @@ home directory, a base whose own path carries a denylisted segment (for example,
 placed directly on a protected parent directory. The denylist still runs inside the base the same as
 anywhere.
 
-**Stating the obvious security limition:** a filename denylist cannot catch a secret hardcoded *inside* an ordinary
-source file. `search_text` will return a `const TOKEN = "..."` sitting in a file, the same as reading that
-source yourself. The auto-approval case rests on "no worse than reading source the agent may read anyway",
-not on the denylist hiding content secrets it cannot see.
+**The security limit, stated plainly:** a filename denylist keys on names, so on its own it cannot catch a
+secret hardcoded *inside* an ordinary source file. Content-based secret detection (on by default) closes much
+of that gap: a file whose content matches a known secret shape (private keys; cloud provider keys; Slack,
+GitHub, Stripe, or SendGrid tokens; URL-embedded credentials) is withheld from `read_lines`, `search_text`,
+and `inspect_files` whatever its name. What is left uncovered is a secret of no recognizable shape, an
+arbitrary `const TOKEN = "..."` value, which `search_text` still returns just as reading that source yourself
+would. The auto-approval case rests on that residue being no worse than reading source the agent may read
+anyway.
 
 ## Ignore tiers
 
@@ -154,8 +164,11 @@ Three tiers decide which non-secret files a walk skips, applied least-specific f
 3. **`.mcpignore`**, the most specific tier, which overrides both above. Use a base-root `.mcpignore` to
    *augment* the defaults rather than replace them.
 
-None of these is a security boundary: the secret denylist is independent and always applies. Glob-scoped
-`include_ignored` re-includes named ignored paths for one call and still never reaches a denylisted path.
+The default tier is a convenience filter that `include_ignored` can re-include for one call. The `.gitignore`
+and `.mcpignore` tiers, by contrast, are a hard boundary: enforced root-down (ancestor rules included) and
+never re-includable, so a file they ignore is never listed, read, or searched. The secret denylist and the
+content scan are independent of all three and always apply, so re-including an ignored path still cannot
+surface a secret.
 
 ## Package roots
 
@@ -188,11 +201,12 @@ Rules enforced at startup, all fatal:
 - No configured root may overlap another, checked against real (symlink-resolved) paths. A cache already
   under the base root needs no package entry.
 
-**Scoped-ancestor-ignore caveat.** Because a `cwd` becomes the effective root, ignore files in directories
-*between* the base root and `cwd` are not consulted. A scoped call can therefore surface a non-secret file a
-parent `.gitignore` would have hidden; the whole-base walk (no `cwd`) does load each project's root ignore
-file. The default-ignore tier partially compensates. This exposes no secret, since the denylist is
-unaffected.
+**Scoped-ancestor default-ignore caveat.** Because a `cwd` becomes the effective root, the built-in *default*
+ignore tier is not applied to directories *between* the base root and `cwd`, so a scoped call can surface a
+generated or build file (a `bin/` or `dist/` entry, say) that the default tier hides from a whole-base walk.
+The `.gitignore` and `.mcpignore` tiers are not subject to this: they are always evaluated root-down from the
+base with ancestor rules included, so a scoped call never surfaces a file an ancestor `.gitignore`/`.mcpignore`
+ignored. Either way this exposes no secret, since the denylist and content scan are unaffected.
 
 ## Configuration
 
@@ -204,6 +218,7 @@ All configurations are environment variables. Only the base root is required; ev
 | `MCP_TEXTSEARCH_PACKAGE_ROOTS`        | (none)     | `;`-separated `name=path` (or bare path) read-only dependency caches, addressed with a `cwd` of `@name` or `@name/<subpath>`. Each must be an existing directory, pass the broad-root guard, have a valid unique name, and not overlap any other root. Fatal on any bad entry. |
 | `MCP_TEXTSEARCH_DEFAULT_IGNORE`       | (built-in) | `off` disables the built-in default ignore set; a file path replaces it with that file's patterns (a missing path is fatal); unset keeps the built-ins.                                                                                                |
 | `MCP_TEXTSEARCH_EXTRA_DENY`           | (none)     | `;`-separated additive deny patterns. A trailing `/` denies a bare directory segment at any depth; otherwise it is a file-name glob. It can only tighten the built-in denylist, never remove from it; absolute-looking or malformed entries are fatal. |
+| `MCP_TEXTSEARCH_SECRET_SCAN`          | on         | Content-based secret withholding. `on` (default) withholds a file whose content matches a known secret shape from `read_lines`, `search_text`, and `inspect_files` while still listing it in `find_files`; `off` disables it; `aggressive` adds higher-false-positive detectors (JWTs, generic password assignments). Any other value is fatal. |
 | `MCP_TEXTSEARCH_MAX_FILES`            | 1000       | Default files returned per page.                                                                                                                                                                                                                       |
 | `MCP_TEXTSEARCH_MAX_FILES_CEILING`    | 10000      | Hard ceiling the page size is clamped to.                                                                                                                                                                                                              |
 | `MCP_TEXTSEARCH_MAX_FILE_BYTES`       | 5242880    | Largest file read or inspected (5 MiB).                                                                                                                                                                                                                |
@@ -253,7 +268,7 @@ it. Set `MCP_TEXTSEARCH_BASE_ROOT` to the directory that holds your projects.
 ```
 
 Verify it by asking the agent to call `describe_scope`; it should report the base root by name, the scope
-model, the ignore tiers, the denylist, and the caps.
+model, the ignore tiers, the denylist, the content-scan status, and the caps.
 
 ## Project layout
 

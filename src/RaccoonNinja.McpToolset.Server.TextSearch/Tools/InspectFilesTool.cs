@@ -20,7 +20,7 @@ public sealed class InspectFilesTool(ToolCommon common, SearchConfig config, Sco
     /// <param name="paths">An explicit list of scope-relative paths.</param>
     /// <param name="cwd">An absolute working directory inside the base root to scope the call to; omit for the whole base root.</param>
     /// <param name="extensions">File extensions to keep (dot optional).</param>
-    /// <param name="include_ignored">Globs that re-include otherwise-ignored paths for this call; never bypasses the secret denylist.</param>
+    /// <param name="include_ignored">Globs that re-include otherwise-ignored paths (built-in default tier only, e.g. node_modules); never re-includes a .gitignore/.mcpignore path, and never bypasses the secret denylist.</param>
     /// <param name="case_sensitive">Whether matching is case-sensitive.</param>
     /// <param name="max_files">The page size, clamped to the ceiling.</param>
     /// <param name="cursor">A pagination cursor from a previous call.</param>
@@ -45,7 +45,7 @@ public sealed class InspectFilesTool(ToolCommon common, SearchConfig config, Sco
         string cwd = null,
         [Description("File extensions to keep (dot optional, case-insensitive). ANDed with the selector.")]
         string[] extensions = null,
-        [Description("Globs that re-include otherwise-ignored paths for this call, e.g. [\"node_modules/**\"]. Omit/empty keeps every ignore tier; never bypasses the secret denylist.")]
+        [Description("Globs that re-include otherwise-ignored paths for this call, e.g. [\"node_modules/**\"]. Re-includes only the built-in default tier; never re-includes a .gitignore/.mcpignore path, and never bypasses the secret denylist.")]
         string[] include_ignored = null,
         [Description("Match case-sensitively. Default false.")]
         bool case_sensitive = false,

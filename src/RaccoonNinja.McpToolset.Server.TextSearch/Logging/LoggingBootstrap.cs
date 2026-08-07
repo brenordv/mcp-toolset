@@ -69,7 +69,7 @@ public static class LoggingBootstrap
             fileSizeLimitBytes: LoggingConstants.RotationMaxBytes,
             retainedFileCountLimit: LoggingConstants.RotationBackupCount,
             shared: false,
-            encoding: System.Text.Encoding.UTF8,
+            encoding: new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
             flushToDiskInterval: TimeSpan.FromMilliseconds(500));
     }
 

@@ -164,7 +164,11 @@ public sealed class ScopeResolver
 
     private EditScope BuildScope(RootConfinement confinement, string scopeKey)
     {
-        var selection = new FileSelection(confinement, _denylist, _defaultIgnore);
+        // The project ignore boundary is anchored at the base root (not the scoped cwd), so a cwd-scoped
+        // selection still honors ancestor .gitignore/.mcpignore rules above the cwd. The prefix is the
+        // effective scope's path relative to the base root ("" for the whole base).
+        var prefix = scopeKey == "." ? string.Empty : scopeKey;
+        var selection = new FileSelection(confinement, _denylist, _defaultIgnore, _base, prefix);
         return new EditScope(confinement, selection, scopeKey);
     }
 
