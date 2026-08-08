@@ -1,4 +1,4 @@
-﻿## v2.0.0
+## v2.0.0
 - Renamed the assembly to `git-ops`.
 
 ## v1.0.2

@@ -1,4 +1,4 @@
-﻿namespace RaccoonNinja.McpToolset.Server.GitOps.Logging;
+namespace RaccoonNinja.McpToolset.Server.GitOps.Logging;
 
 public static class LoggingConstants
 {
