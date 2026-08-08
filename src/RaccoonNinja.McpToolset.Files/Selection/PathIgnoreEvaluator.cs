@@ -7,7 +7,7 @@ namespace RaccoonNinja.McpToolset.Files.Selection;
 /// lets "everything under an ignored directory is ignored" fall out of pruning. A caller that names a path
 /// directly, such as the write gate's <c>paths[]</c> selector, skips that traversal, so a <c>bin/</c> rule
 /// that matches the directory would never match <c>bin/x.dll</c> on its own. This evaluator restores the
-/// missing ancestor tests: it accumulates the <c>.gitignore</c>/<c>.mcpignore</c> chain from the root down
+/// missing ancestor tests: it accumulates the project ignore-file chain (<c>.gitignore</c>, the agent-ignore files, <c>.mcpignore</c>) from the root down
 /// and reports the path ignored when any ancestor directory or the leaf itself matches. Like
 /// <see cref="IgnoreRules"/>, this is a convenience rail against clobbering generated trees, not a security
 /// boundary; the boundary is <see cref="Security.SecretDenylist"/>.

@@ -16,9 +16,11 @@ public sealed class DescribeScopeTool(ToolCommon common, EditConfig config, Scop
         + "explicit paths are then relative to cwd and confined to it, so a scoped edit cannot write outside "
         + "its project. Omit cwd to edit across the whole base root. Reported, journaled, and undoable paths "
         + "are always relative to the base root (a batch is base-scoped), so undo and list_recent_batches are "
-        + "base-global, not cwd-scoped. Ignore tiers (the built-in default set and the project ignore files in ignore_files) "
-        + "between the base root and a scoped cwd are not consulted; the secret denylist is independent and "
-        + "always applies.";
+        + "base-global, not cwd-scoped. The built-in default ignore tier (node_modules, bin, obj, ...) between "
+        + "the base root and a scoped cwd is not consulted, so a scoped edit can reach a generated file a parent "
+        + "default-ignore would hide. The project ignore-file tier (see ignore_files) is always enforced "
+        + "root-down (ancestor rules included), so an ignored file is never written. The secret denylist is "
+        + "independent and always applies.";
 
     /// <summary>Report the base root, scope model, ignore tiers, denylist, encoding, column unit, journal retention, and every cap.</summary>
     /// <param name="cancellationToken">The cancellation token.</param>

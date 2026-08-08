@@ -9,7 +9,7 @@ namespace RaccoonNinja.McpToolset.Files.Selection;
 /// denylist, and the project ignore boundary are enforced before anything is opened. That symmetry is the
 /// point: <c>paths: [".env", "appsettings.Production.json"]</c> must not read straight into a caller's hands
 /// just because enumeration was skipped, so the gate runs on every path however it arrives. The
-/// <c>.gitignore</c>/<c>.mcpignore</c> boundary is evaluated through <see cref="PathIgnoreEvaluator"/>
+/// project ignore boundary (<c>.gitignore</c>, the agent-ignore files, <c>.mcpignore</c>) is evaluated through <see cref="PathIgnoreEvaluator"/>
 /// anchored at the base root, so it holds even for a scoped call and cannot be reached past by
 /// <c>include_ignored</c> (which only ever re-includes the built-in default tier).
 /// </summary>
@@ -209,7 +209,7 @@ public sealed class FileSelection
 
     /// <summary>
     /// Whether <paramref name="relativePath"/> (relative to this selection's root) is ignored by a
-    /// <c>.gitignore</c>/<c>.mcpignore</c> rule, evaluated root-down from the base anchor so a scoped call
+    /// project ignore rule (<c>.gitignore</c>, an agent-ignore file, or <c>.mcpignore</c>), evaluated root-down from the base anchor so a scoped call
     /// still honors ancestor ignore files and no re-include can pull a project-ignored path back.
     /// </summary>
     private bool IsProjectIgnored(string relativePath)

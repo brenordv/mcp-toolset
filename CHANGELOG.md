@@ -1,5 +1,9 @@
 # Toolset Changelog
 
+## v12
+- Updated `NSubstitute`, and `Roslynator.Analyzers` packages.
+- Updated outdated tool descriptions and summaries.
+
 ## v11
 - Updated `ModelContextProtocol` NuGet package to version 2.1.0.
 

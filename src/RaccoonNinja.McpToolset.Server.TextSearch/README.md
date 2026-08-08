@@ -113,7 +113,7 @@ working directory. A failure sets `error` and leaves `results` an empty list:
 |---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `SelectorInvalid`         | More than one of `glob`, `regex`, `paths` was given.                                                                                                   |
 | `PatternInvalid`          | A regex, or an `include_ignored` glob, was too long, over the repetition cap, or not valid.                                                            |
-| `PathOutsideRoot`         | A requested path escaped the base root.                                                                                                                |
+| `WithheldSecret`          | A single-path `read_lines` was refused because the file's content matched a secret detector (content scan).                                            |
 | `NotFound`                | The path did not exist, resolved to a directory, or was refused (a denylisted single-path read reports this rather than confirming the secret exists). |
 | `IsBinary`                | The file is binary and cannot be read as text.                                                                                                         |
 | `TooLarge`                | The file is larger than the configured read limit.                                                                                                     |

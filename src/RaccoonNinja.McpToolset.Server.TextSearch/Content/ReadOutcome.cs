@@ -59,7 +59,7 @@ public sealed record ReadOutcome
     /// <returns>The outcome.</returns>
     public static ReadOutcome IoError() => new() { Status = ReadStatus.IoError };
 
-    /// <summary>A path ignored by a <c>.gitignore</c>/<c>.mcpignore</c> rule.</summary>
+    /// <summary>A path ignored by a project ignore rule (<c>.gitignore</c>, an agent-ignore file, or <c>.mcpignore</c>).</summary>
     /// <param name="relativePath">The root-relative path.</param>
     /// <returns>The outcome.</returns>
     public static ReadOutcome Ignored(string relativePath)

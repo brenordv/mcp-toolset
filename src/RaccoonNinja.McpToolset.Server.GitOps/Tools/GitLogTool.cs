@@ -20,7 +20,7 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
         [Description("Filter by author substring (regex per git --author).")] string author = null,
         [Description("Only commits more recent than this (git --since spec).")] string since = null,
         [Description("Only commits older than this (git --until spec).")] string until = null,
-        [Description("Substring match against commit message (git --grep).")] string grep = null,
+        [Description("Filter to commits whose message matches this pattern (regex, git --grep).")] string grep = null,
         [Description("Pickaxe search: when this string was added or removed (git -S).")] string pickaxe = null,
         [Description("Cap the number of commits returned. Default 50.")] int maxCount = 50,
         [Description("Search from this ref, or a range A..B / A...B (branch, tag, SHA, HEAD~n, ...).")] string @ref = null,

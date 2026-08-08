@@ -50,7 +50,7 @@ flowchart TD
     C -- yes --> D[Verify each ref<br/>git rev-parse --verify --end-of-options<br/>→ resolved SHA]
     C -- no --> E[Confine paths under repo root<br/>reject UNC / drive / ADS / escapes]
     D --> E
-    E --> F[Build GitIntent → hardened argv<br/>fixed -c config + --no-pager<br/>+ --end-of-options barrier]
+    E --> F[Build GitIntent → hardened argv<br/>fixed -c config + --no-pager<br/>+ --end-of-options before refs]
     F --> G[Run subprocess<br/>scrubbed env · 30s timeout · 8 MB output cap]
     G --> H{Exit code allowed?}
     H -- no --> I[Throw domain error<br/>→ failure envelope with stable code]
@@ -268,7 +268,7 @@ format so each branch yields its refname, HEAD marker, object name, upstream, an
 flowchart LR
     A[git_branch_list: cwd, includeRemote] --> B[Resolve root]
     B --> C["git for-each-ref --format=…<br/>refs/heads [refs/remotes]"]
-    C --> D[BranchParser → Branch records<br/>name · is_head · sha · upstream · subject]
+    C --> D[BranchParser → Branch records<br/>name · is_current · is_remote · upstream · tip_hash · subject]
     D --> E[ResultEnvelope]
 ```
 
@@ -407,14 +407,15 @@ flowchart TD
     C --> E[Single argv builder]
     D --> E
     E --> F[Fixed hardening prefix<br/>-c core.hooksPath=… -c credential.helper=…<br/>--no-pager --literal-pathspecs]
-    F --> G[--end-of-options barrier<br/>user values can never be read as flags]
+    F --> G[--end-of-options before positional refs<br/>omitted for git grep]
     G --> H[ArgumentList execution<br/>no shell, no string join]
     H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1]
 ```
 
 - **One argv producer.** Tools declare a typed `GitIntent`; a single `GitCommandBuilder` is the only code that
   serializes it to argv. It prepends fixed `-c` neutralizers (disable hooks, pager, fsmonitor, credential helpers,
-  askpass, auto-gc) and inserts `--end-of-options` so no user-supplied value can be parsed as an option.
+  askpass, auto-gc) and, before any positional ref, inserts `--end-of-options` so no user value can be read
+  as an option (git grep excepted: its pattern is a glued `-e` token and its refs are pre-resolved SHAs).
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or

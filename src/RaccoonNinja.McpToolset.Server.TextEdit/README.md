@@ -68,7 +68,6 @@ recreated, and a journal row that no longer confines or is now denylisted is ski
 
 ### Notes that save a round trip
 
-- **Column is 1-based and counts UTF-16 code units** (matching .NET and most editors).
 - **A rewrite requires a confidently-detected encoding.** A file whose encoding is detected below the
   confidence threshold is refused unless you pass an explicit `source_encoding`. This is safe by design: a
   low-confidence guess could corrupt the file on write.
@@ -103,8 +102,8 @@ single element carrying the batch id, the counts, and the per-file entries.
 ```
 
 A per-file `outcome` is `changed`, `refused`, or `unchanged`; a refused file carries a `refusal_reason`
-(`denied`, `out_of_root`, `ignored`, `binary`, `too_large`, `low_confidence_encoding`, `regex_timeout`,
-`is_directory`, `write_failed`). An `undo` result carries `restored`, `recreated`, and `skipped` (each with
+(`denied`, `out_of_root`, `ignored`, `not_found`, `is_directory`, `binary`, `too_large`,
+`low_confidence_encoding`, `regex_timeout`, `io_error`, `write_failed`). An `undo` result carries `restored`, `recreated`, and `skipped` (each with
 a `reason`).
 
 ### Error codes

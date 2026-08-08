@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace RaccoonNinja.McpToolset.Files.Selection;
 
 /// <summary>
-/// One compiled <c>.gitignore</c>/<c>.mcpignore</c> pattern: a regex over a <c>/</c>-separated
+/// One compiled project ignore pattern (from <c>.gitignore</c>, an agent-ignore file, or <c>.mcpignore</c>): a regex over a <c>/</c>-separated
 /// root-relative path plus the two flags that decide how it applies (negation and directory-only).
 /// Internal on purpose; callers evaluate rules through <see cref="IgnoreRules"/> and read the original
 /// pattern text back through <see cref="IgnoreRules.Patterns"/>.

@@ -28,7 +28,8 @@ public static class Program
     private const string ServerName = "text-edit";
 
     private const string ServerInstructions =
-        "Root-confined text mutation for one repository, with hash-gated undo. Do NOT blanket-approve the "
+        "Root-confined text mutation over a base root that may hold several projects, with hash-gated undo. "
+        + "Pass cwd to scope a call to one project. Do NOT blanket-approve the "
         + "write tools (normalize_files, replace_text, undo_batch): keep them on prompt. Every write is "
         + "confined to the configured root and refuses a secret file via a non-overridable denylist, and "
         + "every batch is journaled so it can be undone. Call describe_scope first for the root and caps. "
@@ -36,7 +37,9 @@ public static class Program
         + "dry_run to preview a unified diff, and expected_match_count to abort unless exactly that many "
         + "matches would change. normalize_files fixes encoding, line endings, and trailing whitespace. "
         + "list_recent_batches shows what can be undone; undo_batch/undo_last_batch restore a batch, "
-        + "skipping any file changed since. Paths are always root-relative, in and out.";
+        + "skipping any file changed since. Explicit paths are relative to cwd (or the base root when cwd "
+        + "is omitted); reported and undoable paths are always base-relative, so undo and list_recent_batches "
+        + "are base-global.";
 
     /// <summary>The process entrypoint.</summary>
     /// <param name="args">Command-line arguments (passed to the host builder; config comes from the environment).</param>

@@ -13,7 +13,7 @@ public static class RefusalReason
     /// <summary>The path is on the non-overridable secret denylist.</summary>
     public const string Denied = "denied";
 
-    /// <summary>The path is ignored by a <c>.gitignore</c>/<c>.mcpignore</c> rule (ancestor or leaf).</summary>
+    /// <summary>The path is ignored by a project ignore rule (<c>.gitignore</c>, an agent-ignore file, or <c>.mcpignore</c>), ancestor or leaf.</summary>
     public const string Ignored = "ignored";
 
     /// <summary>The path does not exist.</summary>

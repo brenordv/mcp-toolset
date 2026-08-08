@@ -35,7 +35,7 @@ public static class ErrorCodes
     /// <summary>An unexpected internal error; details go to the log, never the client.</summary>
     public const string InternalError = nameof(InternalError);
 
-    /// <summary>The write target is ignored by a <c>.gitignore</c>/<c>.mcpignore</c> rule.</summary>
+    /// <summary>The write target is ignored by a project ignore rule (<c>.gitignore</c>, an agent-ignore file, or <c>.mcpignore</c>).</summary>
     public const string Ignored = nameof(Ignored);
 
     /// <summary>The file's encoding was detected below the rewrite-confidence threshold and no explicit source encoding was supplied.</summary>

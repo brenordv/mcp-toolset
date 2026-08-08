@@ -5,8 +5,8 @@ namespace RaccoonNinja.McpToolset.Files.Selection;
 /// <summary>
 /// Walks a confined root and returns the entries that survive four independent prunings: the root
 /// confinement (the walk only ever enumerates real directories inside the canonical root), the
-/// non-overridable secret denylist, the ignore rules (a built-in default tier plus the tree's own
-/// <c>.gitignore</c>/<c>.mcpignore</c> files), and symlink skipping. It never descends a reparse-point
+/// non-overridable secret denylist, the ignore rules (a built-in default tier plus the tree's own project
+/// ignore files: <c>.gitignore</c>, the agent-ignore files, and <c>.mcpignore</c>), and symlink skipping. It never descends a reparse-point
 /// (symbolic-link or junction) directory, which both keeps the walk inside the real tree and makes a
 /// symlink cycle impossible, and it counts every skipped link so the caller can report an aggregate rather
 /// than leave the entries looking mysteriously absent. Confinement and the denylist are the security
@@ -23,8 +23,8 @@ public sealed class FileWalker
     /// <param name="root">The root confiner; the walk stays inside its canonical root.</param>
     /// <param name="denylist">The non-overridable secret denylist applied to every entry.</param>
     /// <param name="defaultIgnore">
-    /// The built-in default ignore tier, seeded as the least-specific rule set so a project's own
-    /// <c>.gitignore</c>/<c>.mcpignore</c> overrides it; <c>null</c> means no default tier.
+    /// The built-in default ignore tier, seeded as the least-specific rule set so a project's own project
+    /// ignore files (<c>.gitignore</c>, agent-ignore, <c>.mcpignore</c>) override it; <c>null</c> means no default tier.
     /// </param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="root"/> or <paramref name="denylist"/> is <c>null</c>.</exception>
     public FileWalker(IRootResolver root, ISecretDenylist denylist, IgnoreRules defaultIgnore = null)

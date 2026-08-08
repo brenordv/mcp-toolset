@@ -5,7 +5,7 @@
   <ItemGroup>
     <!-- Shared: referenced by both the app and the test projects. Centralized here so the
          version cannot drift between projects. -->
-    <PackageVersion Include="Roslynator.Analyzers" Version="4.15.0" />
+    <PackageVersion Include="Roslynator.Analyzers" Version="4.16.0" />
     <!-- MCP SDK: server side in src, client side in the protocol e2e tests. -->
     <PackageVersion Include="ModelContextProtocol" Version="2.1.0" />
   </ItemGroup>
