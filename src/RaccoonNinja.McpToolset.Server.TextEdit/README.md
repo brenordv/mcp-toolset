@@ -34,7 +34,7 @@ flag can turn them off:
 Call `describe_scope` first to learn the base root, the scope model, and the caps. The two selector tools
 share one selector: give exactly one of `glob` (primary), `regex`, or `paths`, or none to mean "everything
 in the scope", optionally narrowed by `extensions`. A glob with no `/` matches the basename at any depth, so
-`*.cs` is recursive. Ignore rules (`.gitignore`/`.mcpignore`) always apply; there is no `include_ignored` on
+`*.cs` is recursive. Ignore rules (`.gitignore`, the agent-ignore files, `.mcpignore`) always apply; there is no `include_ignored` on
 the write path.
 
 **Scoping a call.** The optional `cwd` argument is an absolute working directory inside the base root. Pass

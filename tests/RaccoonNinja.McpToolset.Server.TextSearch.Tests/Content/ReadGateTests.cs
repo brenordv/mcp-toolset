@@ -134,6 +134,38 @@ public sealed class ReadGateTests
         Assert.Equal(ErrorCodes.NotFound, envelope.Error.Code);
     }
 
+    [Fact]
+    public async Task ReadLines_AgentIgnoredFile_IsRefused()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write(".cursorignore", "agent-only.json\n");
+        harness.Write("agent-only.json", "{ \"secret\": true }");
+
+        // Act
+        var envelope = await harness.ReadLines.InvokeAsync(path: "agent-only.json");
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.NotFound, envelope.Error.Code);
+    }
+
+    [Fact]
+    public async Task Inspect_AgentIgnoredFileInPaths_IsOmitted()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write(".cursorignore", "agent-only.json\n");
+        harness.Write("agent-only.json", "{ }");
+        harness.Write("ok.cs", "1");
+
+        // Act
+        var envelope = await harness.Inspect.InvokeAsync(paths: ["agent-only.json", "ok.cs"]);
+
+        // Assert
+        Assert.Equal(["ok.cs"], TextSearchHarness.Paths(envelope));
+    }
+
     private static TextSearchHarness SeedSecrets()
     {
         var harness = new TextSearchHarness();

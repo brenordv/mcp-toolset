@@ -1,7 +1,8 @@
 namespace RaccoonNinja.McpToolset.Files.Selection;
 
 /// <summary>
-/// An ordered set of <c>.gitignore</c>/<c>.mcpignore</c> rules evaluated with git's last-match-wins
+/// An ordered set of project ignore rules (<c>.gitignore</c>, the AI-agent ignore files, and
+/// <c>.mcpignore</c>) evaluated with git's last-match-wins
 /// semantics: the last rule that matches a path decides, and a <c>!</c> rule re-includes what an earlier
 /// rule excluded. Matching is per-entry, which is all the pruning walker needs: it never descends an
 /// ignored directory, so a path is only ever tested once its ancestors are known to be un-ignored, and
@@ -15,8 +16,27 @@ public sealed class IgnoreRules
     /// <summary>The git ignore-file name read at each directory level.</summary>
     public const string GitIgnoreFileName = ".gitignore";
 
-    /// <summary>The toolset-specific ignore-file name, applied after (so it overrides) <c>.gitignore</c>.</summary>
+    /// <summary>The toolset-specific ignore-file name, applied last so it overrides <c>.gitignore</c> and the agent ignore files.</summary>
     public const string McpIgnoreFileName = ".mcpignore";
+
+    /// <summary>
+    /// The AI-agent context-exclusion ignore files honored alongside git's, applied after <c>.gitignore</c>
+    /// and before <c>.mcpignore</c>. Curated to files whose intent is that an agent should not surface the
+    /// listed paths; index-only files such as <c>.cursorindexingignore</c> and tool-scope ignores such as
+    /// <c>.npmignore</c> or <c>.dockerignore</c> are deliberately excluded.
+    /// </summary>
+    public static IReadOnlyList<string> AgentIgnoreFileNames { get; } =
+    [
+        ".claudeignore", ".cursorignore", ".aiexclude", ".aiignore",
+        ".codeiumignore", ".continueignore", ".aiderignore", ".geminiignore",
+    ];
+
+    /// <summary>
+    /// Every project ignore-file kind honored at a directory level, least specific first: <c>.gitignore</c>,
+    /// then the agent ignore files, then <c>.mcpignore</c> last so it overrides the rest.
+    /// </summary>
+    public static IReadOnlyList<string> IgnoreFileNames { get; } =
+        [GitIgnoreFileName, .. AgentIgnoreFileNames, McpIgnoreFileName];
 
     private readonly IReadOnlyList<IgnoreRule> _rules;
 
@@ -54,21 +74,24 @@ public sealed class IgnoreRules
     }
 
     /// <summary>
-    /// Read <c>.gitignore</c> then <c>.mcpignore</c> from <paramref name="directory"/> and compile them into
-    /// one rule set anchored under <paramref name="basePath"/>. Absent files are skipped; <c>.mcpignore</c>
-    /// rules come last so they override <c>.gitignore</c>.
+    /// Read every ignore-file kind in <see cref="IgnoreFileNames"/> from <paramref name="directory"/> and
+    /// compile them into one rule set anchored under <paramref name="basePath"/>. Absent files are skipped;
+    /// the kinds are read least-specific first, so <c>.mcpignore</c> rules come last and override the rest.
     /// </summary>
     /// <param name="directory">The real absolute directory to read the ignore files from.</param>
     /// <param name="basePath">The root-relative POSIX path of that directory (<c>""</c> for the root).</param>
-    /// <returns>The combined rule set, or <see cref="Empty"/> when neither file is present.</returns>
+    /// <returns>The combined rule set, or <see cref="Empty"/> when no ignore file is present.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="directory"/> is null or blank.</exception>
     public static IgnoreRules Load(string directory, string basePath = "")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
 
         var sets = new List<IgnoreRules>();
-        AddFileIfPresent(sets, Path.Combine(directory, GitIgnoreFileName), basePath ?? string.Empty);
-        AddFileIfPresent(sets, Path.Combine(directory, McpIgnoreFileName), basePath ?? string.Empty);
+        foreach (var fileName in IgnoreFileNames)
+        {
+            AddFileIfPresent(sets, Path.Combine(directory, fileName), basePath ?? string.Empty);
+        }
+
         return sets.Count == 0 ? Empty : Combine(sets);
     }
 

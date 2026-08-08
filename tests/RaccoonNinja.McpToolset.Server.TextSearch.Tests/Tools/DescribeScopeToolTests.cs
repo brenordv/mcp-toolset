@@ -40,7 +40,10 @@ public sealed class DescribeScopeToolTests
         var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
         Assert.Equal(Path.GetFileName(harness.Root), info.BaseRoot);
         Assert.Contains("cwd", info.ScopeModel, StringComparison.Ordinal);
-        Assert.Equal([".gitignore", ".mcpignore"], info.IgnoreFiles);
+        Assert.Equal(".gitignore", info.IgnoreFiles[0]);
+        Assert.Equal(".mcpignore", info.IgnoreFiles[^1]);
+        Assert.Contains(".cursorignore", info.IgnoreFiles);
+        Assert.Contains(".claudeignore", info.IgnoreFiles);
         Assert.NotEmpty(info.DefaultIgnore);
         Assert.DoesNotContain(harness.Root, TextSearchHarness.ToJson(envelope), StringComparison.Ordinal);
     }

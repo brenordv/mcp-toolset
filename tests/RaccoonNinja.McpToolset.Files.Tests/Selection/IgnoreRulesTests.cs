@@ -254,4 +254,73 @@ public sealed class IgnoreRulesTests
             dir.Delete(recursive: true);
         }
     }
+
+    [Fact]
+    public void IgnoreFileNames_OrdersGitignoreFirstMcpignoreLast()
+    {
+        // Arrange
+        var names = IgnoreRules.IgnoreFileNames;
+
+        // Assert
+        Assert.Equal(IgnoreRules.GitIgnoreFileName, names[0]);
+        Assert.Equal(IgnoreRules.McpIgnoreFileName, names[^1]);
+    }
+
+    [Fact]
+    public void AgentIgnoreFileNames_HonorAgentFilesButNotToolScopeOrIndexOnly()
+    {
+        // Assert
+        Assert.Contains(".cursorignore", IgnoreRules.AgentIgnoreFileNames);
+        Assert.Contains(".claudeignore", IgnoreRules.AgentIgnoreFileNames);
+        Assert.DoesNotContain(".cursorindexingignore", IgnoreRules.AgentIgnoreFileNames);
+        Assert.DoesNotContain(".npmignore", IgnoreRules.AgentIgnoreFileNames);
+        Assert.DoesNotContain(".dockerignore", IgnoreRules.AgentIgnoreFileNames);
+    }
+
+    [Fact]
+    public void Load_AgentIgnoreFile_IsHonored()
+    {
+        // Arrange
+        var dir = Directory.CreateTempSubdirectory("ignorerules-agent-");
+        try
+        {
+            File.WriteAllText(Path.Combine(dir.FullName, ".cursorignore"), "secrets.txt\n");
+
+            // Act
+            var rules = IgnoreRules.Load(dir.FullName);
+
+            // Assert
+            Assert.True(rules.IsIgnored("secrets.txt", isDirectory: false));
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_McpignoreOverridesAgentIgnoreWhichOverridesGitignore()
+    {
+        // Arrange
+        var dir = Directory.CreateTempSubdirectory("ignorerules-order-");
+        try
+        {
+            File.WriteAllText(Path.Combine(dir.FullName, IgnoreRules.GitIgnoreFileName), "*.log\n");
+            File.WriteAllText(Path.Combine(dir.FullName, ".cursorignore"), "!keep.log\n*.secret\n");
+            File.WriteAllText(Path.Combine(dir.FullName, IgnoreRules.McpIgnoreFileName), "!keep.secret\n");
+
+            // Act
+            var rules = IgnoreRules.Load(dir.FullName);
+
+            // Assert
+            Assert.True(rules.IsIgnored("app.log", isDirectory: false));
+            Assert.False(rules.IsIgnored("keep.log", isDirectory: false));
+            Assert.True(rules.IsIgnored("token.secret", isDirectory: false));
+            Assert.False(rules.IsIgnored("keep.secret", isDirectory: false));
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
 }

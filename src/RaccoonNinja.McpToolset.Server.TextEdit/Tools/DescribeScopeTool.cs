@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using RaccoonNinja.McpToolset.Files.Selection;
 using RaccoonNinja.McpToolset.Server.TextEdit.Configuration;
 using RaccoonNinja.McpToolset.Server.TextEdit.Envelope;
 using RaccoonNinja.McpToolset.Server.TextEdit.Models;
@@ -15,7 +16,7 @@ public sealed class DescribeScopeTool(ToolCommon common, EditConfig config, Scop
         + "explicit paths are then relative to cwd and confined to it, so a scoped edit cannot write outside "
         + "its project. Omit cwd to edit across the whole base root. Reported, journaled, and undoable paths "
         + "are always relative to the base root (a batch is base-scoped), so undo and list_recent_batches are "
-        + "base-global, not cwd-scoped. Ignore tiers (the built-in default set, .gitignore, .mcpignore) "
+        + "base-global, not cwd-scoped. Ignore tiers (the built-in default set and the project ignore files in ignore_files) "
         + "between the base root and a scoped cwd are not consulted; the secret denylist is independent and "
         + "always applies.";
 
@@ -39,7 +40,7 @@ public sealed class DescribeScopeTool(ToolCommon common, EditConfig config, Scop
                 BaseRoot = resolver.BaseRootName,
                 ScopeModel = ScopeModelDescription,
                 DefaultIgnore = resolver.DefaultIgnorePatterns,
-                IgnoreFiles = [".gitignore", ".mcpignore"],
+                IgnoreFiles = [.. IgnoreRules.IgnoreFileNames],
                 DenylistPatterns = [.. resolver.Denylist.DescribePatterns()],
                 DefaultEncoding = "utf-8",
                 ColumnUnit = "utf-16 code units",
