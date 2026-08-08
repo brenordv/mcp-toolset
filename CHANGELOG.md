@@ -1,5 +1,8 @@
 # Toolset Changelog
 
+## v11
+- Updated `ModelContextProtocol` NuGet package to version 2.1.0.
+
 ## v10
 - Extended that ignore boundary in `text-search` and `text-edit` to honor common AI-agent ignore files (`.claudeignore`, `.cursorignore`, `.aiexclude`, `.aiignore`, `.codeiumignore`, `.continueignore`, `.aiderignore`, `.geminiignore`) alongside `.gitignore`/`.mcpignore`, ranked between them so `.mcpignore` still wins. A path listed in one is pruned from listings and refused by the read and write gates exactly as a `.gitignore` path is, so a secret that only an agent's own ignore file names is no longer surfaced by default, on a direct `read_lines`/`inspect_files` as well as during discovery. Index-only files (`.cursorindexingignore`) and tool-scope ignores (`.npmignore`, `.dockerignore`, ...) are deliberately not honored. The honored kinds are disclosed in `describe_scope`'s `ignore_files`.
 

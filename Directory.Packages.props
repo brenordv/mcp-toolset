@@ -7,7 +7,7 @@
          version cannot drift between projects. -->
     <PackageVersion Include="Roslynator.Analyzers" Version="4.15.0" />
     <!-- MCP SDK: server side in src, client side in the protocol e2e tests. -->
-    <PackageVersion Include="ModelContextProtocol" Version="2.0.0" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.1.0" />
   </ItemGroup>
   <ItemGroup>
     <!-- Application-only packages. Test-only versions live in each test project's own
