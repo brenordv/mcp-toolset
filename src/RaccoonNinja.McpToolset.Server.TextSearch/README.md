@@ -74,8 +74,8 @@ refused with a path-free error; the same denylist and ignore tiers apply as unde
   `match_end` are offsets into the line.
 - **`include_ignored` takes globs, not a boolean.** Pass globs (for example `["node_modules/**"]`) to
   re-include otherwise-ignored paths for one call; omit or pass an empty list to keep every ignore tier in
-  force. It only ever re-includes the built-in default tier: a `.gitignore` or `.mcpignore` match is a hard
-  boundary it can never cross, and it never reaches the secret denylist or content scan, which run first and
+  force. It only ever re-includes the built-in default tier: a `.gitignore`, agent-ignore, or `.mcpignore`
+  match is a hard boundary it can never cross, and it never reaches the secret denylist or content scan, which run first and
   independently.
 - **Denylisted files are omitted, not flagged.** Reporting that a credential file exists is itself a useful
   recon, so the tools stay silent about it.
@@ -154,18 +154,22 @@ anyway.
 
 ## Ignore tiers
 
-Three tiers decide which non-secret files a walk skips, applied least-specific first so a later tier wins
+Four tiers decide which non-secret files a walk skips, applied least-specific first so a later tier wins
 (git last-match-wins semantics):
 
 1. **A built-in default ignore set** (heavy build and dependency directories: `node_modules/`, `bin/`,
    `obj/`, `target/`, `dist/`, `.venv/`, `__pycache__/`, and the like). This covers projects that have no
    "ignore file" (like `.gitignore`, etc.) yet.
 2. **`.gitignore`**, honored per directory as git does.
-3. **`.mcpignore`**, the most specific tier, which overrides both above. Use a base-root `.mcpignore` to
+3. **AI-agent ignore files** (`.claudeignore`, `.cursorignore`, `.aiexclude`, `.aiignore`,
+   `.codeiumignore`, `.continueignore`, `.aiderignore`, `.geminiignore`), honored per directory so a secret
+   an agent's own ignore file names is not surfaced by default. Index-only files (`.cursorindexingignore`)
+   and tool-scope ignores (`.npmignore`, `.dockerignore`, ...) are deliberately not honored.
+4. **`.mcpignore`**, the most specific tier, which overrides all above. Use a base-root `.mcpignore` to
    *augment* the defaults rather than replace them.
 
-The default tier is a convenience filter that `include_ignored` can re-include for one call. The `.gitignore`
-and `.mcpignore` tiers, by contrast, are a hard boundary: enforced root-down (ancestor rules included) and
+The default tier is a convenience filter that `include_ignored` can re-include for one call. The `.gitignore`,
+agent-ignore, and `.mcpignore` tiers, by contrast, are a hard boundary: enforced root-down (ancestor rules included) and
 never re-includable, so a file they ignore is never listed, read, or searched. The secret denylist and the
 content scan are independent of all three and always apply, so re-including an ignored path still cannot
 surface a secret.
@@ -204,7 +208,7 @@ Rules enforced at startup, all fatal:
 **Scoped-ancestor default-ignore caveat.** Because a `cwd` becomes the effective root, the built-in *default*
 ignore tier is not applied to directories *between* the base root and `cwd`, so a scoped call can surface a
 generated or build file (a `bin/` or `dist/` entry, say) that the default tier hides from a whole-base walk.
-The `.gitignore` and `.mcpignore` tiers are not subject to this: they are always evaluated root-down from the
+The `.gitignore`, agent-ignore, and `.mcpignore` tiers are not subject to this: they are always evaluated root-down from the
 base with ancestor rules included, so a scoped call never surfaces a file an ancestor `.gitignore`/`.mcpignore`
 ignored. Either way this exposes no secret, since the denylist and content scan are unaffected.
 

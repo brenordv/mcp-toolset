@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using RaccoonNinja.McpToolset.Files.Selection;
 using RaccoonNinja.McpToolset.Server.TextSearch.Configuration;
 using RaccoonNinja.McpToolset.Server.TextSearch.Envelope;
 using RaccoonNinja.McpToolset.Server.TextSearch.Models;
@@ -17,7 +18,7 @@ public sealed class DescribeScopeTool(ToolCommon common, SearchConfig config, Sc
         + "cache instead; add /<subpath> to scope to one package, e.g. @nuget/Newtonsoft.Json/13.0.1. The "
         + "built-in default ignore tier (node_modules, bin, obj, ...) between the base root and a scoped cwd is "
         + "not consulted, so a scoped call can surface a generated file a parent default-ignore would hide, and "
-        + "include_ignored can re-include that tier. The .gitignore/.mcpignore project tier is always enforced "
+        + "include_ignored can re-include that tier. The project ignore-file tier (see ignore_files) is always enforced "
         + "root-down (ancestor rules included) and can never be re-included by include_ignored, so an ignored "
         + "file is never returned. The secret denylist is independent and always applies.";
 
@@ -42,7 +43,7 @@ public sealed class DescribeScopeTool(ToolCommon common, SearchConfig config, Sc
                 ScopeModel = ScopeModelDescription,
                 PackageRoots = resolver.PackageRootNames,
                 DefaultIgnore = resolver.DefaultIgnorePatterns,
-                IgnoreFiles = [".gitignore", ".mcpignore"],
+                IgnoreFiles = [.. IgnoreRules.IgnoreFileNames],
                 Denylist = [.. resolver.Denylist.DescribePatterns()],
                 ContentScanEnabled = resolver.ContentScanEnabled,
                 ContentScanDetectors = [.. resolver.ContentScanDetectors],

@@ -10,7 +10,7 @@
          parameter names, and the wire contract uses snake_case (case_sensitive, is_regex,
          expected_match_count, ...). Scoped to this project only. -->
     <NoWarn>$(NoWarn);CA1707</NoWarn>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

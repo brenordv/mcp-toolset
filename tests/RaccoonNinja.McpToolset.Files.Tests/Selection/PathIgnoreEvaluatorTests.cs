@@ -97,6 +97,19 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
     }
 
     [Fact]
+    public void IsIgnored_AgentIgnoreFileLeaf_IsIgnored()
+    {
+        // Arrange
+        WriteIgnoreFile(string.Empty, ".cursorignore", "agent-secret.txt\n");
+
+        // Act
+        var actual = PathIgnoreEvaluator.IsIgnored(_root, "config/agent-secret.txt");
+
+        // Assert
+        Assert.True(actual);
+    }
+
+    [Fact]
     public void IsIgnored_BlankArguments_Throw()
     {
         // Arrange
