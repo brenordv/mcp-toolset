@@ -16,7 +16,7 @@ public sealed class VaultEditSectionTool(ToolCommon common, VaultService service
     public SaveResult Invoke(
         [Description("The file name to edit.")]
         string name,
-        [Description("The heading text whose body should be replaced (without leading `#`).")]
+        [Description("The heading whose body to replace, given as either rendered plain text or verbatim source with inline markdown kept (code spans, emphasis, links). A leading `#` run is tolerated.")]
         string heading,
         [Description("The new body for that section.")]
         string content,

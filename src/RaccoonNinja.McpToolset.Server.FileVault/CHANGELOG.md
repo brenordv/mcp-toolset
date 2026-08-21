@@ -1,3 +1,11 @@
+## v3.1.0
+- New deviation D9: `vault_edit_section` now matches a heading by either its rendered plain text (inline
+  markdown stripped, as before) or its verbatim source text with the delimiters kept. A heading that
+  contains a code span, emphasis, or a link can now be targeted with the text copied straight from the
+  document (e.g. ``Config for `appsettings.json` ``); previously only the backtick-stripped form matched
+  and the verbatim form returned `heading_not_found`. Additive and backward-compatible: the rendered form
+  still matches, so the accepted set is a strict superset.
+
 ## v3.0.0
 - Adopted the shared `RaccoonNinja.McpToolset.Files` library. The snapshot store's crash-safe write now
   delegates to the shared `AtomicWriter` (temp file, flush, atomic rename), and a pre-existing same-hash
