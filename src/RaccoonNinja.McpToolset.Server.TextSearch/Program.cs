@@ -35,8 +35,11 @@ public static class Program
         + "omitted), in and out. Call describe_scope first for the caps, the ignore tiers, the denylist, and "
         + "the package roots. find_files lists files by glob (primary), regex, or explicit paths; "
         + "inspect_files reports encoding and line shape; search_text greps line by line; read_lines returns "
-        + "a numbered slice. include_ignored takes globs that re-include otherwise-ignored paths (never "
-        + "secrets). List results paginate via the returned cursor (keep cwd stable across pages).";
+        + "a numbered slice; read_json parses one JSON file and returns the whole document or only the value "
+        + "at a json_path (dots plus [i] with Python-style negative indexes, e.g. items[-1].name), so no "
+        + "shelling out to python to pluck a property. include_ignored takes globs that re-include "
+        + "otherwise-ignored paths (never secrets). List results paginate via the returned cursor (keep cwd "
+        + "stable across pages).";
 
     /// <summary>The process entrypoint.</summary>
     /// <param name="args">Command-line arguments (passed to the host builder; config comes from the environment).</param>

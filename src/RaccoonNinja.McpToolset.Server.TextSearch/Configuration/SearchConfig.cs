@@ -30,6 +30,9 @@ public sealed record SearchConfig
     /// <summary>Default ceiling on the line span a single <c>read_lines</c> call may return.</summary>
     public const int DefaultMaxLineSpan = 5_000;
 
+    /// <summary>Default ceiling on the serialized size of the value one <c>read_json</c> call returns, in bytes (1 MiB).</summary>
+    public const long DefaultMaxJsonValueBytes = 1024L * 1024;
+
     /// <summary>Default per-match regex timeout, in milliseconds.</summary>
     public const int DefaultRegexTimeoutMs = 1_000;
 
@@ -56,6 +59,9 @@ public sealed record SearchConfig
 
     /// <summary>The ceiling on the line span a single <c>read_lines</c> call may return.</summary>
     public int MaxLineSpan { get; init; }
+
+    /// <summary>The ceiling on the serialized size of the value one <c>read_json</c> call returns, in bytes.</summary>
+    public long MaxJsonValueBytes { get; init; }
 
     /// <summary>The per-match regex timeout.</summary>
     public TimeSpan RegexTimeout { get; init; }
@@ -84,6 +90,7 @@ public sealed record SearchConfig
             MaxMatchesPerFile = ParseInt("MCP_TEXTSEARCH_MAX_MATCHES_PER_FILE", DefaultMaxMatchesPerFile),
             MaxContextLines = ParseInt("MCP_TEXTSEARCH_MAX_CONTEXT_LINES", DefaultMaxContextLines),
             MaxLineSpan = ParseInt("MCP_TEXTSEARCH_MAX_LINE_SPAN", DefaultMaxLineSpan),
+            MaxJsonValueBytes = ParseLong("MCP_TEXTSEARCH_MAX_JSON_VALUE_BYTES", DefaultMaxJsonValueBytes),
             RegexTimeout = TimeSpan.FromMilliseconds(ParseInt("MCP_TEXTSEARCH_REGEX_TIMEOUT_MS", DefaultRegexTimeoutMs)),
             OperationBudget = TimeSpan.FromMilliseconds(ParseInt("MCP_TEXTSEARCH_OP_BUDGET_MS", DefaultOperationBudgetMs)),
             SecretScanEnabled = secretScanEnabled,
@@ -96,7 +103,7 @@ public sealed record SearchConfig
     public string CapsSummary()
         => string.Create(
             CultureInfo.InvariantCulture,
-            $"maxFiles={MaxFilesDefault}/{MaxFilesCeiling} maxFileBytes={MaxFileBytes} maxResults={MaxResults} maxMatchesPerFile={MaxMatchesPerFile} maxContextLines={MaxContextLines} maxLineSpan={MaxLineSpan} regexTimeoutMs={(int)RegexTimeout.TotalMilliseconds} opBudgetMs={(int)OperationBudget.TotalMilliseconds}");
+            $"maxFiles={MaxFilesDefault}/{MaxFilesCeiling} maxFileBytes={MaxFileBytes} maxResults={MaxResults} maxMatchesPerFile={MaxMatchesPerFile} maxContextLines={MaxContextLines} maxLineSpan={MaxLineSpan} maxJsonValueBytes={MaxJsonValueBytes} regexTimeoutMs={(int)RegexTimeout.TotalMilliseconds} opBudgetMs={(int)OperationBudget.TotalMilliseconds}");
 
     private static int ParseInt(string key, int defaultValue)
     {

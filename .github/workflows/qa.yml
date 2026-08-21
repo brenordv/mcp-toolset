@@ -64,8 +64,9 @@ jobs:
           dotnet test RaccoonNinja.McpToolset.slnx
           --configuration Release
           --no-build
-          --logger "trx;LogFileName=test-results.trx"
           --results-directory "${{ runner.temp }}/test-results"
+          --
+          --report-xunit-trx
 
       - name: Upload test results on failure
         if: failure()

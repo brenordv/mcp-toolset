@@ -3,7 +3,7 @@ using RaccoonNinja.McpToolset.Server.FileVault.Services;
 
 namespace RaccoonNinja.McpToolset.Server.FileVault.Tests.Services;
 
-/// <summary>Unit tests for <see cref="SectionEditor"/> markdown section splicing (Rust parity contract).</summary>
+/// <summary>Unit tests for <see cref="SectionEditor"/> markdown section splicing: rendered and verbatim heading matching, section bounds, and multibyte handling.</summary>
 public class SectionEditorTests
 {
     [Fact]
@@ -187,17 +187,16 @@ public class SectionEditorTests
     }
 
     [Fact]
-    public void SpliceSection_TargetWithBackticks_ThrowsHeadingNotFound()
+    public void SpliceSection_TargetWithBackticks_MatchesVerbatimSource()
     {
         // Arrange
         const string source = "## The `run` command\nold\n";
 
         // Act
-        var act = () => SectionEditor.SpliceSection(source, "The `run` command", "new");
+        var result = SectionEditor.SpliceSection(source, "The `run` command", "new");
 
         // Assert
-        var exception = Assert.Throws<VaultException>(act);
-        Assert.Equal(VaultErrorCode.HeadingNotFound, exception.Code);
+        Assert.Equal("## The `run` command\nnew\n", result);
     }
 
     [Fact]
@@ -250,5 +249,116 @@ public class SectionEditorTests
 
         // Assert
         Assert.Equal("# 概要 🦝\n前文 🎉 text\n\n## ターゲット\n古い 内容\n\n## 結び ✨\n済\n", result);
+    }
+
+    [Fact]
+    public void SpliceSection_CodeSpanHeadingTargetedVerbatim_SplicesBody()
+    {
+        // Arrange
+        const string source = "# Doc\n\n## Config for `appsettings.json`\nold body\n";
+
+        // Act
+        var result = SectionEditor.SpliceSection(source, "Config for `appsettings.json`", "new body");
+
+        // Assert
+        Assert.Equal("# Doc\n\n## Config for `appsettings.json`\nnew body\n", result);
+    }
+
+    [Theory]
+    [InlineData("Use *emphasis* now")]
+    [InlineData("Use emphasis now")]
+    public void SpliceSection_EmphasisHeading_MatchesVerbatimOrRenderedForm(string target)
+    {
+        // Arrange
+        const string source = "## Use *emphasis* now\nold\n\n## Next\nx\n";
+
+        // Act
+        var result = SectionEditor.SpliceSection(source, target, "new");
+
+        // Assert
+        Assert.Equal("## Use *emphasis* now\nnew\n\n## Next\nx\n", result);
+    }
+
+    [Theory]
+    [InlineData("A [link](http://x) here")]
+    [InlineData("A link here")]
+    public void SpliceSection_LinkHeading_MatchesVerbatimOrRenderedForm(string target)
+    {
+        // Arrange
+        const string source = "## A [link](http://x) here\nold\n\n## Next\nx\n";
+
+        // Act
+        var result = SectionEditor.SpliceSection(source, target, "new");
+
+        // Assert
+        Assert.Equal("## A [link](http://x) here\nnew\n\n## Next\nx\n", result);
+    }
+
+    [Fact]
+    public void SpliceSection_SetextHeadingWithCodeSpan_MatchesVerbatimSource()
+    {
+        // Arrange
+        const string source = "Config for `x`\n=====\nold\n\n# Next\ntail\n";
+
+        // Act
+        var result = SectionEditor.SpliceSection(source, "Config for `x`", "new");
+
+        // Assert
+        Assert.Equal("Config for `x`\nnew\n\n# Next\ntail\n", result);
+    }
+
+    [Theory]
+    [InlineData("`run`")]
+    [InlineData("run")]
+    public void SpliceSection_CodeSpanHeadingMatchedByEitherForm_SplicesOnce(string target)
+    {
+        // Arrange
+        const string source = "## `run`\nold\n\n## Other\nx\n";
+
+        // Act
+        var result = SectionEditor.SpliceSection(source, target, "new");
+
+        // Assert
+        Assert.Equal("## `run`\nnew\n\n## Other\nx\n", result);
+    }
+
+    [Fact]
+    public void SpliceSection_PlainHeadingMatchingBothForms_SplicesOnceNotAmbiguous()
+    {
+        // Arrange
+        const string source = "## Plain heading\nold\n\n## Other\nx\n";
+
+        // Act
+        var result = SectionEditor.SpliceSection(source, "Plain heading", "new");
+
+        // Assert
+        Assert.Equal("## Plain heading\nnew\n\n## Other\nx\n", result);
+    }
+
+    [Fact]
+    public void SpliceSection_VerbatimTargetDisambiguatesFromRenderedCollision_SplicesCodeSpanHeading()
+    {
+        // Arrange
+        const string source = "## x\nfirst\n\n## `x`\nsecond\n";
+
+        // Act
+        var result = SectionEditor.SpliceSection(source, "`x`", "new");
+
+        // Assert
+        Assert.Equal("## x\nfirst\n\n## `x`\nnew\n", result);
+    }
+
+    [Fact]
+    public void SpliceSection_DuplicateCodeSpanHeadingsTargetedVerbatim_ThrowsAmbiguousHeading()
+    {
+        // Arrange
+        const string source = "## `x`\na\n\n## `x`\nb\n";
+
+        // Act
+        var act = () => SectionEditor.SpliceSection(source, "`x`", "new");
+
+        // Assert
+        var exception = Assert.Throws<VaultException>(act);
+        Assert.Equal(VaultErrorCode.AmbiguousHeading, exception.Code);
     }
 }

@@ -26,7 +26,7 @@ controls hold that line and no flag can turn them off:
 
 Layered on top and on by default, **content-based secret detection** withholds a file whose *content* matches
 a known secret shape (private keys, cloud provider keys, common service tokens, URL-embedded credentials) from
-`read_lines`, `search_text`, and `inspect_files`, even when its name looks innocuous. Unlike the two controls
+`read_lines`, `read_json`, `search_text`, and `inspect_files`, even when its name looks innocuous. Unlike the two controls
 above, it can be turned off (`MCP_TEXTSEARCH_SECRET_SCAN=off`) or widened (`=aggressive`), so treat it as a
 strong default rather than a structural guarantee. It never removes a file from `find_files` listings.
 
@@ -34,7 +34,8 @@ strong default rather than a structural guarantee. It never removes a file from 
 
 | Without it                                                                                                              | With it                                                                                                                 |
 |-------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|
-| An agent shells out to `grep -r` with a loose path; every call needs a human to confirm it won't reach `~/.ssh/id_rsa`. | Five typed tools, base-root-confined, that a client can auto-approve because they structurally cannot.                  |
+| An agent shells out to `grep -r` with a loose path; every call needs a human to confirm it won't reach `~/.ssh/id_rsa`. | Six typed tools, base-root-confined, that a client can auto-approve because they structurally cannot.                   |
+| An agent shells out to python to open a file, `json.loads` it, and pluck one property.                                  | `read_json` parses the file in-process and returns just the value at a `json_path`, with Python-style `[-1]` indexing.  |
 | Ad-hoc encoding guesses corrupt a BOM-less UTF-16 file the moment it is read back.                                      | Encoding is detected (BOM, then a NUL scan before any UTF-8 attempt) and reported with a confidence.                    |
 | A regex from the model hangs the shell.                                                                                 | Every regex is culture-invariant and timeout-guarded, with the pattern length and repetition capped before it compiles. |
 | Absolute paths from your machine leak into the model's context.                                                         | Paths are scope-relative, in and out. Nothing carries a drive letter or home directory.                                 |
@@ -58,13 +59,14 @@ dependency cache, or `@name/<subpath>` to scope to one package (for example `@nu
 are then relative to the cache (or the subpath). An unknown name, or a subpath that escapes its cache, is
 refused with a path-free error; the same denylist and ignore tiers apply as under the base.
 
-| Tool             | Purpose                                                                 | Key parameters                                                                                                   |
-|------------------|-------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
-| `describe_scope` | Report the base root, scope model, package roots, ignore tiers, denylist, content-scan status, and caps. | (none)                                                                                               |
-| `find_files`     | List scope-relative files with size and last-modified.                  | `glob` / `regex` / `paths`, `cwd`, `extensions`, `include_ignored`, `case_sensitive`, `max_files`, `cursor`      |
-| `inspect_files`  | Report encoding, BOM, line endings, final newline, and counts per file. | same selector                                                                                                    |
-| `search_text`    | Grep file contents line by line (literal or regex).                     | selector + `pattern`, `is_regex`, `context_lines`, `max_matches_per_file`, `max_results`, `files_only`, `cursor` |
-| `read_lines`     | Return a numbered, span-capped slice of one file.                       | `path`, `cwd`, `start_line`, `end_line`                                                                          |
+| Tool             | Purpose                                                                                                  | Key parameters                                                                                                   |
+|------------------|----------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| `describe_scope` | Report the base root, scope model, package roots, ignore tiers, denylist, content-scan status, and caps. | (none)                                                                                                           |
+| `find_files`     | List scope-relative files with size and last-modified.                                                   | `glob` / `regex` / `paths`, `cwd`, `extensions`, `include_ignored`, `case_sensitive`, `max_files`, `cursor`      |
+| `inspect_files`  | Report encoding, BOM, line endings, final newline, and counts per file.                                  | same selector                                                                                                    |
+| `search_text`    | Grep file contents line by line (literal or regex).                                                      | selector + `pattern`, `is_regex`, `context_lines`, `max_matches_per_file`, `max_results`, `files_only`, `cursor` |
+| `read_lines`     | Return a numbered, span-capped slice of one file.                                                        | `path`, `cwd`, `start_line`, `end_line`                                                                          |
+| `read_json`      | Parse one JSON file and return the whole document or the value at a property path.                       | `path`, `cwd`, `json_path`                                                                                       |
 
 ### Notes that save a round trip
 
@@ -79,6 +81,13 @@ refused with a path-free error; the same denylist and ignore tiers apply as unde
   independently.
 - **Denylisted files are omitted, not flagged.** Reporting that a credential file exists is itself a useful
   recon, so the tools stay silent about it.
+- **`read_json` paths are dot/bracket syntax with Python-style indexing.** `a.b.c`, `items[0]`,
+  `items[-1]` (negative counts from the end), quoted keys for names the dot form cannot spell
+  (`deps["lodash.merge"]`), and an optional leading `$` that is ignored. Property matching is
+  case-sensitive. Comments and trailing commas are tolerated (JSONC); duplicate object keys are
+  rejected as `JsonInvalid`. A miss returns `JsonPathNotFound` with the deepest resolved prefix and
+  the property names (capped) or array length at that point; a value over `max_json_value_bytes`
+  returns `ValueTooLarge` with the same hint, so narrow the `json_path` and retry.
 - **List results paginate.** When `truncated` is true and a `cursor` is returned, pass the cursor back for
   the next page (keep `cwd` stable across pages). When `truncated` is true and `cursor` is null, the
   selection hits its ceiling: narrow it.
@@ -113,10 +122,13 @@ working directory. A failure sets `error` and leaves `results` an empty list:
 |---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `SelectorInvalid`         | More than one of `glob`, `regex`, `paths` was given.                                                                                                   |
 | `PatternInvalid`          | A regex, or an `include_ignored` glob, was too long, over the repetition cap, or not valid.                                                            |
-| `WithheldSecret`          | A single-path `read_lines` was refused because the file's content matched a secret detector (content scan).                                            |
+| `WithheldSecret`          | A single-path `read_lines`/`read_json` was refused because the file's content matched a secret detector (content scan).                                |
 | `NotFound`                | The path did not exist, resolved to a directory, or was refused (a denylisted single-path read reports this rather than confirming the secret exists). |
 | `IsBinary`                | The file is binary and cannot be read as text.                                                                                                         |
 | `TooLarge`                | The file is larger than the configured read limit.                                                                                                     |
+| `JsonInvalid`             | The file could not be parsed as JSON (`read_json`): a syntax error, a duplicate object key, or a document deeper than 64 levels. Detail carries the 1-based `line` and 0-based `byte_in_line` when the parser reports them. |
+| `JsonPathNotFound`        | A well-formed `json_path` did not resolve (`read_json`). Detail carries the deepest resolved prefix, the kind at that point, and the property names or array length there.                          |
+| `ValueTooLarge`           | The extracted value serializes past `max_json_value_bytes` (`read_json`). Detail carries `value_bytes`, `limit`, and the same navigation hint; pass a narrower `json_path` and retry.               |
 | `OperationBudgetExceeded` | The operation ran past its wall-clock budget; narrow the selector or pattern.                                                                          |
 | `InvalidArgument`         | An argument was missing, malformed, or out of range, including a malformed `cursor`, a `cwd` that escapes, is not a directory, or is denylisted, an unknown package-root name, or a package subpath that escapes its cache. |
 | `InternalError`           | An unexpected fault; details go to the log, never the client.                                                                                          |
@@ -146,11 +158,13 @@ anywhere.
 **The security limit, stated plainly:** a filename denylist keys on names, so on its own it cannot catch a
 secret hardcoded *inside* an ordinary source file. Content-based secret detection (on by default) closes much
 of that gap: a file whose content matches a known secret shape (private keys; cloud provider keys; Slack,
-GitHub, Stripe, or SendGrid tokens; URL-embedded credentials) is withheld from `read_lines`, `search_text`,
-and `inspect_files` whatever its name. What is left uncovered is a secret of no recognizable shape, an
-arbitrary `const TOKEN = "..."` value, which `search_text` still returns just as reading that source yourself
-would. The auto-approval case rests on that residue being no worse than reading source the agent may read
-anyway.
+GitHub, Stripe, or SendGrid tokens; URL-embedded credentials) is withheld from `read_lines`, `read_json`,
+`search_text`, and `inspect_files` whatever its name. What is left uncovered is a secret of no recognizable
+shape, an arbitrary `const TOKEN = "..."` value, which `search_text` still returns just as reading that
+source yourself would. The auto-approval case rests on that residue being no worse than reading source the
+agent may read anyway. `read_json`'s error details can carry file content (property-name hints, a resolved
+prefix), and that content is gated identically to `read_lines` content: hints are computed only after
+confinement, the denylist, the ignore tiers, the size cap, and the content scan have all passed.
 
 ## Ignore tiers
 
@@ -230,6 +244,7 @@ All configurations are environment variables. Only the base root is required; ev
 | `MCP_TEXTSEARCH_MAX_MATCHES_PER_FILE` | 1000       | Ceiling on matches per file.                                                                                                                                                                                                                           |
 | `MCP_TEXTSEARCH_MAX_CONTEXT_LINES`    | 50         | Ceiling on context lines around a match.                                                                                                                                                                                                               |
 | `MCP_TEXTSEARCH_MAX_LINE_SPAN`        | 5000       | Ceiling on lines returned by one `read_lines` call.                                                                                                                                                                                                    |
+| `MCP_TEXTSEARCH_MAX_JSON_VALUE_BYTES` | 1048576    | Ceiling on the serialized size of the value one `read_json` call returns (1 MiB). An over-cap value fails as `ValueTooLarge` with a navigation hint rather than truncating.                                                                             |
 | `MCP_TEXTSEARCH_REGEX_TIMEOUT_MS`     | 1000       | Per-match regex timeout.                                                                                                                                                                                                                               |
 | `MCP_TEXTSEARCH_OP_BUDGET_MS`         | 30000      | Wall-clock budget for one whole operation.                                                                                                                                                                                                             |
 
@@ -285,9 +300,10 @@ Server.TextSearch/
 ├─ Logging/              # StdoutSentinel, allowlist JSON formatter, bootstrap, metrics events
 ├─ Metrics/              # SessionMetrics
 ├─ Content/              # gated reader, text document (decode + line split), search, refusal mapping
+│  └─ Json/              # json_path parser, evaluator, rendering, node facts (read_json)
 ├─ Paging/               # scope-pinned cursor + keyed paginator
 ├─ Models/               # the wire DTOs each tool returns
-└─ Tools/                # the five MCP tools + shared pipeline
+└─ Tools/                # the six MCP tools + shared pipeline
 ```
 
 The security-critical primitives (root confinement, secret denylist, encoding detection, glob/regex

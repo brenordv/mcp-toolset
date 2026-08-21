@@ -25,6 +25,15 @@ public static class ErrorCodes
     /// <summary>The target file exceeded the configured size cap.</summary>
     public const string TooLarge = nameof(TooLarge);
 
+    /// <summary>The target file could not be parsed as JSON.</summary>
+    public const string JsonInvalid = nameof(JsonInvalid);
+
+    /// <summary>A well-formed <c>json_path</c> did not resolve in the parsed document.</summary>
+    public const string JsonPathNotFound = nameof(JsonPathNotFound);
+
+    /// <summary>The extracted JSON value exceeded the configured value cap; a narrower <c>json_path</c> can retry.</summary>
+    public const string ValueTooLarge = nameof(ValueTooLarge);
+
     /// <summary>The operation exceeded its wall-clock budget across the file set.</summary>
     public const string OperationBudgetExceeded = nameof(OperationBudgetExceeded);
 

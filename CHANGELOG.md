@@ -1,5 +1,13 @@
 # Toolset Changelog
 
+## v13
+- Updated MCP: `file-vault` to v3.1.0 (deviation D9: `vault_edit_section` now also matches a heading by its verbatim source text, so a heading containing a code span, emphasis, or a link can be targeted with the text copied straight from the document; the previous rendered-text form still matches).
+- Updated runtime NuGet dependencies: `ModelContextProtocol` 2.1.0 → 2.2.0; `Microsoft.Data.Sqlite`, `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Logging`, `Microsoft.Extensions.Configuration`, and `Microsoft.Extensions.Configuration.EnvironmentVariables` 10.0.10 → 10.0.11; and `Roslynator.Analyzers` 4.16.0 → 4.16.1.
+- Updated test NuGet dependencies: `xunit.v3` 3.2.2 → 4.0.0, `xunit.runner.visualstudio` 3.1.5 → 4.0.0, `Microsoft.NET.Test.Sdk` 18.8.1 → 18.9.0, and `NSubstitute` 6.1.0 → 6.2.0.
+- Added a `read_json` tool to `text-search` (v1.3.0): parse one JSON file in scope and return the whole document or only the value at a `json_path` (dot/bracket syntax with Python-style negative indexes, e.g. `items[-1].name`, plus quoted keys for names with dots), so agents stop shelling out to python to pluck a property out of a JSON file. The read goes through the same gate as `read_lines` (confinement, denylist, ignore tiers, content-based secret detection, size cap). Comments and trailing commas are tolerated (JSONC); duplicate object keys are rejected. Three new error codes: `JsonInvalid` (with 1-based line detail), `JsonPathNotFound` (with the deepest resolved prefix and capped property-name/array-length hints), and `ValueTooLarge` (value over the new `MCP_TEXTSEARCH_MAX_JSON_VALUE_BYTES` cap, default 1 MiB, with the same hints). Error messages stay fixed strings (a malformed `json_path` message carries only a numeric character offset); content-derived data travels only in the error `detail`, which never reaches the server log.
+- Loosened `global.json` SDK resolution from `latestPatch` to `latestFeature` so the repo builds against any .NET 10 feature band.
+- Migrated to the `Microsoft.Testing.Platform` test runner.
+
 ## v12
 - Updated `NSubstitute`, and `Roslynator.Analyzers` packages.
 - Updated outdated tool descriptions and summaries.

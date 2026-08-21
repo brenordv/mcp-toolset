@@ -59,6 +59,7 @@ public sealed class DescribeScopeTool(ToolCommon common, SearchConfig config, Sc
                     MaxMatchesPerFile = config.MaxMatchesPerFile,
                     MaxContextLines = config.MaxContextLines,
                     MaxLineSpan = config.MaxLineSpan,
+                    MaxJsonValueBytes = config.MaxJsonValueBytes,
                     RegexTimeoutMs = (int)config.RegexTimeout.TotalMilliseconds,
                     OperationBudgetMs = (int)config.OperationBudget.TotalMilliseconds,
                 },

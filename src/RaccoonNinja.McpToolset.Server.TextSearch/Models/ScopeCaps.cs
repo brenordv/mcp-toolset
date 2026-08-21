@@ -33,6 +33,10 @@ public sealed record ScopeCaps
     [JsonPropertyName("max_line_span")]
     public int MaxLineSpan { get; init; }
 
+    /// <summary>The ceiling on the serialized size of the value a single <c>read_json</c> call returns, in bytes.</summary>
+    [JsonPropertyName("max_json_value_bytes")]
+    public long MaxJsonValueBytes { get; init; }
+
     /// <summary>The per-match regex timeout, in milliseconds.</summary>
     [JsonPropertyName("regex_timeout_ms")]
     public int RegexTimeoutMs { get; init; }
