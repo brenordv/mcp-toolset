@@ -5,16 +5,16 @@
   <ItemGroup>
     <!-- Shared: referenced by both the app and the test projects. Centralized here so the
          version cannot drift between projects. -->
-    <PackageVersion Include="Roslynator.Analyzers" Version="4.16.0" />
+    <PackageVersion Include="Roslynator.Analyzers" Version="4.16.1" />
     <!-- MCP SDK: server side in src, client side in the protocol e2e tests. -->
-    <PackageVersion Include="ModelContextProtocol" Version="2.1.0" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
   </ItemGroup>
   <ItemGroup>
     <!-- Application-only packages. Test-only versions live in each test project's own
          Directory.Packages.props (tests/<project>/), which imports this file to inherit the
          shared entries above. -->
     <!-- FileVault server: embedded store + structure-aware editing -->
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
     <!-- Direct pin over Microsoft.Data.Sqlite's transitive 2.1.11: the 2.x line has no patch
          for GHSA-2m69-gcr7-jv3q (CVE-2025-6965, SQLite < 3.50.2); 3.0.3 ships SQLite 3.50.4. -->
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
@@ -27,11 +27,11 @@
          codepages) ships in the net10.0 shared framework, so it needs no package reference. -->
     <PackageVersion Include="UTF.Unknown" Version="2.6.0" />
     <!-- Hosting + DI + Logging primitives -->
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.11" />
     <!-- Logging backend: Serilog -->
     <PackageVersion Include="Serilog" Version="4.4.0" />
     <PackageVersion Include="Serilog.Extensions.Hosting" Version="10.0.0" />

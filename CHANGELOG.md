@@ -1,5 +1,10 @@
 # Toolset Changelog
 
+## v13
+- Updated MCP: `file-vault` to v3.1.0 (deviation D9: `vault_edit_section` now also matches a heading by its verbatim source text, so a heading containing a code span, emphasis, or a link can be targeted with the text copied straight from the document; the previous rendered-text form still matches).
+- Updated runtime NuGet dependencies: `ModelContextProtocol` 2.1.0 → 2.2.0; `Microsoft.Data.Sqlite`, `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Logging`, `Microsoft.Extensions.Configuration`, and `Microsoft.Extensions.Configuration.EnvironmentVariables` 10.0.10 → 10.0.11; and `Roslynator.Analyzers` 4.16.0 → 4.16.1.
+- Updated test NuGet dependencies: `xunit.v3` 3.2.2 → 4.0.0, `xunit.runner.visualstudio` 3.1.5 → 4.0.0, `Microsoft.NET.Test.Sdk` 18.8.1 → 18.9.0, and `NSubstitute` 6.1.0 → 6.2.0.
+
 ## v12
 - Updated `NSubstitute`, and `Roslynator.Analyzers` packages.
 - Updated outdated tool descriptions and summaries.
