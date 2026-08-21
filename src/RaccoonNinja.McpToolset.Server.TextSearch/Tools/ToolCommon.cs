@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using RaccoonNinja.McpToolset.Files.Text;
 using RaccoonNinja.McpToolset.Server.TextSearch.Configuration;
+using RaccoonNinja.McpToolset.Server.TextSearch.Content;
 using RaccoonNinja.McpToolset.Server.TextSearch.Envelope;
 using RaccoonNinja.McpToolset.Server.TextSearch.Errors;
 using RaccoonNinja.McpToolset.Server.TextSearch.Logging;
@@ -105,6 +107,44 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
             LogLevel.Debug,
             "regex_fallback",
             extras: new Dictionary<string, object>(StringComparer.Ordinal) { [LogFields.RegexFallback] = true });
+    }
+
+    /// <summary>
+    /// Load one file through the read gate and decode it, or throw the mapped refusal. Every
+    /// single-path text read (<c>read_lines</c>, <c>read_json</c>) shares this mapping: denied,
+    /// ignored, out-of-root, and I/O outcomes are all reported as "not found" so a single-path read
+    /// is not an existence oracle for a secret or a hidden file; a size overflow is reported
+    /// honestly, and a content-scan withhold is reported distinctly because the file is listable
+    /// (its name is not the secret), so the caller may legitimately need to know why the content
+    /// was withheld.
+    /// </summary>
+    /// <param name="ctx">The call context.</param>
+    /// <param name="reader">The scope's read gate.</param>
+    /// <param name="detector">The encoding detector.</param>
+    /// <param name="path">The scope-relative (or in-root) file path.</param>
+    /// <returns>The decoded document with the confined root-relative path.</returns>
+    /// <exception cref="TextSearchException">Thrown with the mapped error code when the read is refused or the file is binary.</exception>
+    public LoadedTextFile LoadDocument(CallContext ctx, GatedFileReader reader, IEncodingDetector detector, string path)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentNullException.ThrowIfNull(detector);
+
+        var read = reader.Read(path);
+        if (!read.IsOk)
+        {
+            Refusal(ctx, RefusalReason.From(read.Status));
+            throw read.Status switch
+            {
+                ReadStatus.TooLarge => new TextSearchException(ErrorCodes.TooLarge, "file is larger than the configured read limit"),
+                ReadStatus.SecretContent => new TextSearchException(ErrorCodes.WithheldSecret, "file appears to contain a secret and was withheld"),
+                _ => new TextSearchException(ErrorCodes.NotFound, "file not found"),
+            };
+        }
+
+        var document = TextDocument.Load(read.Bytes, detector);
+        return document.IsBinary
+            ? throw new TextSearchException(ErrorCodes.IsBinary, "file is binary and cannot be read as text")
+            : new LoadedTextFile(document, read.RelativePath);
     }
 
     /// <summary>

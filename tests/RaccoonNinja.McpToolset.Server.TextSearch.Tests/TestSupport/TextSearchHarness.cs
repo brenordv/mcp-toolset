@@ -27,10 +27,11 @@ internal sealed class TextSearchHarness : IDisposable
         string extraDeny = null,
         string defaultIgnore = null,
         IReadOnlyList<string> packageRoots = null,
-        bool secretScan = true)
+        bool secretScan = true,
+        long? maxJsonValueBytes = null)
     {
         Root = NewTempDirectory("base");
-        Config = DefaultConfig(regexTimeoutMs, operationBudgetMs, secretScan);
+        Config = DefaultConfig(regexTimeoutMs, operationBudgetMs, secretScan, maxJsonValueBytes);
         var detector = new EncodingDetector();
 
         // Each package root is a fresh temp directory alongside (never under) the base, so overlap is
@@ -58,6 +59,7 @@ internal sealed class TextSearchHarness : IDisposable
         Inspect = new InspectFilesTool(common, Config, Resolver, detector);
         Search = new SearchTextTool(common, Config, Resolver, detector);
         ReadLines = new ReadLinesTool(common, Config, Resolver, detector);
+        ReadJson = new ReadJsonTool(common, Config, Resolver, detector);
     }
 
     /// <summary>The absolute temp directory backing the base root.</summary>
@@ -78,6 +80,8 @@ internal sealed class TextSearchHarness : IDisposable
     public SearchTextTool Search { get; }
 
     public ReadLinesTool ReadLines { get; }
+
+    public ReadJsonTool ReadJson { get; }
 
     /// <summary>The absolute path of a subdirectory under the base root, created if needed. Pass it as a <c>cwd</c>.</summary>
     public string Dir(string relativePath)
@@ -145,7 +149,7 @@ internal sealed class TextSearchHarness : IDisposable
         return dir;
     }
 
-    private static SearchConfig DefaultConfig(int? regexTimeoutMs, int? operationBudgetMs, bool secretScan)
+    private static SearchConfig DefaultConfig(int? regexTimeoutMs, int? operationBudgetMs, bool secretScan, long? maxJsonValueBytes)
         => new()
         {
             MaxFilesDefault = SearchConfig.DefaultMaxFiles,
@@ -155,6 +159,7 @@ internal sealed class TextSearchHarness : IDisposable
             MaxMatchesPerFile = SearchConfig.DefaultMaxMatchesPerFile,
             MaxContextLines = SearchConfig.DefaultMaxContextLines,
             MaxLineSpan = SearchConfig.DefaultMaxLineSpan,
+            MaxJsonValueBytes = maxJsonValueBytes ?? SearchConfig.DefaultMaxJsonValueBytes,
             RegexTimeout = TimeSpan.FromMilliseconds(regexTimeoutMs ?? SearchConfig.DefaultRegexTimeoutMs),
             OperationBudget = TimeSpan.FromMilliseconds(operationBudgetMs ?? SearchConfig.DefaultOperationBudgetMs),
             SecretScanEnabled = secretScan,

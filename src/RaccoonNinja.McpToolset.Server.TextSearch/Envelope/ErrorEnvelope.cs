@@ -14,7 +14,11 @@ public sealed record ErrorEnvelope
     [JsonPropertyName("message")]
     public string Message { get; private init; }
 
-    /// <summary>Structured detail; never carries user data or an absolute path.</summary>
+    /// <summary>
+    /// Structured detail; never carries machine-identifying data. It may carry content of a file
+    /// that passed every read gate (the <c>read_json</c> navigation hints), which the caller could
+    /// read wholesale anyway; it never reaches the server log.
+    /// </summary>
     [JsonPropertyName("detail")]
     public IDictionary<string, object> Detail { get; private init; } = new Dictionary<string, object>();
 

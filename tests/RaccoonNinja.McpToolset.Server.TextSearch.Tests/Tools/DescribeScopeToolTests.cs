@@ -24,6 +24,7 @@ public sealed class DescribeScopeToolTests
         Assert.Equal("utf-16 code units", info.ColumnUnit);
         Assert.True(info.DenylistedOmitted);
         Assert.Equal(SearchConfig.DefaultMaxFilesCeiling, info.Caps.MaxFilesCeiling);
+        Assert.Equal(SearchConfig.DefaultMaxJsonValueBytes, info.Caps.MaxJsonValueBytes);
         Assert.Equal(SearchConfig.DefaultRegexTimeoutMs, info.Caps.RegexTimeoutMs);
     }
 

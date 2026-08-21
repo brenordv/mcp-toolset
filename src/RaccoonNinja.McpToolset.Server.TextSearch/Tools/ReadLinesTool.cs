@@ -59,7 +59,7 @@ public sealed class ReadLinesTool(ToolCommon common, SearchConfig config, ScopeR
             }
 
             var scope = resolver.Resolve(cwd);
-            var document = LoadOrRefuse(ctx, scope.Reader, path);
+            var document = common.LoadDocument(ctx, scope.Reader, detector, path).Document;
             var lineCount = document.LineCount;
 
             // Compute in long so a near-int.MaxValue start_line cannot overflow the span arithmetic.
@@ -88,31 +88,6 @@ public sealed class ReadLinesTool(ToolCommon common, SearchConfig config, ScopeR
             var truncated = end < lineCount;
             return Task.FromResult(ToolCommon.ListSuccess(lines, truncated: truncated, filtersApplied: filters));
         });
-    }
-
-    private TextDocument LoadOrRefuse(CallContext ctx, GatedFileReader reader, string path)
-    {
-        var read = reader.Read(path);
-        if (!read.IsOk)
-        {
-            common.Refusal(ctx, RefusalReason.From(read.Status));
-
-            // Denied/ignored/out-of-root/io are reported as "not found" so a single-path read is not an
-            // existence oracle for a secret or a hidden file. A size overflow is reported honestly, and a
-            // content-scan withhold is reported distinctly because the file is listable (its name is not the
-            // secret), so the caller may legitimately need to know why the content was withheld.
-            throw read.Status switch
-            {
-                ReadStatus.TooLarge => new TextSearchException(ErrorCodes.TooLarge, "file is larger than the configured read limit"),
-                ReadStatus.SecretContent => new TextSearchException(ErrorCodes.WithheldSecret, "file appears to contain a secret and was withheld"),
-                _ => new TextSearchException(ErrorCodes.NotFound, "file not found"),
-            };
-        }
-
-        var document = TextDocument.Load(read.Bytes, detector);
-        return document.IsBinary
-            ? throw new TextSearchException(ErrorCodes.IsBinary, "file is binary and cannot be read as text")
-            : document;
     }
 
     private static string Cap(string text)
