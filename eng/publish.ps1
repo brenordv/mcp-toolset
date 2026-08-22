@@ -28,6 +28,8 @@ $servers = @(
     'src/RaccoonNinja.McpToolset.Server.FileVault/RaccoonNinja.McpToolset.Server.FileVault.csproj'
     'src/RaccoonNinja.McpToolset.Server.TextSearch/RaccoonNinja.McpToolset.Server.TextSearch.csproj'
     'src/RaccoonNinja.McpToolset.Server.TextEdit/RaccoonNinja.McpToolset.Server.TextEdit.csproj'
+    'src/RaccoonNinja.McpToolset.Server.SkillStats/RaccoonNinja.McpToolset.Server.SkillStats.csproj'
+    'src/RaccoonNinja.McpToolset.Cli.SkillUsage/RaccoonNinja.McpToolset.Cli.SkillUsage.csproj'
 )
 
 foreach ($rid in $Rids) {

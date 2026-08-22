@@ -1,5 +1,14 @@
 # Toolset Changelog
 
+## v14
+- Added a new `skill-usage` hook CLI (v1.0.0): a `PostToolUse` hook on the `Skill` tool that appends one row per skill invocation to a local SQLite store under `~/.skill-stats` (overridable via `SKILL_STATS_HOME`). Skill names are normalized by stripping leading slashes so `csharp` and `/csharp` are one skill. It never blocks the agent: failures append to `ingest-errors.log` (self-rotating at 5 MiB) and surface on stderr with exit 2, while a malformed, oversized, or nameless payload is skipped with exit 0. Install it via the snippet in the root README.
+- Added a new `skill-stats` MCP server (v1.0.0): read-only statistics over that store, with `top_skills` (most-used skills over an optional recent window), `skill_usage` (recent invocations of one skill, including the recorded input), and `usage_summary` (totals plus ingestion-health fields). Every connection is opened read-only (`Mode=ReadOnly`, `query_only`); the server never creates or migrates the store and returns `StoreUnavailable` until the hook has written one. The CLI and server share one storage library so their schema cannot drift.
+- Changed release artifact naming. Per-platform zips are now `<platform>-<Tool>-<version>.zip` (for example `win-x64-FileVault-1.0.0.zip`) instead of `<Project>-<version>-<rid>.zip`, and each platform additionally ships a `<platform>-AllTools-<version>.zip` bundle containing every tool. Anyone scripting downloads against the old names must adjust; existing releases are immutable and keep their old names.
+- Centralized test packages in a single `Directory.Packages.props` file, to make it easier to maintain them and avoid version drifts.
+- Upgraded `Roslynator.Analyzers` 4.16.1 → 5.0.0 and added `Roslynator.Formatting.Analyzers` 5.0.0 to every project. Roslynator 5.0.0 removed the RCS1036 implementation, so `.editorconfig` now enables its successor RCS0063 (the same "remove unnecessary blank line" rule, shipped in `Roslynator.Formatting.Analyzers`).
+- Updated `.editorconfig` file.
+- Updated `UTF.Unknown` to version `2.7.0`.
+
 ## v13
 - Updated MCP: `file-vault` to v3.1.0 (deviation D9: `vault_edit_section` now also matches a heading by its verbatim source text, so a heading containing a code span, emphasis, or a link can be targeted with the text copied straight from the document; the previous rendered-text form still matches).
 - Updated runtime NuGet dependencies: `ModelContextProtocol` 2.1.0 → 2.2.0; `Microsoft.Data.Sqlite`, `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Logging`, `Microsoft.Extensions.Configuration`, and `Microsoft.Extensions.Configuration.EnvironmentVariables` 10.0.10 → 10.0.11; and `Roslynator.Analyzers` 4.16.0 → 4.16.1.

@@ -5,11 +5,12 @@
   <ItemGroup>
     <!-- Shared: referenced by both the app and the test projects. Centralized here so the
          version cannot drift between projects. -->
-    <PackageVersion Include="Roslynator.Analyzers" Version="4.16.1" />
+    <PackageVersion Include="Roslynator.Analyzers" Version="5.0.0" />
+    <!-- Ships RCS0063 (Remove unnecessary blank line), the successor of RCS1036 whose
+         implementation was removed in Roslynator 5.0.0. -->
+    <PackageVersion Include="Roslynator.Formatting.Analyzers" Version="5.0.0" />
     <!-- MCP SDK: server side in src, client side in the protocol e2e tests. -->
     <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
-  </ItemGroup>
-  <ItemGroup>
     <!-- Application-only packages. Test-only versions live in each test project's own
          Directory.Packages.props (tests/<project>/), which imports this file to inherit the
          shared entries above. -->
@@ -25,7 +26,7 @@
     <!-- Files shared library: encoding detection. UTF.Unknown is a maintained C# port of Mozilla's
          universal charset detector. CodePagesEncodingProvider (for windows-1252 and other legacy
          codepages) ships in the net10.0 shared framework, so it needs no package reference. -->
-    <PackageVersion Include="UTF.Unknown" Version="2.6.0" />
+    <PackageVersion Include="UTF.Unknown" Version="2.7.0" />
     <!-- Hosting + DI + Logging primitives -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.11" />

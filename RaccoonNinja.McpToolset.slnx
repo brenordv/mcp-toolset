@@ -4,19 +4,6 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Folder Name="/General Solution Items/">
-    <File Path=".editorconfig" />
-    <File Path=".gitignore" />
-    <File Path="CHANGELOG.md" />
-    <File Path="Directory.Build.props" />
-    <File Path="Directory.Packages.props" />
-    <File Path="global.json" />
-    <File Path="README.md" />
-  </Folder>
-  <Folder Name="/General Solution Items/Workflows/">
-    <File Path=".github/workflows/publish.yml" />
-    <File Path=".github/workflows/qa.yml" />
-  </Folder>
   <Folder Name="/MCP git-ops/">
     <File Path="src/RaccoonNinja.McpToolset.Server.GitOps/README.md" />
     <Project Path="src/RaccoonNinja.McpToolset.Server.GitOps/RaccoonNinja.McpToolset.Server.GitOps.csproj" />
@@ -37,8 +24,36 @@
     <Project Path="src/RaccoonNinja.McpToolset.Server.TextEdit/RaccoonNinja.McpToolset.Server.TextEdit.csproj" />
     <Project Path="tests/RaccoonNinja.McpToolset.Server.TextEdit.Tests/RaccoonNinja.McpToolset.Server.TextEdit.Tests.csproj" />
   </Folder>
+  <Folder Name="/CLI skill-usage/">
+    <File Path="src/RaccoonNinja.McpToolset.Cli.SkillUsage/README.md" />
+    <Project Path="src/RaccoonNinja.McpToolset.Cli.SkillUsage/RaccoonNinja.McpToolset.Cli.SkillUsage.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Cli.SkillUsage.Tests/RaccoonNinja.McpToolset.Cli.SkillUsage.Tests.csproj" />
+  </Folder>
+  <Folder Name="/MCP skill-stats/">
+    <File Path="src/RaccoonNinja.McpToolset.Server.SkillStats/README.md" />
+    <Project Path="src/RaccoonNinja.McpToolset.Server.SkillStats/RaccoonNinja.McpToolset.Server.SkillStats.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Server.SkillStats.Tests/RaccoonNinja.McpToolset.Server.SkillStats.Tests.csproj" />
+  </Folder>
   <Folder Name="/Shared/">
     <Project Path="src/RaccoonNinja.McpToolset.Files/RaccoonNinja.McpToolset.Files.csproj" />
     <Project Path="tests/RaccoonNinja.McpToolset.Files.Tests/RaccoonNinja.McpToolset.Files.Tests.csproj" />
+    <Project Path="src/RaccoonNinja.McpToolset.Shared.SkillStats/RaccoonNinja.McpToolset.Shared.SkillStats.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Shared.SkillStats.Tests/RaccoonNinja.McpToolset.Shared.SkillStats.Tests.csproj" />
+  </Folder>
+  <Folder Name="/_General Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="CHANGELOG.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/_General Solution Items/Tests/">
+    <File Path="tests/Directory.Packages.props" />
+  </Folder>
+  <Folder Name="/_General Solution Items/Workflows/">
+    <File Path=".github/workflows/publish.yml" />
+    <File Path=".github/workflows/qa.yml" />
   </Folder>
 </Solution>
