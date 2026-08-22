@@ -44,7 +44,7 @@ public sealed class McpProtocolTests : IAsyncLifetime
         });
         SqliteConnection.ClearAllPools();
 
-        var serverDll = Path.Combine(AppContext.BaseDirectory, "skill-stats.dll");
+        var serverDll = Path.Combine(AppContext.BaseDirectory, "skill-stats-mcp.dll");
         Assert.True(File.Exists(serverDll));
 
         var transport = new StdioClientTransport(new StdioClientTransportOptions
