@@ -25,9 +25,9 @@
     <Project Path="tests/RaccoonNinja.McpToolset.Server.TextEdit.Tests/RaccoonNinja.McpToolset.Server.TextEdit.Tests.csproj" />
   </Folder>
   <Folder Name="/CLI skill-usage/">
-    <File Path="src/RaccoonNinja.McpToolset.Cli.SkillUsage/README.md" />
-    <Project Path="src/RaccoonNinja.McpToolset.Cli.SkillUsage/RaccoonNinja.McpToolset.Cli.SkillUsage.csproj" />
-    <Project Path="tests/RaccoonNinja.McpToolset.Cli.SkillUsage.Tests/RaccoonNinja.McpToolset.Cli.SkillUsage.Tests.csproj" />
+    <File Path="src/RaccoonNinja.McpToolset.Cli.SkillStats/README.md" />
+    <Project Path="src/RaccoonNinja.McpToolset.Cli.SkillStats/RaccoonNinja.McpToolset.Cli.SkillStats.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Cli.SkillStats.Tests/RaccoonNinja.McpToolset.Cli.SkillStats.Tests.csproj" />
   </Folder>
   <Folder Name="/MCP skill-stats/">
     <File Path="src/RaccoonNinja.McpToolset.Server.SkillStats/README.md" />

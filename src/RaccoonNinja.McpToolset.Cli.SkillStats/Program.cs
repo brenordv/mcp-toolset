@@ -1,7 +1,7 @@
-using RaccoonNinja.McpToolset.Cli.SkillUsage.Ingest;
+using RaccoonNinja.McpToolset.Cli.SkillStats.Ingest;
 using RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
 
-namespace RaccoonNinja.McpToolset.Cli.SkillUsage;
+namespace RaccoonNinja.McpToolset.Cli.SkillStats;
 
 /// <summary>
 /// The skill-usage ingests hook entrypoint. Reads the Skill tool's PostToolUse JSON from stdin and

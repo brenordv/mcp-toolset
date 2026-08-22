@@ -2,8 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <RootNamespace>RaccoonNinja.McpToolset.Cli.SkillUsage</RootNamespace>
-    <AssemblyName>skill-usage</AssemblyName>
+    <AssemblyName>skill-stats-cli</AssemblyName>
     <Description>Claude Code PostToolUse hook binary: reads the Skill tool's hook JSON from stdin and appends one row to the local skill-usage SQLite store. Never blocks the agent; failures go to a log file and stderr.</Description>
     <InvariantGlobalization>false</InvariantGlobalization>
     <Version>1.0.0</Version>
@@ -11,7 +10,7 @@
 
   <ItemGroup>
     <!-- The test project drives the internal ingest pipeline in-process against injected streams. -->
-    <InternalsVisibleTo Include="RaccoonNinja.McpToolset.Cli.SkillUsage.Tests" />
+    <InternalsVisibleTo Include="RaccoonNinja.McpToolset.Cli.SkillStats.Tests" />
   </ItemGroup>
 
   <ItemGroup>

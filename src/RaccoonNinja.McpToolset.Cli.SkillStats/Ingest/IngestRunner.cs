@@ -4,7 +4,7 @@ using RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
 using RaccoonNinja.McpToolset.Common.SkillStats.Domain;
 using RaccoonNinja.McpToolset.Common.SkillStats.Storage;
 
-namespace RaccoonNinja.McpToolset.Cli.SkillUsage.Ingest;
+namespace RaccoonNinja.McpToolset.Cli.SkillStats.Ingest;
 
 /// <summary>
 /// The ingest-pipeline. Reads the hook JSON from stdin, extracts the skill name and args, and appends

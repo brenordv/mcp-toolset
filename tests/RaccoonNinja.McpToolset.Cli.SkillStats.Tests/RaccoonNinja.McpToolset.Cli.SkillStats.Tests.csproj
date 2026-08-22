@@ -3,13 +3,12 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
-    <RootNamespace>RaccoonNinja.McpToolset.Cli.SkillUsage.Tests</RootNamespace>
-    <AssemblyName>RaccoonNinja.McpToolset.Cli.SkillUsage.Tests</AssemblyName>
     <!-- CA1707: test method names follow the documented Method_Scenario_Expected pattern (underscores intentional).
          CA1711: xUnit's [CollectionDefinition] convention requires a type name ending in "Collection".
          xUnit1051: integration tests do not need TestContext.Current.CancellationToken plumbing.
          All three suppressions are scoped to the test project only and do not relax src-side analyzer enforcement. -->
     <NoWarn>$(NoWarn);CA1707;CA1711;xUnit1051</NoWarn>
+    <PackageId>RaccoonNinja.McpToolset.Cli.SkillStats.Tests</PackageId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -42,7 +41,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\RaccoonNinja.McpToolset.Cli.SkillUsage\RaccoonNinja.McpToolset.Cli.SkillUsage.csproj" />
+    <ProjectReference Include="..\..\src\RaccoonNinja.McpToolset.Cli.SkillStats\RaccoonNinja.McpToolset.Cli.SkillStats.csproj" />
   </ItemGroup>
 
 </Project>

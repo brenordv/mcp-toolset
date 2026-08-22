@@ -1,11 +1,11 @@
 using System.Text;
 using Dapper;
 using Microsoft.Data.Sqlite;
-using RaccoonNinja.McpToolset.Cli.SkillUsage.Ingest;
+using RaccoonNinja.McpToolset.Cli.SkillStats.Ingest;
 using RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
 using RaccoonNinja.McpToolset.Common.SkillStats.Storage;
 
-namespace RaccoonNinja.McpToolset.Cli.SkillUsage.Tests.TestSupport;
+namespace RaccoonNinja.McpToolset.Cli.SkillStats.Tests.TestSupport;
 
 /// <summary>Drives <see cref="IngestRunner"/> in-process against a fresh temp home.</summary>
 internal sealed class IngestHarness : IDisposable

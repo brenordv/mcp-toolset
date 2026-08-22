@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace RaccoonNinja.McpToolset.Cli.SkillUsage.Ingest;
+namespace RaccoonNinja.McpToolset.Cli.SkillStats.Ingest;
 
 /// <summary>
 /// The fields extracted from a PostToolUse hook payload. Extraction walks the parsed JSON with

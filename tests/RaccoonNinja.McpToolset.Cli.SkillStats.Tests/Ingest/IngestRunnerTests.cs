@@ -1,7 +1,7 @@
-using RaccoonNinja.McpToolset.Cli.SkillUsage.Tests.TestSupport;
+using RaccoonNinja.McpToolset.Cli.SkillStats.Tests.TestSupport;
 using RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
 
-namespace RaccoonNinja.McpToolset.Cli.SkillUsage.Tests.Ingest;
+namespace RaccoonNinja.McpToolset.Cli.SkillStats.Tests.Ingest;
 
 public sealed class IngestRunnerTests
 {

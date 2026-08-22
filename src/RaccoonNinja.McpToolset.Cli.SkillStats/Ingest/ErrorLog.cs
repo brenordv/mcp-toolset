@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace RaccoonNinja.McpToolset.Cli.SkillUsage.Ingest;
+namespace RaccoonNinja.McpToolset.Cli.SkillStats.Ingest;
 
 /// <summary>
 /// Append-only ingest error log. Every line is one event and carries no payload content. The file
