@@ -8,8 +8,6 @@
     <PackageVersion Include="Roslynator.Analyzers" Version="4.16.1" />
     <!-- MCP SDK: server side in src, client side in the protocol e2e tests. -->
     <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
-  </ItemGroup>
-  <ItemGroup>
     <!-- Application-only packages. Test-only versions live in each test project's own
          Directory.Packages.props (tests/<project>/), which imports this file to inherit the
          shared entries above. -->
