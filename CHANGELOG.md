@@ -5,6 +5,7 @@
 - Added a new `skill-stats` MCP server (v1.0.0): read-only statistics over that store, with `top_skills` (most-used skills over an optional recent window), `skill_usage` (recent invocations of one skill, including the recorded input), and `usage_summary` (totals plus ingestion-health fields). Every connection is opened read-only (`Mode=ReadOnly`, `query_only`); the server never creates or migrates the store and returns `StoreUnavailable` until the hook has written one. The CLI and server share one storage library so their schema cannot drift.
 - Changed release artifact naming. Per-platform zips are now `<platform>-<Tool>-<version>.zip` (for example `win-x64-FileVault-1.0.0.zip`) instead of `<Project>-<version>-<rid>.zip`, and each platform additionally ships a `<platform>-AllTools-<version>.zip` bundle containing every tool. Anyone scripting downloads against the old names must adjust; existing releases are immutable and keep their old names.
 - Centralized test packages in a single `Directory.Packages.props` file, to make it easier to maintain them and avoid version drifts.
+- Updated `.editorconfig` file.
 
 ## v13
 - Updated MCP: `file-vault` to v3.1.0 (deviation D9: `vault_edit_section` now also matches a heading by its verbatim source text, so a heading containing a code span, emphasis, or a link can be targeted with the text copied straight from the document; the previous rendered-text form still matches).
