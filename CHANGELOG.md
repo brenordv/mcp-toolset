@@ -7,6 +7,7 @@
 - Centralized test packages in a single `Directory.Packages.props` file, to make it easier to maintain them and avoid version drifts.
 - Upgraded `Roslynator.Analyzers` 4.16.1 → 5.0.0 and added `Roslynator.Formatting.Analyzers` 5.0.0 to every project. Roslynator 5.0.0 removed the RCS1036 implementation, so `.editorconfig` now enables its successor RCS0063 (the same "remove unnecessary blank line" rule, shipped in `Roslynator.Formatting.Analyzers`).
 - Updated `.editorconfig` file.
+- Updated `"UTF.Unknown` to version `2.6.0`.
 
 ## v13
 - Updated MCP: `file-vault` to v3.1.0 (deviation D9: `vault_edit_section` now also matches a heading by its verbatim source text, so a heading containing a code span, emphasis, or a link can be targeted with the text copied straight from the document; the previous rendered-text form still matches).
