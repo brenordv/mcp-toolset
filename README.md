@@ -19,6 +19,8 @@ network round-trips beyond the local process the assistant already talks to.
 - **[file-vault](src/RaccoonNinja.McpToolset.Server.FileVault/README.md)**: A personal, cross-conversation file vault: versioned notes in a local SQLite + snapshot store, with optimistic concurrency, tags, full-text search, hierarchy, and structure-aware markdown/JSON/YAML edits. Drop-in port of the Rust `vault-mcp` server, same on-disk store.
 - **[text-search](src/RaccoonNinja.McpToolset.Server.TextSearch/README.md)**: Local, read-only, root-confined text search and inspection; `describe_scope`, `find_files`, `inspect_files`, `search_text`, `read_lines`, and `read_json` as typed tools that replace the `find`/`grep`/`cat` habit (and the python-to-pluck-a-JSON-property one). Every path is resolved through all symlinks and confined to its configured roots, a non-overridable denylist keeps secret files unread while content-based detection additionally withholds files whose contents match a known secret shape, and results stay root-relative so no absolute path from your machine reaches the model. Supports multiple named roots plus opt-in package roots for grepping cached dependency sources.
 - **[text-edit](src/RaccoonNinja.McpToolset.Server.TextEdit/README.md)**: The mutating counterpart to text-search: root-confined text edits (`normalize_files`, `replace_text`) with hash-gated undo (`list_recent_batches`, `undo_batch`/`undo_last_batch`). It confines edits to a base root (optionally scoped to one project per call with `cwd`), keeps its write tools on prompt, refuses secret files via the same non-overridable denylist, round-trips encodings and line endings faithfully, and journals every change to an append-only store sited outside the root so a batch can be rolled back even after a mid-batch crash.
+- **[skill-stats](src/RaccoonNinja.McpToolset.Server.SkillStats/README.md)**: Local, read-only skill-usage statistics over a SQLite store. Three typed tools: `top_skills` (most-used skills over an optional recent window), `skill_usage` (recent invocations of one skill, with the recorded input), and `usage_summary` (totals plus ingestion health). Read-only by construction (`Mode=ReadOnly`, `query_only`); it never creates or migrates the store, so it returns `StoreUnavailable` until the companion hook has written one.
+- **[skill-usage](src/RaccoonNinja.McpToolset.Cli.SkillUsage/README.md)** (hook binary, not an MCP server): A `PostToolUse` hook that records each Skill invocation into the store `skill-stats` reads. You wire it into `~/.claude/settings.json` and Claude Code runs it; you never talk to it over MCP. It cannot break your session: any failure is logged and surfaced on stderr, and the tool call has already run.
 
 ## Repository layout
 
@@ -29,13 +31,19 @@ RaccoonNinja.McpToolset/
 │  ├─ RaccoonNinja.McpToolset.Server.FileVault/    # MCP server
 │  ├─ RaccoonNinja.McpToolset.Server.TextSearch/   # MCP server
 │  ├─ RaccoonNinja.McpToolset.Server.TextEdit/     # MCP server
-│  └─ RaccoonNinja.McpToolset.Files/               # shared library: confinement, denylist, selection, encoding
+│  ├─ RaccoonNinja.McpToolset.Server.SkillStats/   # MCP server
+│  ├─ RaccoonNinja.McpToolset.Cli.SkillUsage/      # hook CLI (skill-usage ingest)
+│  ├─ RaccoonNinja.McpToolset.Files/               # shared library: confinement, denylist, selection, encoding
+│  └─ RaccoonNinja.McpToolset.Shared.SkillStats/   # shared library: skill-usage store (schema, repository)
 ├─ tests/                     # matching test project per src project
 │  ├─ RaccoonNinja.McpToolset.Server.GitOps.Tests/
 │  ├─ RaccoonNinja.McpToolset.Server.FileVault.Tests/
 │  ├─ RaccoonNinja.McpToolset.Server.TextSearch.Tests/
 │  ├─ RaccoonNinja.McpToolset.Server.TextEdit.Tests/
-│  └─ RaccoonNinja.McpToolset.Files.Tests/
+│  ├─ RaccoonNinja.McpToolset.Server.SkillStats.Tests/
+│  ├─ RaccoonNinja.McpToolset.Cli.SkillUsage.Tests/
+│  ├─ RaccoonNinja.McpToolset.Files.Tests/
+│  └─ RaccoonNinja.McpToolset.Shared.SkillStats.Tests/
 ├─ eng/                       # publish settings (ServerPublish.props) + local publish.ps1
 ├─ Directory.Build.props      # shared build settings (net10.0, analyzers, etc.)
 ├─ Directory.Packages.props   # central package version management
@@ -92,16 +100,20 @@ Two GitHub Actions workflows live under [`.github/workflows`](.github/workflows)
   reuse it as a gate.
 - **Publish** (`publish.yml`): triggered by pushing a tag of the form
   `release/vX.Y.Z` (for example `release/v1.0.0`). It first re-runs QA as a
-  hard gate, then cross-compiles each MCP server into a self-contained,
-  single-file executable (the .NET runtime and native libraries are embedded)
-  for `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`, packages each as a
-  named zip, and publishes them, together with a `SHA256SUMS.txt` manifest, in
-  a single atomic GitHub release.
+  hard gate, then cross-compiles each MCP server and the `skill-usage` hook CLI
+  into a self-contained, single-file executable (the .NET runtime and native
+  libraries are embedded) for `win-x64`, `linux-x64`, `osx-x64`, and
+  `osx-arm64`, packages each tool as a per-platform zip plus an `AllTools`
+  bundle, and publishes them, together with a `SHA256SUMS.txt` manifest, in a
+  single atomic GitHub release.
 
 ## Releases and verification
 
-Each release attaches one zip per server and platform, named
-`<ServerProject>-<version>-<rid>.zip`, plus a `SHA256SUMS.txt` manifest.
+Each release attaches, per platform, one zip per tool named
+`<platform>-<Tool>-<version>.zip` (for example `win-x64-FileVault-1.0.0.zip`),
+plus a `<platform>-AllTools-<version>.zip` bundle containing every tool, and a
+`SHA256SUMS.txt` manifest. This naming changed in v14; existing releases keep
+their old `<Project>-<version>-<rid>.zip` names and are unaffected.
 
 To check that a downloaded artifact is intact, verify its checksum against the
 manifest:
@@ -124,7 +136,8 @@ To make it easier, you can allow all agents to use the mcp servers here, by addi
     "allow": [
       "mcp__git-ops",
       "mcp__vault",
-      "mcp__text-search"
+      "mcp__text-search",
+      "mcp__skill-stats"
     ]
   }
 }
@@ -135,3 +148,30 @@ The read-only servers above are safe to blanket-approve. **text-edit is delibera
 your files, so keep its tools on prompt rather than auto-approving them. If you want its read-only tools
 approved while its write tools still prompt, allow only `mcp__text-edit__describe_scope` and
 `mcp__text-edit__list_recent_batches`.
+
+### Recording skill usage
+
+The `skill-stats` server has data to read only if the `skill-usage` hook is recording it. Add the hook to
+your `~/.claude/settings.json`, pointing `command` at the published binary (`skill-usage.exe` on Windows):
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<path-to>/skill-usage",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Both write to `~/.skill-stats` by default; set `SKILL_STATS_HOME` on both if you relocate the store. See the
+[skill-usage README](src/RaccoonNinja.McpToolset.Cli.SkillUsage/README.md) for details.

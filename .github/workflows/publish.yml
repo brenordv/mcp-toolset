@@ -63,7 +63,7 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Publish and package MCP servers
+      - name: Publish and package tools
         env:
           RID: ${{ matrix.rid }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -72,17 +72,42 @@ jobs:
           shopt -s nullglob
           staging="${RUNNER_TEMP}/staging"
           mkdir -p "$staging"
+          mkdir -p "${RUNNER_TEMP}/alltools"
 
-          found=0
-          # MCP servers follow the convention src/<...>.Server.<Name>/.
-          for csproj in src/*.Server.*/*.csproj; do
-            found=1
+          # Two project families ship: MCP servers (src/<...>.Server.<Name>/) and hook CLIs
+          # (src/<...>.Cli.<Name>/). Each publish output is a single, uniquely named executable
+          # (AssemblyName uniqueness across projects is the invariant), so staging every tool flat
+          # into one AllTools bundle cannot collide. Fail early if either family globbed empty so a
+          # renamed project family cannot silently drop out of a release.
+          server_projects=(src/*.Server.*/*.csproj)
+          cli_projects=(src/*.Cli.*/*.csproj)
+          if [ "${#server_projects[@]}" -eq 0 ]; then
+            echo "No MCP server projects found under src/*.Server.*/." >&2
+            exit 1
+          fi
+          if [ "${#cli_projects[@]}" -eq 0 ]; then
+            echo "No CLI projects found under src/*.Cli.*/." >&2
+            exit 1
+          fi
+
+          # Guard against two projects reducing to the same short artifact name. Seed it with the
+          # reserved bundle name; set -u requires the variable to exist before first use.
+          seen="AllTools"
+          for csproj in "${server_projects[@]}" "${cli_projects[@]}"; do
             name="$(basename "$(dirname "$csproj")")"
-            outdir="${RUNNER_TEMP}/publish/${name}/${RID}"
+            short="${name##*.}"
+            case " $seen " in
+              *" $short "*)
+                echo "duplicate artifact name: $short" >&2
+                exit 1
+                ;;
+            esac
+            seen="$seen $short"
 
-            echo "::group::Publishing ${name} for ${RID}"
+            outdir="${RUNNER_TEMP}/publish/${name}/${RID}"
+            echo "::group::Publishing ${short} for ${RID}"
             # Self-contained single-file settings (incl. native-library embedding and
-            # compression) live in eng/ServerPublish.props, imported by each server project.
+            # compression) live in eng/ServerPublish.props, imported by each published project.
             dotnet publish "$csproj" \
               --configuration Release \
               --runtime "$RID" \
@@ -91,16 +116,18 @@ jobs:
               --output "$outdir"
             echo "::endgroup::"
 
-            zipname="${name}-${VERSION}-${RID}.zip"
-            # -X strips extra file attributes for reproducible archives.
-            # The XML doc file is a build by-product, not a shipped asset.
+            # Per-tool zip: <rid>-<Short>-<version>.zip. -X strips extra file attributes for
+            # reproducible archives; the XML doc file is a build by-product, not a shipped asset.
+            zipname="${RID}-${short}-${VERSION}.zip"
             ( cd "$outdir" && zip -r -X "${staging}/${zipname}" . -x '*.xml' )
+
+            # Stage this tool's output flat into the per-platform AllTools bundle.
+            cp -R "$outdir"/. "${RUNNER_TEMP}/alltools/"
           done
 
-          if [ "$found" -eq 0 ]; then
-            echo "No MCP server projects found under src/*.Server.*/." >&2
-            exit 1
-          fi
+          # Per-platform bundle of every tool: <rid>-AllTools-<version>.zip. The empty-family
+          # check above already ran, so this never zips a meaningless bundle.
+          ( cd "${RUNNER_TEMP}/alltools" && zip -r -X "${staging}/${RID}-AllTools-${VERSION}.zip" . -x '*.xml' )
           ls -l "$staging"
 
       - name: Upload build artifacts

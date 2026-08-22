@@ -37,8 +37,20 @@
     <Project Path="src/RaccoonNinja.McpToolset.Server.TextEdit/RaccoonNinja.McpToolset.Server.TextEdit.csproj" />
     <Project Path="tests/RaccoonNinja.McpToolset.Server.TextEdit.Tests/RaccoonNinja.McpToolset.Server.TextEdit.Tests.csproj" />
   </Folder>
+  <Folder Name="/CLI skill-usage/">
+    <File Path="src/RaccoonNinja.McpToolset.Cli.SkillUsage/README.md" />
+    <Project Path="src/RaccoonNinja.McpToolset.Cli.SkillUsage/RaccoonNinja.McpToolset.Cli.SkillUsage.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Cli.SkillUsage.Tests/RaccoonNinja.McpToolset.Cli.SkillUsage.Tests.csproj" />
+  </Folder>
+  <Folder Name="/MCP skill-stats/">
+    <File Path="src/RaccoonNinja.McpToolset.Server.SkillStats/README.md" />
+    <Project Path="src/RaccoonNinja.McpToolset.Server.SkillStats/RaccoonNinja.McpToolset.Server.SkillStats.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Server.SkillStats.Tests/RaccoonNinja.McpToolset.Server.SkillStats.Tests.csproj" />
+  </Folder>
   <Folder Name="/Shared/">
     <Project Path="src/RaccoonNinja.McpToolset.Files/RaccoonNinja.McpToolset.Files.csproj" />
     <Project Path="tests/RaccoonNinja.McpToolset.Files.Tests/RaccoonNinja.McpToolset.Files.Tests.csproj" />
+    <Project Path="src/RaccoonNinja.McpToolset.Shared.SkillStats/RaccoonNinja.McpToolset.Shared.SkillStats.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Shared.SkillStats.Tests/RaccoonNinja.McpToolset.Shared.SkillStats.Tests.csproj" />
   </Folder>
 </Solution>
