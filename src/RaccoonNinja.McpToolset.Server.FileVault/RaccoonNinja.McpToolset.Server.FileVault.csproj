@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\RaccoonNinja.McpToolset.Files\RaccoonNinja.McpToolset.Files.csproj" />
+    <ProjectReference Include="..\RaccoonNinja.McpToolset.Common.Files\RaccoonNinja.McpToolset.Common.Files.csproj" />
   </ItemGroup>
 
   <ItemGroup>

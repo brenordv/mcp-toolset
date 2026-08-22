@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\RaccoonNinja.McpToolset.Shared.SkillStats\RaccoonNinja.McpToolset.Shared.SkillStats.csproj" />
+    <ProjectReference Include="..\RaccoonNinja.McpToolset.Common.SkillStats\RaccoonNinja.McpToolset.Common.SkillStats.csproj" />
   </ItemGroup>
 
   <ItemGroup>

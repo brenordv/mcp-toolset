@@ -4,8 +4,8 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using RaccoonNinja.McpToolset.Server.SkillStats.Metrics;
 using RaccoonNinja.McpToolset.Server.SkillStats.Tools;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Configuration;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Storage;
+using RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
+using RaccoonNinja.McpToolset.Common.SkillStats.Storage;
 
 namespace RaccoonNinja.McpToolset.Server.SkillStats.Tests.TestSupport;
 

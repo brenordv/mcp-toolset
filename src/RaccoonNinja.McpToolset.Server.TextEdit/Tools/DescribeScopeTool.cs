@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
-using RaccoonNinja.McpToolset.Files.Selection;
+using RaccoonNinja.McpToolset.Common.Files.Selection;
 using RaccoonNinja.McpToolset.Server.TextEdit.Configuration;
 using RaccoonNinja.McpToolset.Server.TextEdit.Envelope;
 using RaccoonNinja.McpToolset.Server.TextEdit.Models;

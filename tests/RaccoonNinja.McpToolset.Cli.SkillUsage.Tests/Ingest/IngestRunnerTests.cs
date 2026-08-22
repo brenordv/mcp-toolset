@@ -1,5 +1,5 @@
 using RaccoonNinja.McpToolset.Cli.SkillUsage.Tests.TestSupport;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Configuration;
+using RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
 
 namespace RaccoonNinja.McpToolset.Cli.SkillUsage.Tests.Ingest;
 

@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using ModelContextProtocol.Client;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Configuration;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Storage;
+using RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
+using RaccoonNinja.McpToolset.Common.SkillStats.Storage;
 
 namespace RaccoonNinja.McpToolset.Server.SkillStats.Tests.Protocol;
 

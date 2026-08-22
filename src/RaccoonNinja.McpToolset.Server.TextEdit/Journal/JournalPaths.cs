@@ -1,5 +1,5 @@
 using System.Text;
-using RaccoonNinja.McpToolset.Files.Security;
+using RaccoonNinja.McpToolset.Common.Files.Security;
 using RaccoonNinja.McpToolset.Server.TextEdit.Configuration;
 
 namespace RaccoonNinja.McpToolset.Server.TextEdit.Journal;

@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using RaccoonNinja.McpToolset.Files.Selection;
+using RaccoonNinja.McpToolset.Common.Files.Selection;
 using RaccoonNinja.McpToolset.Server.TextEdit.Configuration;
 
 namespace RaccoonNinja.McpToolset.Server.TextEdit.Content;

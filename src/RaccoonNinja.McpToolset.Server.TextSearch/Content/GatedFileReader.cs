@@ -1,5 +1,5 @@
-using RaccoonNinja.McpToolset.Files.Security;
-using RaccoonNinja.McpToolset.Files.Selection;
+using RaccoonNinja.McpToolset.Common.Files.Security;
+using RaccoonNinja.McpToolset.Common.Files.Selection;
 
 namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
 

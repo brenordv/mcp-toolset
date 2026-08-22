@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using RaccoonNinja.McpToolset.Files.Security;
-using RaccoonNinja.McpToolset.Files.Text;
+using RaccoonNinja.McpToolset.Common.Files.Security;
+using RaccoonNinja.McpToolset.Common.Files.Text;
 using RaccoonNinja.McpToolset.Server.TextEdit.Configuration;
 using RaccoonNinja.McpToolset.Server.TextEdit.Content;
 using RaccoonNinja.McpToolset.Server.TextEdit.Journal;

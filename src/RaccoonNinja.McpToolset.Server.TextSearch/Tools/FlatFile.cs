@@ -1,4 +1,4 @@
-using RaccoonNinja.McpToolset.Files.Selection;
+using RaccoonNinja.McpToolset.Common.Files.Selection;
 
 namespace RaccoonNinja.McpToolset.Server.TextSearch.Tools;
 

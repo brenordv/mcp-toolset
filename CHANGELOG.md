@@ -16,6 +16,7 @@
 - Added a `read_json` tool to `text-search` (v1.3.0): parse one JSON file in scope and return the whole document or only the value at a `json_path` (dot/bracket syntax with Python-style negative indexes, e.g. `items[-1].name`, plus quoted keys for names with dots), so agents stop shelling out to python to pluck a property out of a JSON file. The read goes through the same gate as `read_lines` (confinement, denylist, ignore tiers, content-based secret detection, size cap). Comments and trailing commas are tolerated (JSONC); duplicate object keys are rejected. Three new error codes: `JsonInvalid` (with 1-based line detail), `JsonPathNotFound` (with the deepest resolved prefix and capped property-name/array-length hints), and `ValueTooLarge` (value over the new `MCP_TEXTSEARCH_MAX_JSON_VALUE_BYTES` cap, default 1 MiB, with the same hints). Error messages stay fixed strings (a malformed `json_path` message carries only a numeric character offset); content-derived data travels only in the error `detail`, which never reaches the server log.
 - Loosened `global.json` SDK resolution from `latestPatch` to `latestFeature` so the repo builds against any .NET 10 feature band.
 - Migrated to the `Microsoft.Testing.Platform` test runner.
+- Changed `Shared` packages to `Common` to solve the `CA1716` warning/errors.
 
 ## v12
 - Updated `NSubstitute`, and `Roslynator.Analyzers` packages.

@@ -1,5 +1,5 @@
-using RaccoonNinja.McpToolset.Files.Security;
-using RaccoonNinja.McpToolset.Files.Storage;
+using RaccoonNinja.McpToolset.Common.Files.Security;
+using RaccoonNinja.McpToolset.Common.Files.Storage;
 using RaccoonNinja.McpToolset.Server.TextEdit.Journal;
 
 namespace RaccoonNinja.McpToolset.Server.TextEdit.Content;

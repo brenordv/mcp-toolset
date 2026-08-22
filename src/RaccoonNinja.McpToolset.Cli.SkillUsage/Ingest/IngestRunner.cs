@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Configuration;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Domain;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Storage;
+using RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
+using RaccoonNinja.McpToolset.Common.SkillStats.Domain;
+using RaccoonNinja.McpToolset.Common.SkillStats.Storage;
 
 namespace RaccoonNinja.McpToolset.Cli.SkillUsage.Ingest;
 
