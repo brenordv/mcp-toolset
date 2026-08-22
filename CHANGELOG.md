@@ -5,6 +5,7 @@
 - Added a new `skill-stats` MCP server (v1.0.0): read-only statistics over that store, with `top_skills` (most-used skills over an optional recent window), `skill_usage` (recent invocations of one skill, including the recorded input), and `usage_summary` (totals plus ingestion-health fields). Every connection is opened read-only (`Mode=ReadOnly`, `query_only`); the server never creates or migrates the store and returns `StoreUnavailable` until the hook has written one. The CLI and server share one storage library so their schema cannot drift.
 - Changed release artifact naming. Per-platform zips are now `<platform>-<Tool>-<version>.zip` (for example `win-x64-FileVault-1.0.0.zip`) instead of `<Project>-<version>-<rid>.zip`, and each platform additionally ships a `<platform>-AllTools-<version>.zip` bundle containing every tool. Anyone scripting downloads against the old names must adjust; existing releases are immutable and keep their old names.
 - Centralized test packages in a single `Directory.Packages.props` file, to make it easier to maintain them and avoid version drifts.
+- Upgraded `Roslynator.Analyzers` 4.16.1 → 5.0.0 and added `Roslynator.Formatting.Analyzers` 5.0.0 to every project. Roslynator 5.0.0 removed the RCS1036 implementation, so `.editorconfig` now enables its successor RCS0063 (the same "remove unnecessary blank line" rule, shipped in `Roslynator.Formatting.Analyzers`).
 - Updated `.editorconfig` file.
 
 ## v13

@@ -396,16 +396,15 @@ dotnet_naming_style.s_camelcase.capitalization = camel_case
 # This will ensure that no other rules will be enforced.
 dotnet_analyzer_diagnostic.category-roslynator.severity = none
 
-# RCS1036: Remove unnecessary blank line. (https://josefpihrt.github.io/docs/roslynator/analyzers/RCS1036/)
-## Will show as warning in the IDE
-dotnet_diagnostic.RCS1036.severity = warning
-## Will automatically fix the code when running `dotnet format`, but no changes will be made when the flag `--verify-no-changes` is used.
-roslynator_refactoring.RCS1036.enabled = true
+# RCS0063: Remove unnecessary blank line. (https://josefpihrt.github.io/docs/roslynator/analyzers/RCS0063/)
+dotnet_diagnostic.RCS0063.severity = warning
+## Toggles the IDE refactoring, not the `dotnet format` pass. Kept to record intent.
+roslynator_refactoring.RCS0063.enabled = true
 
 # RCS1037: Remove trailing white-space. (https://josefpihrt.github.io/docs/roslynator/analyzers/RCS1037/)
-## Will show as warning in the IDE
+## Shows as warning in the IDE. `dotnet format` auto-fixes it from the packaged code fix at this severity; `--verify-no-changes` reports without writing.
 dotnet_diagnostic.RCS1037.severity = warning
-## Will automatically fix the code when running `dotnet format`, but no changes will be made when the flag `--verify-no-changes` is used.
+## Toggles the IDE refactoring, not the `dotnet format` pass. Kept to record intent.
 roslynator_refactoring.RCS1037.enabled = true
 
 # RCS1046: Async method names should end with `Async` (https://josefpihrt.github.io/docs/roslynator/analyzers/RCS1046/)
