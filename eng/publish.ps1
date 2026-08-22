@@ -29,7 +29,7 @@ $servers = @(
     'src/RaccoonNinja.McpToolset.Server.TextSearch/RaccoonNinja.McpToolset.Server.TextSearch.csproj'
     'src/RaccoonNinja.McpToolset.Server.TextEdit/RaccoonNinja.McpToolset.Server.TextEdit.csproj'
     'src/RaccoonNinja.McpToolset.Server.SkillStats/RaccoonNinja.McpToolset.Server.SkillStats.csproj'
-    'src/RaccoonNinja.McpToolset.Cli.SkillUsage/RaccoonNinja.McpToolset.Cli.SkillUsage.csproj'
+    'src/RaccoonNinja.McpToolset.Cli.SkillStats/RaccoonNinja.McpToolset.Cli.SkillStats.csproj'
 )
 
 foreach ($rid in $Rids) {
