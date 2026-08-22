@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
-using RaccoonNinja.McpToolset.Files.Text;
+using RaccoonNinja.McpToolset.Common.Files.Text;
 using RaccoonNinja.McpToolset.Server.TextSearch.Configuration;
 using RaccoonNinja.McpToolset.Server.TextSearch.Content;
 using RaccoonNinja.McpToolset.Server.TextSearch.Envelope;

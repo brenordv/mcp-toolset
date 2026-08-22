@@ -1,4 +1,4 @@
-using RaccoonNinja.McpToolset.Files.Security;
+using RaccoonNinja.McpToolset.Common.Files.Security;
 using RaccoonNinja.McpToolset.Server.TextEdit.Configuration;
 using RaccoonNinja.McpToolset.Server.TextEdit.Journal;
 

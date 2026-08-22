@@ -1,12 +1,12 @@
 using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
+using RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
+using RaccoonNinja.McpToolset.Common.SkillStats.Storage;
 using RaccoonNinja.McpToolset.Server.SkillStats.Envelope;
 using RaccoonNinja.McpToolset.Server.SkillStats.Errors;
 using RaccoonNinja.McpToolset.Server.SkillStats.Logging;
 using RaccoonNinja.McpToolset.Server.SkillStats.Metrics;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Configuration;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Storage;
 
 namespace RaccoonNinja.McpToolset.Server.SkillStats.Tools;
 

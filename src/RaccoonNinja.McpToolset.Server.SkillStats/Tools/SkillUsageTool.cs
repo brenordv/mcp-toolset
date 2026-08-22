@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using RaccoonNinja.McpToolset.Common.SkillStats.Domain;
+using RaccoonNinja.McpToolset.Common.SkillStats.Storage;
 using RaccoonNinja.McpToolset.Server.SkillStats.Envelope;
 using RaccoonNinja.McpToolset.Server.SkillStats.Errors;
 using RaccoonNinja.McpToolset.Server.SkillStats.Models;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Domain;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Storage;
 
 namespace RaccoonNinja.McpToolset.Server.SkillStats.Tools;
 

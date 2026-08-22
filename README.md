@@ -110,7 +110,7 @@ Two GitHub Actions workflows live under [`.github/workflows`](.github/workflows)
 ## Releases and verification
 
 Each release attaches, per platform, one zip per tool named
-`<platform>-<Tool>-<version>.zip` (for example `win-x64-FileVault-1.0.0.zip`),
+`<platform>-<Tool>-<version>.zip` (for example `win-x64-file-vault-1.0.0.zip`),
 plus a `<platform>-AllTools-<version>.zip` bundle containing every tool, and a
 `SHA256SUMS.txt` manifest. This naming changed in v14; existing releases keep
 their old `<Project>-<version>-<rid>.zip` names and are unaffected.

@@ -2,11 +2,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
+using RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
+using RaccoonNinja.McpToolset.Common.SkillStats.Storage;
 using RaccoonNinja.McpToolset.Server.SkillStats.Logging;
 using RaccoonNinja.McpToolset.Server.SkillStats.Metrics;
 using RaccoonNinja.McpToolset.Server.SkillStats.Tools;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Configuration;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Storage;
 using Serilog;
 
 namespace RaccoonNinja.McpToolset.Server.SkillStats;

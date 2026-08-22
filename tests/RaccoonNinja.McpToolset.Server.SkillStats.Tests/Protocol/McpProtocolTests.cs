@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using ModelContextProtocol.Client;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Configuration;
-using RaccoonNinja.McpToolset.Shared.SkillStats.Storage;
+using RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
+using RaccoonNinja.McpToolset.Common.SkillStats.Storage;
 
 namespace RaccoonNinja.McpToolset.Server.SkillStats.Tests.Protocol;
 
@@ -44,7 +44,7 @@ public sealed class McpProtocolTests : IAsyncLifetime
         });
         SqliteConnection.ClearAllPools();
 
-        var serverDll = Path.Combine(AppContext.BaseDirectory, "skill-stats.dll");
+        var serverDll = Path.Combine(AppContext.BaseDirectory, "skill-stats-mcp.dll");
         Assert.True(File.Exists(serverDll));
 
         var transport = new StdioClientTransport(new StdioClientTransportOptions

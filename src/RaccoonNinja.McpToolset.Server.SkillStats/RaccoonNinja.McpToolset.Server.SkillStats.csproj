@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>RaccoonNinja.McpToolset.Server.SkillStats</RootNamespace>
-    <AssemblyName>skill-stats</AssemblyName>
+    <AssemblyName>skill-stats-mcp</AssemblyName>
     <Description>Local stdio MCP server: read-only skill-usage statistics over the local skill-usage SQLite store. Answers which skills are used most, recent invocations of one skill, and totals plus ingestion health.</Description>
     <InvariantGlobalization>false</InvariantGlobalization>
     <!-- CA1707: MCP tool input schemas take their property names verbatim from C# method
@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\RaccoonNinja.McpToolset.Shared.SkillStats\RaccoonNinja.McpToolset.Shared.SkillStats.csproj" />
+    <ProjectReference Include="..\RaccoonNinja.McpToolset.Common.SkillStats\RaccoonNinja.McpToolset.Common.SkillStats.csproj" />
   </ItemGroup>
 
   <ItemGroup>

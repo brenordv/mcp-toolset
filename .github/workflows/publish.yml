@@ -67,6 +67,7 @@ jobs:
         env:
           RID: ${{ matrix.rid }}
           VERSION: ${{ steps.version.outputs.version }}
+          DOTNET_NOLOGO: 1
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -90,12 +91,21 @@ jobs:
             exit 1
           fi
 
-          # Guard against two projects reducing to the same short artifact name. Seed it with the
-          # reserved bundle name; set -u requires the variable to exist before first use.
+          # Guard against two projects publishing the same binary, which would collide when staged
+          # flat into the AllTools bundle. Seed with the reserved bundle name; set -u requires the
+          # variable to exist before first use.
           seen="AllTools"
           for csproj in "${server_projects[@]}" "${cli_projects[@]}"; do
             name="$(basename "$(dirname "$csproj")")"
-            short="${name##*.}"
+            # The artifact identity is the published binary name, which is exactly AssemblyName.
+            # Resolve it through MSBuild so the guard and zip name track the real filename rather
+            # than the folder's last segment, which is not guaranteed unique.
+            short="$(dotnet msbuild "$csproj" -getProperty:AssemblyName --nologo)"
+            short="${short//[$'\t\r\n ']/}"
+            if [ -z "$short" ]; then
+              echo "Could not resolve AssemblyName for $csproj." >&2
+              exit 1
+            fi
             case " $seen " in
               *" $short "*)
                 echo "duplicate artifact name: $short" >&2
