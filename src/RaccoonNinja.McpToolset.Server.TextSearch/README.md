@@ -118,20 +118,39 @@ working directory. A failure sets `error` and leaves `results` an empty list:
 
 ### Error codes
 
-| Code                      | Meaning                                                                                                                                                |
-|---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `SelectorInvalid`         | More than one of `glob`, `regex`, `paths` was given.                                                                                                   |
-| `PatternInvalid`          | A regex, or an `include_ignored` glob, was too long, over the repetition cap, or not valid.                                                            |
-| `WithheldSecret`          | A single-path `read_lines`/`read_json` was refused because the file's content matched a secret detector (content scan).                                |
-| `NotFound`                | The path did not exist, resolved to a directory, or was refused (a denylisted single-path read reports this rather than confirming the secret exists). |
-| `IsBinary`                | The file is binary and cannot be read as text.                                                                                                         |
-| `TooLarge`                | The file is larger than the configured read limit.                                                                                                     |
+| Code                      | Meaning                                                                                                                                                                                                                     |
+|---------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `SelectorInvalid`         | More than one of `glob`, `regex`, `paths` was given.                                                                                                                                                                        |
+| `PatternInvalid`          | A regex, or an `include_ignored` glob, was too long, over the repetition cap, or not valid.                                                                                                                                 |
+| `WithheldSecret`          | A single-path `read_lines`/`read_json` was refused because the file's content matched a secret detector (content scan).                                                                                                     |
+| `NotFound`                | The path did not exist, resolved to a directory, or was refused (a denylisted single-path read reports this rather than confirming the secret exists).                                                                      |
+| `IsBinary`                | The file is binary and cannot be read as text.                                                                                                                                                                              |
+| `TooLarge`                | The file is larger than the configured read limit.                                                                                                                                                                          |
 | `JsonInvalid`             | The file could not be parsed as JSON (`read_json`): a syntax error, a duplicate object key, or a document deeper than 64 levels. Detail carries the 1-based `line` and 0-based `byte_in_line` when the parser reports them. |
-| `JsonPathNotFound`        | A well-formed `json_path` did not resolve (`read_json`). Detail carries the deepest resolved prefix, the kind at that point, and the property names or array length there.                          |
-| `ValueTooLarge`           | The extracted value serializes past `max_json_value_bytes` (`read_json`). Detail carries `value_bytes`, `limit`, and the same navigation hint; pass a narrower `json_path` and retry.               |
-| `OperationBudgetExceeded` | The operation ran past its wall-clock budget; narrow the selector or pattern.                                                                          |
+| `JsonPathNotFound`        | A well-formed `json_path` did not resolve (`read_json`). Detail carries the deepest resolved prefix, the kind at that point, and the property names or array length there.                                                  |
+| `ValueTooLarge`           | The extracted value serializes past `max_json_value_bytes` (`read_json`). Detail carries `value_bytes`, `limit`, and the same navigation hint; pass a narrower `json_path` and retry.                                       |
+| `OperationBudgetExceeded` | The operation ran past its wall-clock budget; narrow the selector or pattern.                                                                                                                                               |
 | `InvalidArgument`         | An argument was missing, malformed, or out of range, including a malformed `cursor`, a `cwd` that escapes, is not a directory, or is denylisted, an unknown package-root name, or a package subpath that escapes its cache. |
-| `InternalError`           | An unexpected fault; details go to the log, never the client.                                                                                          |
+| `InternalError`           | An unexpected fault; details go to the log, never the client.                                                                                                                                                               |
+
+### Two failure layers
+
+Both kinds of failure arrive as the envelope above with `error` set, so a client that checks `error`
+first handles them the same way. They differ in whether the tool ran.
+
+- **Domain errors** come from a tool that ran and refused the work: a contradictory selector, a missing
+  file, an oversized read. `IsError` stays unset, as it always has.
+- **Argument-shape errors** come from a call that never reached the tool because its argument names or
+  types did not fit the schema. These set `IsError = true` next to the envelope, with `error.code` of
+  `InvalidArgument`:
+  - An **unknown argument name** is rejected. `detail.unknown_arguments` names each one with a
+    `did_you_mean` when a schema name is close (a camelCase `isRegex` points at `is_regex`),
+    `detail.missing_required` lists any required name left out, and `detail.expected_arguments` lists
+    every name the tool accepts. This is a behavior change: an unknown name next to valid ones used to
+    be ignored and the call ran with defaults; now it fails here instead.
+  - A **known argument of the wrong JSON type** is reported with the same code once the names check
+    out. `detail.sdk_error` carries the underlying message only when it is the SDK's fixed generic
+    text, and a placeholder otherwise.
 
 ## Security model
 
