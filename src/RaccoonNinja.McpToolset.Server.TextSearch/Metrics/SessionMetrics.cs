@@ -22,7 +22,7 @@ public sealed class SessionMetrics
     private long _packageRootCalls;
     private long _includeIgnoredCalls;
 
-    /// <summary>Record one completed tool call and its outcome (<c>ok</c> or <c>error</c>).</summary>
+    /// <summary>Record one completed tool call and its outcome (<c>ok</c>, <c>error</c>, or <c>binding_error</c> for a call rejected on argument shape before or around the tool body).</summary>
     /// <param name="tool">The tool name.</param>
     /// <param name="outcome">The call outcome.</param>
     public void RecordToolCall(string tool, string outcome)
