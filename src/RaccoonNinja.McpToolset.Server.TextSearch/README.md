@@ -307,5 +307,5 @@ Server.TextSearch/
 ```
 
 The security-critical primitives (root confinement, secret denylist, encoding detection, glob/regex
-selection) live in the shared `RaccoonNinja.McpToolset.Files` library, so they are unit-tested without a
+selection) live in the shared `RaccoonNinja.McpToolset.Common.Files` library, so they are unit-tested without a
 protocol harness and shared with the other servers in the toolset.

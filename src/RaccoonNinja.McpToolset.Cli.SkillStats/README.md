@@ -1,4 +1,4 @@
-# skill-usage
+# skill-stats-cli
 
 A tiny command-line hook that records which Claude Code skills you use. Wire it as a `PostToolUse`
 hook on the `Skill` tool and it appends one row per skill invocation to a local SQLite database. The
@@ -9,7 +9,7 @@ stdin, writes one row, and exits.
 
 ## Never breaks your session
 
-The tool call has already run by the time the hook fires, so `skill-usage` can only observe, never
+The tool call has already run by the time the hook fires, so `skill-stats-cli` can only observe, never
 block. Any failure is swallowed: it appends a line to `ingest-errors.log`, prints one line to stderr
 naming that log, and exits `2`. On a PostToolUse hook, exit `2` is the code that surfaces stderr back
 to Claude, so a persistent problem becomes visible in-session without ever interrupting the work. A
@@ -29,7 +29,7 @@ Publish the binary (see the repo's `eng/publish` scripts), then add the hook to 
         "hooks": [
           {
             "type": "command",
-            "command": "<path-to>/skill-usage",
+            "command": "<path-to>/skill-stats-cli",
             "timeout": 30
           }
         ]
@@ -40,7 +40,7 @@ Publish the binary (see the repo's `eng/publish` scripts), then add the hook to 
 ```
 
 `matcher: "Skill"` scopes the hook to the built-in Skill tool. `command` is the absolute path to the published binary 
-(`skill-usage.exe` on Windows); it takes no arguments, so there are no quoting subtleties. The `timeout` guards against
+(`skill-stats-cli.exe` on Windows); it takes no arguments, so there are no quoting subtleties. The `timeout` guards against
 a wedged store; ingest normally finishes in well under a second.
 
 ## Where the data lives

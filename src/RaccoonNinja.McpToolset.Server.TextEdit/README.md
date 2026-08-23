@@ -229,5 +229,5 @@ Server.TextEdit/
 
 The security-critical primitives (root confinement, secret denylist, encoding detection, glob/regex
 selection, atomic write with metadata preservation, ancestor-aware ignore evaluation) live in the shared
-`RaccoonNinja.McpToolset.Files` library, so they are unit-tested without a protocol harness and shared with
+`RaccoonNinja.McpToolset.Common.Files` library, so they are unit-tested without a protocol harness and shared with
 the other servers in the toolset.
