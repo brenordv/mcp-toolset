@@ -48,4 +48,7 @@ public enum VaultErrorCode
 
     /// <summary>A metadata-only update (set_meta) was called with no field to change.</summary>
     NothingToUpdate,
+
+    /// <summary>The MCP call's arguments did not match the tool's input schema (unknown/missing name, or a value of the wrong JSON type).</summary>
+    InvalidArgument,
 }

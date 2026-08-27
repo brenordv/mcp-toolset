@@ -24,7 +24,7 @@ public sealed class SessionMetrics
     private long _filesRestored;
     private long _wholeBaseCalls;
 
-    /// <summary>Record one completed tool call and its outcome (<c>ok</c> or <c>error</c>).</summary>
+    /// <summary>Record one completed tool call and its outcome (<c>ok</c>, <c>error</c>, or <c>binding_error</c> from the argument-shape filter).</summary>
     /// <param name="tool">The tool name.</param>
     /// <param name="outcome">The call outcome.</param>
     public void RecordToolCall(string tool, string outcome)

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace RaccoonNinja.McpToolset.Server.FileVault.Errors;
@@ -70,6 +71,33 @@ public static class ErrorMapping
             ["code"] = "internal",
             ["message"] = $"internal error: {exception.GetType().Name}",
         };
+        return new JsonObject { ["error"] = error }.ToJsonString();
+    }
+
+    /// <summary>
+    /// Render the error body for an argument-shape failure: an <c>invalid_argument</c> code, the
+    /// server-composed <paramref name="message"/>, and the <paramref name="detail"/> fields
+    /// (<c>expected_arguments</c>, <c>unknown_arguments</c>, <c>missing_required</c>, or
+    /// <c>sdk_error</c>) placed directly under <c>error</c>, matching the flat shape of the other
+    /// vault error bodies.
+    /// </summary>
+    /// <param name="message">The client-facing message; server-composed, never caller-supplied text.</param>
+    /// <param name="detail">The structured fields to attach under <c>error</c>.</param>
+    /// <returns>The single-line JSON error body.</returns>
+    public static string ToInvalidArgumentJson(string message, IReadOnlyDictionary<string, object> detail)
+    {
+        ArgumentNullException.ThrowIfNull(detail);
+        var error = new JsonObject
+        {
+            ["code"] = VaultErrorCode.InvalidArgument.ToWireCode(),
+            ["message"] = message,
+        };
+
+        foreach (var field in detail)
+        {
+            error[field.Key] = JsonSerializer.SerializeToNode(field.Value);
+        }
+
         return new JsonObject { ["error"] = error }.ToJsonString();
     }
 }

@@ -52,8 +52,10 @@
   </Folder>
   <Folder Name="/_Shared Utils/">
     <Project Path="src/RaccoonNinja.McpToolset.Common.Files/RaccoonNinja.McpToolset.Common.Files.csproj" />
+    <Project Path="src/RaccoonNinja.McpToolset.Common.Mcp/RaccoonNinja.McpToolset.Common.Mcp.csproj" />
     <Project Path="src/RaccoonNinja.McpToolset.Common.SkillStats/RaccoonNinja.McpToolset.Common.SkillStats.csproj" />
     <Project Path="tests/RaccoonNinja.McpToolset.Common.Files.Tests/RaccoonNinja.McpToolset.Common.Files.Tests.csproj" />
+    <Project Path="tests/RaccoonNinja.McpToolset.Common.Mcp.Tests/RaccoonNinja.McpToolset.Common.Mcp.Tests.csproj" />
     <Project Path="tests/RaccoonNinja.McpToolset.Common.SkillStats.Tests/RaccoonNinja.McpToolset.Common.SkillStats.Tests.csproj" />
   </Folder>
 </Solution>

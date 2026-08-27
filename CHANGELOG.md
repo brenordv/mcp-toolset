@@ -1,4 +1,21 @@
 # Toolset Changelog
+## v16
+- Updated MCP: `git-ops` to v2.1.0 and `file-vault` to v3.2.0. Both now return a structured error for an 
+  unbindable tool argument instead of the SDK's opaque `An error occurred invoking '<tool>'.`. A call whose
+  argument names do not fit a tool's schema is rejected before the tool runs, naming unknown keys,
+  suggesting the likely intended name, listing missing required names (such as a `git_status` with no
+  `cwd`), and echoing `expected_arguments`; a known argument of the wrong JSON type (for example
+  `vault_save` `tags` passed as a comma-joined string rather than an array) is reported with the same code
+  after the SDK's binder rejects it, carrying the SDK's fixed generic text in `sdk_error`. This ports the
+  mechanism `text-search` gained in v15 to the other two servers. Behavior change: an unknown argument name
+  alongside valid ones is now rejected rather than silently ignored. Genuine `file-vault` domain errors
+  (`conflict`, `not_found`, and the rest) keep their own code.
+- Extended the same structured argument-shape error to `text-edit` (v1.3.0) and `skill-stats` (v1.1.0), and
+  extracted the shared name-validator into a new `Common.Mcp` library that all five servers now reference,
+  removing the per-server copies. `text-edit` carries the full `detail` (expected names, suggestions,
+  `sdk_error`); `skill-stats`, whose error body is a code and a message only, carries the diagnostics in the
+  message instead. `text-search` moved to `Common.Mcp` as an internal refactor (v1.4.1); no wire change.
+
 ## v15
 - Updated MCP: `text-search` to v1.4.0. Argument-shape mistakes now come back as the standard failure envelope with `error.code` `InvalidArgument` instead of a bare, bodiless SDK message: a call whose argument names do not fit a tool's schema is rejected before the tool runs, naming each unknown key, suggesting the schema name it likely meant when one is close (`isRegex` for `is_regex`, `globs` for `glob`), listing any missing required name, and echoing the full `expected_arguments`. A known argument of the wrong JSON type is reported with the same code after the SDK's binder rejects it, with the SDK's fixed generic text in `detail.sdk_error`. Behavior change: an unknown argument name alongside valid ones is now rejected rather than silently ignored, so a sloppy call that used to succeed on defaults (a misspelled `globs` quietly sweeping the whole scope) now fails with a structured, correctable error. Shape errors set `IsError = true` next to the envelope; domain errors keep `IsError` unset as before.
 - Completed the naming-consistency pass in the documentation: renamed the remaining `SkillUsage` references to `SkillStatsCli` and the `Files` references to `Common.Files` across the root and per-project READMEs, following the v14 project and namespace renames.

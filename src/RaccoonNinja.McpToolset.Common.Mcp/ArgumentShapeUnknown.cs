@@ -1,4 +1,4 @@
-namespace RaccoonNinja.McpToolset.Server.TextSearch.Tools;
+namespace RaccoonNinja.McpToolset.Common.Mcp;
 
 /// <summary>
 /// One unknown argument the caller supplied: the sanitized name as given, and the closest schema
@@ -6,4 +6,4 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Tools;
 /// </summary>
 /// <param name="Given">The caller's argument name, control-stripped and length-capped for safe echo.</param>
 /// <param name="DidYouMean">The closest schema argument name, or <c>null</c> when there is no close match.</param>
-internal sealed record ArgumentShapeUnknown(string Given, string DidYouMean);
+public sealed record ArgumentShapeUnknown(string Given, string DidYouMean);

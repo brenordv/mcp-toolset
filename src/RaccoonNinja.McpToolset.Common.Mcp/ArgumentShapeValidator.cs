@@ -1,15 +1,18 @@
 using System.Text;
 using System.Text.Json;
 
-namespace RaccoonNinja.McpToolset.Server.TextSearch.Tools;
+namespace RaccoonNinja.McpToolset.Common.Mcp;
 
 /// <summary>
 /// Pure argument-name validation against a tool's JSON input schema. It compares the supplied names to
 /// the schema's <c>properties</c> and <c>required</c> lists and reports the unknown and missing names,
 /// each unknown carrying a best-effort suggestion. No I/O and no SDK types beyond
-/// <see cref="JsonElement"/>, so it is unit-tested directly.
+/// <see cref="JsonElement"/>, so it is unit-tested directly. The input schema is trusted, server-defined
+/// data: each server passes its own tool's input schema, and the suggestion search runs an edit-distance
+/// pass over the schema's property names, so a caller feeding an untrusted schema with very long names
+/// owns that cost.
 /// </summary>
-internal static class ArgumentShapeValidator
+public static class ArgumentShapeValidator
 {
     /// <summary>The most unknown keys echoed back; any beyond this are still rejected but not named.</summary>
     private const int MaxEchoedUnknown = 5;

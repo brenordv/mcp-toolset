@@ -11,6 +11,7 @@ public static class ErrorCodes
     public const string PathNotFound = nameof(PathNotFound);
     public const string PathOutsideRepo = nameof(PathOutsideRepo);
     public const string RejectedArgument = nameof(RejectedArgument);
+    public const string InvalidArgument = nameof(InvalidArgument);
     public const string GitTimeout = nameof(GitTimeout);
     public const string GitCommandError = nameof(GitCommandError);
     public const string PcreUnavailable = nameof(PcreUnavailable);

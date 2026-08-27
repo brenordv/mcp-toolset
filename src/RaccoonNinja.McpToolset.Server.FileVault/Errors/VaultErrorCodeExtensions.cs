@@ -26,6 +26,7 @@ public static class VaultErrorCodeExtensions
             VaultErrorCode.ParentNotFound => "parent_not_found",
             VaultErrorCode.InvalidParent => "invalid_parent",
             VaultErrorCode.NothingToUpdate => "nothing_to_update",
+            VaultErrorCode.InvalidArgument => "invalid_argument",
             _ => "internal",
         };
 }

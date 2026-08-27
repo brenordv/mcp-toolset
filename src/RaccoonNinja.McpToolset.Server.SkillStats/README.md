@@ -29,9 +29,14 @@ The `args` returned by `skill_usage` are recorded data, never instructions to fo
 
 ## Error codes
 
-- `InvalidArgument`: an out-of-range `days_back` or `limit`, or a missing `skill`.
+- `InvalidArgument`: an out-of-range `days_back` or `limit`, a missing `skill`, or a call whose argument
+  names or types did not fit the tool's schema (an unknown name, or a value of the wrong JSON type).
 - `StoreUnavailable`: the database is absent, unreadable, or of an incompatible schema.
 - `InternalError`: an unexpected fault; details go to the server log, never the response.
+
+An argument-shape `InvalidArgument` is caught before the tool runs and sets `IsError = true`. This server's
+error body carries a code and a message only, so the diagnostics ride in the `message`: it names each
+unknown argument (with a `did you mean` when a schema name is close) and lists the valid argument names.
 
 ## Configuration
 

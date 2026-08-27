@@ -95,6 +95,7 @@ public static class Program
             })
             .WithStdioServerTransport()
             .WithToolsFromAssembly(typeof(Program).Assembly)
+            .WithRequestFilters(filters => filters.AddCallToolFilter(ArgumentShapeFilter.Create(metrics)))
             .WithPromptsFromAssembly(typeof(Program).Assembly)
             .WithListResourcesHandler((context, _) =>
                 ValueTask.FromResult(VaultResourceHandlers.ListResources(
