@@ -1,3 +1,7 @@
+## v1.4.1
+- Internal: the argument-shape name validator moved to the shared `Common.Mcp` library, shared with the
+  other servers that run the same filter. No wire or behavior change.
+
 ## v1.4.0
 - Argument-shape mistakes now come back as the standard failure envelope with `error.code`
   `InvalidArgument`, not a bare bodiless SDK message. A call whose argument names do not fit a tool's

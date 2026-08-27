@@ -1,3 +1,16 @@
+## v3.2.0
+- Argument-shape mistakes now come back as a structured error body with `code` `invalid_argument`, not a
+  bare, bodiless SDK message (`An error occurred invoking '<tool>'.`). A call whose argument names do not
+  fit a tool's schema is rejected before the tool runs: the error names each unknown key, suggests the
+  schema name it likely meant when one is close (`tag` for `tags`), lists any missing required name, and
+  echoes the full `expected_arguments`. A known argument of the wrong JSON type, the common one being
+  `tags` sent as a comma-joined string instead of an array, is reported with the same code after the SDK's
+  binder rejects it, carrying the SDK's fixed generic text in `sdk_error`. Genuine domain errors
+  (`conflict`, `not_found`, and the rest) are untouched and keep their own code.
+- Behavior change: an unknown argument name alongside valid ones is now rejected rather than silently
+  ignored by the SDK.
+- The shutdown metrics summary gained a `binding_error` outcome bucket per tool.
+
 ## v3.1.0
 - New deviation D9: `vault_edit_section` now matches a heading by either its rendered plain text (inline
   markdown stripped, as before) or its verbatim source text with the delimiters kept. A heading that

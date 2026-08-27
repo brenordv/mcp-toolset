@@ -1,11 +1,10 @@
 using System.Text.Json;
-using RaccoonNinja.McpToolset.Server.TextSearch.Tools;
 
-namespace RaccoonNinja.McpToolset.Server.TextSearch.Tests.Tools;
+namespace RaccoonNinja.McpToolset.Common.Mcp.Tests;
 
 public sealed class ArgumentShapeValidatorTests
 {
-    private const string SearchSchema = """
+    private const string ToolSchema = """
         {
           "type": "object",
           "properties": {
@@ -34,7 +33,7 @@ public sealed class ArgumentShapeValidatorTests
     public void Validate_MissingRequired_IsInvalidAndNamesIt()
     {
         // Arrange
-        var schema = Parse(SearchSchema);
+        var schema = Parse(ToolSchema);
 
         // Act
         var result = ArgumentShapeValidator.Validate(schema, ["glob"]);
@@ -49,7 +48,7 @@ public sealed class ArgumentShapeValidatorTests
     public void Validate_CamelCaseUnknown_SuggestsSnakeCaseTwin()
     {
         // Arrange
-        var schema = Parse(SearchSchema);
+        var schema = Parse(ToolSchema);
 
         // Act
         var result = ArgumentShapeValidator.Validate(schema, ["pattern", "isRegex"]);
@@ -66,7 +65,7 @@ public sealed class ArgumentShapeValidatorTests
     public void Validate_PascalCaseName_IsUnknownAndSuggestsLowercaseTwin()
     {
         // Arrange
-        var schema = Parse(SearchSchema);
+        var schema = Parse(ToolSchema);
 
         // Act
         var result = ArgumentShapeValidator.Validate(schema, ["Pattern"]);
@@ -82,7 +81,7 @@ public sealed class ArgumentShapeValidatorTests
     public void Validate_PluralUnknown_SuggestsSingular()
     {
         // Arrange
-        var schema = Parse(SearchSchema);
+        var schema = Parse(ToolSchema);
 
         // Act
         var result = ArgumentShapeValidator.Validate(schema, ["pattern", "globs"]);
@@ -97,7 +96,7 @@ public sealed class ArgumentShapeValidatorTests
     public void Validate_UnknownWithNoCloseMatch_HasNoSuggestion()
     {
         // Arrange
-        var schema = Parse(SearchSchema);
+        var schema = Parse(ToolSchema);
 
         // Act
         var result = ArgumentShapeValidator.Validate(schema, ["pattern", "zzzzzzzz"]);
@@ -112,7 +111,7 @@ public sealed class ArgumentShapeValidatorTests
     public void Validate_WellFormedCall_IsValidAndListsExpectedInSchemaOrder()
     {
         // Arrange
-        var schema = Parse(SearchSchema);
+        var schema = Parse(ToolSchema);
 
         // Act
         var result = ArgumentShapeValidator.Validate(schema, ["pattern", "is_regex", "glob"]);
@@ -128,7 +127,7 @@ public sealed class ArgumentShapeValidatorTests
     public void Validate_EmptyArgumentsWithRequired_IsInvalid()
     {
         // Arrange
-        var schema = Parse(SearchSchema);
+        var schema = Parse(ToolSchema);
 
         // Act
         var result = ArgumentShapeValidator.Validate(schema, []);
@@ -157,7 +156,7 @@ public sealed class ArgumentShapeValidatorTests
     public void Validate_MoreThanFiveUnknown_EchoesFiveButStaysInvalid()
     {
         // Arrange
-        var schema = Parse(SearchSchema);
+        var schema = Parse(ToolSchema);
         string[] arguments = ["pattern", "u1", "u2", "u3", "u4", "u5", "u6", "u7"];
 
         // Act
@@ -172,7 +171,7 @@ public sealed class ArgumentShapeValidatorTests
     public void Validate_MultiByteKeyBeyondCap_TruncatesOnRuneBoundary()
     {
         // Arrange
-        var schema = Parse(SearchSchema);
+        var schema = Parse(ToolSchema);
         var emoji = char.ConvertFromUtf32(0x1F600);
         var longKey = string.Concat(Enumerable.Repeat(emoji, 40));
 
@@ -190,7 +189,7 @@ public sealed class ArgumentShapeValidatorTests
     public void Validate_KeyWithControlCharacters_StripsThem()
     {
         // Arrange
-        var schema = Parse(SearchSchema);
+        var schema = Parse(ToolSchema);
         var noisyKey = "gl" + (char)0 + "ob" + (char)9 + "s";
 
         // Act

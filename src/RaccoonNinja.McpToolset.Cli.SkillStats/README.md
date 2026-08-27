@@ -18,7 +18,9 @@ malformed or oversized payload, or a skill it cannot name, is skipped silently w
 ## Install
 
 Publish the binary (see the repo's `eng/publish` scripts), then add the hook to your
-`~/.claude/settings.json`:
+`~/.claude/settings.json`. The wiring differs by platform.
+
+On macOS and Linux, point `command` straight at the published binary:
 
 ```json
 {
@@ -39,9 +41,38 @@ Publish the binary (see the repo's `eng/publish` scripts), then add the hook to 
 }
 ```
 
-`matcher: "Skill"` scopes the hook to the built-in Skill tool. `command` is the absolute path to the published binary 
-(`skill-stats-cli.exe` on Windows); it takes no arguments, so there are no quoting subtleties. The `timeout` guards against
-a wedged store; ingest normally finishes in well under a second.
+On Windows, do not name the `.exe` as `command` directly. Claude Code does not reliably start a bare
+`.exe` given as `command`, and when it fails to start the process never runs at all: no row is
+written and nothing lands in `ingest-errors.log`, because the binary is never reached. Wrap it in
+`cmd.exe /c`, which Claude Code does start and which in turn launches the CLI with stdin inherited, so
+the JSON payload still arrives:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd.exe",
+            "args": ["/c", "C:\\path\\to\\skill-stats-cli.exe"],
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`matcher: "Skill"` scopes the hook to the built-in Skill tool. On Unix the `command` is the absolute
+path to the published binary and runs through a shell, so a bare path starts on its own. On Windows
+that same bare-path form is silently never started, which is why the binary goes through `cmd.exe /c`
+instead. `powershell.exe` with the binary in a `-Command` block works too, but `cmd.exe /c` is the
+shortest form that hands the child process stdin unchanged. The `timeout` guards against a wedged
+store; ingest normally finishes in well under a second.
 
 ## Where the data lives
 
@@ -50,21 +81,24 @@ Everything sits under `~/.skill-stats` (Unix mode `0700`):
 - `skill-stats.db`: the SQLite database. Delete it to start history over.
 - `ingest-errors.log`: one line per failure or skip, no payload content. Self-rotates to `ingest-errors.old` past 5 MiB.
 
-Set `SKILL_STATS_HOME` to relocate the store. Point the hook and the `skill-stats` server at the same home, or they 
+Set `SKILL_STATS_HOME` to relocate the store. Point the hook and the `skill-stats` server at the same home, or they
 read and write different databases. Keep it on a local disk: SQLite's cross-process locking is unreliable on network or
-synced volumes, and the store can hold prompt-derived skill input. 
+synced volumes, and the store can hold prompt-derived skill input.
 On Windows the store relies on your profile's default ACLs rather than a `0700` mode.
 
 ## What gets recorded
 
 Per invocation: the skill name (leading `/` stripped, so `csharp` and `/csharp` are one skill), the skill input as text
-(capped at 8192 chars), the session id, the workspace directory, and a UTC timestamp. The skill input can contain 
+(capped at 8192 chars), the session id, the workspace directory, and a UTC timestamp. The skill input can contain
 prompt text, which is why the store stays local and user-restricted.
 
 ## Nothing is being recorded?
 
 - The hook is in `~/.claude/settings.json` under `PostToolUse` with `matcher` spelled exactly `Skill`.
 - The `command` path is absolute and points at the executable (and is executable on Unix).
+- On Windows, `command` is `cmd.exe` with the binary passed as `["/c", "<path>\\skill-stats-cli.exe"]`, not the bare
+  `.exe` path. Claude Code does not start a bare `.exe`, so the store stays empty with no error line at all, even though
+  the skill's own tool call succeeded.
 - Read `~/.skill-stats/ingest-errors.log` for skipped or failed lines.
 - Ask the `skill-stats` server's `usage_summary`: it reports the row count and the error-log size and
   last-write time, so "the hook never fired" and "the hook fired but failed" are distinguishable.

@@ -366,12 +366,20 @@ On failure, `results` is a well-formed empty list and `error` carries a structur
 | `PathNotFound`      | A path does not exist                    |
 | `PathOutsideRepo`   | A path escaped the repository root       |
 | `RejectedArgument`  | An argument failed shape validation      |
+| `InvalidArgument`   | Argument names/types did not fit schema  |
 | `GitTimeout`        | The subprocess exceeded the 30 s timeout |
 | `GitCommandError`   | git exited non-zero for another reason   |
 | `PcreUnavailable`   | Regex requested but git lacks PCRE2      |
 
 Client-facing error detail is data-free (exit code, parameter name). The scrubbed git stderr tail is logged
 server-side only, since it can echo user-controlled paths or refs.
+
+An `InvalidArgument` reports a call whose argument names or types did not fit the matched tool's schema, so
+the tool never ran; its failed result sets `IsError = true`, where git-ops runtime errors leave it unset.
+An unknown name is rejected with a `did_you_mean` when a schema name is close, `detail.missing_required`
+lists any required name left out (a `git_status` with no `cwd`, say), and `detail.expected_arguments` lists
+every name the tool accepts. A known name sent with the wrong JSON type reports the same code once the names
+check out. Only argument names are echoed back, never values.
 
 ---
 

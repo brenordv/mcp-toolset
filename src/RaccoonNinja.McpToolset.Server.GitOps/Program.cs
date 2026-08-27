@@ -42,7 +42,8 @@ public static class Program
         builder.Services
             .AddMcpServer()
             .WithStdioServerTransport()
-            .WithToolsFromAssembly(typeof(Program).Assembly);
+            .WithToolsFromAssembly(typeof(Program).Assembly)
+            .WithRequestFilters(filters => filters.AddCallToolFilter(ArgumentShapeFilter.Create(metrics)));
 
         // stdout sentinel goes in AFTER MCP wiring, so the stdio transport keeps its raw stream.
         StdoutSentinel.Install();

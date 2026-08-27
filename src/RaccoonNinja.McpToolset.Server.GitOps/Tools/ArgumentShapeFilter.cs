@@ -6,11 +6,13 @@ using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Common.Mcp;
-using RaccoonNinja.McpToolset.Server.TextSearch.Envelope;
-using RaccoonNinja.McpToolset.Server.TextSearch.Errors;
-using RaccoonNinja.McpToolset.Server.TextSearch.Metrics;
+using RaccoonNinja.McpToolset.Server.GitOps.Envelope;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
+using RaccoonNinja.McpToolset.Server.GitOps.Logging;
+using RaccoonNinja.McpToolset.Server.GitOps.Metrics;
 
-namespace RaccoonNinja.McpToolset.Server.TextSearch.Tools;
+namespace RaccoonNinja.McpToolset.Server.GitOps.Tools;
 
 /// <summary>
 /// A call-tool filter that turns SDK argument-binding failures into the server's standard failure
@@ -66,15 +68,15 @@ internal static class ArgumentShapeFilter
             catch (Exception) when (argumentNames.Length > 0)
             {
                 // The SDK's argument binder threw before the tool ran. This server's tool bodies never
-                // throw (every fault is wrapped into an envelope by ToolCommon.WrapAsync), so an exception
-                // escaping next is a bind failure around the method; with the names already validated, a
-                // wrong-typed argument is the cause. The SDK renders its fixed generic text for this, which
-                // RewriteFailure reconstructs from the tool name for detail.sdk_error.
+                // throw (ToolCommon.WrapAsync wraps every fault into an envelope), so an exception escaping
+                // next is a bind failure around the method; with the names already validated, a wrong-typed
+                // argument is the cause. RewriteFailure reconstructs the SDK's fixed generic text from the
+                // tool name for detail.sdk_error.
                 RecordBindingError(metrics, context, tool.ProtocolTool.Name, "type binding failure");
                 return RewriteFailure(validation.Expected, tool.ProtocolTool.Name, null);
             }
 
-            if (argumentNames.Length == 0 || !IsRewritableBindingError(result, out var sdkText))
+            if (argumentNames.Length == 0 || !IsBareTemplateError(result, tool.ProtocolTool.Name, out var sdkText))
             {
                 return result;
             }
@@ -92,7 +94,13 @@ internal static class ArgumentShapeFilter
     private static string[] ArgumentNamesOf(CallToolRequestParams parameters)
         => parameters?.Arguments is { } arguments ? arguments.Keys.ToArray() : [];
 
-    private static bool IsRewritableBindingError(CallToolResult result, out string sdkText)
+    /// <summary>
+    /// True only when the SDK returned its fixed generic failure for this exact tool. The match is the
+    /// full bare template with its trailing period: a real git-ops envelope is valid JSON, never this
+    /// string. The gate reconstructs the SDK's wording, so a future SDK reword would stop it firing; the
+    /// degradation is graceful (the opaque string passes through un-rewritten, never a misclassification).
+    /// </summary>
+    private static bool IsBareTemplateError(CallToolResult result, string toolName, out string sdkText)
     {
         sdkText = null;
         if (result.IsError != true || result.Content is not { Count: 1 } content || content[0] is not TextContentBlock text)
@@ -100,7 +108,7 @@ internal static class ArgumentShapeFilter
             return false;
         }
 
-        if (ParsesAsEnvelope(text.Text))
+        if (!string.Equals(text.Text, BareTemplate(toolName), StringComparison.Ordinal))
         {
             return false;
         }
@@ -109,24 +117,8 @@ internal static class ArgumentShapeFilter
         return true;
     }
 
-    private static bool ParsesAsEnvelope(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(text);
-            return document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("error", out _);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
+    private static string BareTemplate(string toolName)
+        => $"An error occurred invoking '{toolName}'.";
 
     private static CallToolResult PreValidationFailure(ArgumentShapeResult validation)
     {
@@ -179,7 +171,7 @@ internal static class ArgumentShapeFilter
 
     private static CallToolResult RewriteFailure(IReadOnlyList<string> expected, string toolName, string sdkText)
     {
-        var template = $"An error occurred invoking '{toolName}'.";
+        var template = BareTemplate(toolName);
         var gatedSdkError = sdkText is null || string.Equals(sdkText, template, StringComparison.Ordinal)
             ? template
             : WithheldSdkError;
@@ -194,7 +186,7 @@ internal static class ArgumentShapeFilter
 
     private static CallToolResult Failure(string message, IDictionary<string, object> detail)
     {
-        var envelope = ResultEnvelope.Failure(new TextSearchException(ErrorCodes.InvalidArgument, message, detail));
+        var envelope = ResultEnvelope.Failure(new InvalidArgumentException(message, detail));
         var json = JsonSerializer.Serialize(envelope, McpJsonUtilities.DefaultOptions);
         return new CallToolResult
         {
@@ -213,8 +205,11 @@ internal static class ArgumentShapeFilter
             return;
         }
 
-        new CallContext(toolName, loggerFactory.CreateLogger(toolName))
-            .Log(LogLevel.Warning, BindingErrorOutcome, message: logMessage);
+        new CallContext(toolName, loggerFactory.CreateLogger(toolName)).Log(
+            LogLevel.Warning,
+            BindingErrorOutcome,
+            message: logMessage,
+            extras: new Dictionary<string, object> { [LogFields.ErrorCode] = ErrorCodes.InvalidArgument });
     }
 
     private static string PreValidationLog(ArgumentShapeResult validation)

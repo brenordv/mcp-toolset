@@ -10,7 +10,7 @@
          parameter names, and the wire contract uses snake_case (start_line, case_sensitive,
          include_ignored, ...). Scoped to this project only. -->
     <NoWarn>$(NoWarn);CA1707</NoWarn>
-    <Version>1.4.0</Version>
+    <Version>1.4.1</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RaccoonNinja.McpToolset.Common.Files\RaccoonNinja.McpToolset.Common.Files.csproj" />
+    <ProjectReference Include="..\RaccoonNinja.McpToolset.Common.Mcp\RaccoonNinja.McpToolset.Common.Mcp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

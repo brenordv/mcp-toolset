@@ -123,6 +123,16 @@ fields:
 Archived files still answer `vault_get`, `vault_history`, and `vault_purge`; every mutating tool rejects them with
 `archived` until you `vault_restore`.
 
+### Argument-shape errors
+
+`invalid_argument` reports a call whose argument names or types did not fit the matched tool's schema, so the
+body never ran; its failed tool result also carries `IsError = true`. An unknown argument name is rejected
+(with a `did_you_mean` when a schema name is close), `error.missing_required` lists any required name left out,
+and `error.expected_arguments` lists every name the tool accepts. A known name sent with the wrong JSON type
+(for example `tags` as a string instead of an array) reports the same code once the names check out, with the
+SDK's own text under `error.sdk_error` only when it is the fixed generic string. A genuine domain error, a
+stale-`base_version` `conflict` for one, is never rewritten. Only argument names are echoed back, never values.
+
 > **Note:** unlike the GitOps server, this server intentionally does **not** use the toolset's `ResultEnvelope`
 > convention. Its wire contract is pinned to the Rust `vault-mcp` server for drop-in compatibility.
 

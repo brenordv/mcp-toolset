@@ -6,19 +6,21 @@ using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Common.Mcp;
-using RaccoonNinja.McpToolset.Server.TextSearch.Envelope;
-using RaccoonNinja.McpToolset.Server.TextSearch.Errors;
-using RaccoonNinja.McpToolset.Server.TextSearch.Metrics;
+using RaccoonNinja.McpToolset.Server.SkillStats.Envelope;
+using RaccoonNinja.McpToolset.Server.SkillStats.Errors;
+using RaccoonNinja.McpToolset.Server.SkillStats.Metrics;
 
-namespace RaccoonNinja.McpToolset.Server.TextSearch.Tools;
+namespace RaccoonNinja.McpToolset.Server.SkillStats.Tools;
 
 /// <summary>
 /// A call-tool filter that turns SDK argument-binding failures into the server's standard failure
 /// envelope. It pre-validates each call's argument names against the matched tool's own input schema and
 /// short-circuits an unknown or missing-required name before the tool runs; for a well-named call that
 /// still fails inside the SDK (the dominant cause being an argument of the wrong JSON type) it rewrites
-/// the SDK's contentless generic error into an <see cref="ErrorCodes.InvalidArgument"/> envelope. Every
-/// other result passes through untouched.
+/// the SDK's contentless generic error into an <see cref="ErrorCodes.InvalidArgument"/> envelope. This
+/// server's error contract carries a code and a message only, so the diagnostics (the unknown names, the
+/// suggestion, the expected names) ride in the message rather than a structured detail object. Every other
+/// result passes through untouched.
 /// </summary>
 internal static class ArgumentShapeFilter
 {
@@ -26,9 +28,7 @@ internal static class ArgumentShapeFilter
         "argument names matched the schema but the call failed before the tool ran; most likely an "
         + "argument has the wrong JSON type; check each argument's type against the tool schema";
 
-    private const string ExpectedNamesHint = "valid argument names are listed in detail.expected_arguments";
-
-    private const string WithheldSdkError = "withheld: non-generic SDK error text";
+    private const string NoArgumentsClause = "this tool takes no arguments";
 
     private const string BindingErrorOutcome = "binding_error";
 
@@ -63,24 +63,28 @@ internal static class ArgumentShapeFilter
             {
                 throw;
             }
+            catch (McpException)
+            {
+                // The tool bodies never throw past ToolCommon.WrapAsync (it wraps every fault into an
+                // envelope), so an McpException here comes from SDK infrastructure, not a bind failure; it
+                // passes through untouched rather than being rewritten.
+                throw;
+            }
             catch (Exception) when (argumentNames.Length > 0)
             {
-                // The SDK's argument binder threw before the tool ran. This server's tool bodies never
-                // throw (every fault is wrapped into an envelope by ToolCommon.WrapAsync), so an exception
-                // escaping next is a bind failure around the method; with the names already validated, a
-                // wrong-typed argument is the cause. The SDK renders its fixed generic text for this, which
-                // RewriteFailure reconstructs from the tool name for detail.sdk_error.
+                // A non-McpException escaping next is the SDK's argument binder throwing before the tool
+                // ran; with the names already validated, a wrong-typed argument is the cause.
                 RecordBindingError(metrics, context, tool.ProtocolTool.Name, "type binding failure");
-                return RewriteFailure(validation.Expected, tool.ProtocolTool.Name, null);
+                return RewriteFailure(validation.Expected);
             }
 
-            if (argumentNames.Length == 0 || !IsRewritableBindingError(result, out var sdkText))
+            if (argumentNames.Length == 0 || !IsBareTemplateError(result, tool.ProtocolTool.Name))
             {
                 return result;
             }
 
             RecordBindingError(metrics, context, tool.ProtocolTool.Name, "type binding failure");
-            return RewriteFailure(validation.Expected, tool.ProtocolTool.Name, sdkText);
+            return RewriteFailure(validation.Expected);
         };
     }
 
@@ -92,70 +96,27 @@ internal static class ArgumentShapeFilter
     private static string[] ArgumentNamesOf(CallToolRequestParams parameters)
         => parameters?.Arguments is { } arguments ? arguments.Keys.ToArray() : [];
 
-    private static bool IsRewritableBindingError(CallToolResult result, out string sdkText)
+    /// <summary>
+    /// True only when the SDK returned its fixed generic failure for this exact tool. The match is the
+    /// full bare template with its trailing period: a real skill-stats envelope is valid JSON, never this
+    /// string. The gate reconstructs the SDK's wording, so a future SDK reword would stop it firing; the
+    /// degradation is graceful (the opaque string passes through un-rewritten, never a misclassification).
+    /// </summary>
+    private static bool IsBareTemplateError(CallToolResult result, string toolName)
     {
-        sdkText = null;
         if (result.IsError != true || result.Content is not { Count: 1 } content || content[0] is not TextContentBlock text)
         {
             return false;
         }
 
-        if (ParsesAsEnvelope(text.Text))
-        {
-            return false;
-        }
-
-        sdkText = text.Text;
-        return true;
+        return string.Equals(text.Text, BareTemplate(toolName), StringComparison.Ordinal);
     }
 
-    private static bool ParsesAsEnvelope(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(text);
-            return document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("error", out _);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
+    private static string BareTemplate(string toolName)
+        => $"An error occurred invoking '{toolName}'.";
 
     private static CallToolResult PreValidationFailure(ArgumentShapeResult validation)
-    {
-        var detail = new Dictionary<string, object>(StringComparer.Ordinal);
-        if (validation.Unknown.Count > 0)
-        {
-            detail["unknown_arguments"] = validation.Unknown.Select(BuildUnknownEntry).ToList();
-        }
-
-        if (validation.MissingRequired.Count > 0)
-        {
-            detail["missing_required"] = validation.MissingRequired.ToList();
-        }
-
-        detail["expected_arguments"] = validation.Expected.ToList();
-
-        return Failure(PreValidationMessage(validation), detail);
-    }
-
-    private static Dictionary<string, object> BuildUnknownEntry(ArgumentShapeUnknown unknown)
-    {
-        var entry = new Dictionary<string, object>(StringComparer.Ordinal) { ["given"] = unknown.Given };
-        if (unknown.DidYouMean is not null)
-        {
-            entry["did_you_mean"] = unknown.DidYouMean;
-        }
-
-        return entry;
-    }
+        => Failure(PreValidationMessage(validation));
 
     private static string PreValidationMessage(ArgumentShapeResult validation)
     {
@@ -172,29 +133,21 @@ internal static class ArgumentShapeFilter
             parts.Add($"missing required argument '{missing}'");
         }
 
-        return parts.Count > 0
-            ? $"{string.Join("; ", parts)}; {ExpectedNamesHint}"
-            : ExpectedNamesHint;
+        var expectedClause = ExpectedNamesClause(validation.Expected);
+        return parts.Count > 0 ? $"{string.Join("; ", parts)}; {expectedClause}" : expectedClause;
     }
 
-    private static CallToolResult RewriteFailure(IReadOnlyList<string> expected, string toolName, string sdkText)
-    {
-        var template = $"An error occurred invoking '{toolName}'.";
-        var gatedSdkError = sdkText is null || string.Equals(sdkText, template, StringComparison.Ordinal)
-            ? template
-            : WithheldSdkError;
-        var detail = new Dictionary<string, object>(StringComparer.Ordinal)
-        {
-            ["expected_arguments"] = expected.ToList(),
-            ["sdk_error"] = gatedSdkError,
-        };
+    private static CallToolResult RewriteFailure(IReadOnlyList<string> expected)
+        => Failure($"{RewriteMessage}; {ExpectedNamesClause(expected)}");
 
-        return Failure(RewriteMessage, detail);
-    }
+    private static string ExpectedNamesClause(IReadOnlyList<string> expected)
+        => expected.Count > 0
+            ? $"valid argument names are: {string.Join(", ", expected)}"
+            : NoArgumentsClause;
 
-    private static CallToolResult Failure(string message, IDictionary<string, object> detail)
+    private static CallToolResult Failure(string message)
     {
-        var envelope = ResultEnvelope.Failure(new TextSearchException(ErrorCodes.InvalidArgument, message, detail));
+        var envelope = ResultEnvelope.Failure(SkillStatsException.InvalidArgument(message));
         var json = JsonSerializer.Serialize(envelope, McpJsonUtilities.DefaultOptions);
         return new CallToolResult
         {
@@ -213,8 +166,11 @@ internal static class ArgumentShapeFilter
             return;
         }
 
-        new CallContext(toolName, loggerFactory.CreateLogger(toolName))
-            .Log(LogLevel.Warning, BindingErrorOutcome, message: logMessage);
+        new CallContext(toolName, loggerFactory.CreateLogger(toolName)).Log(
+            LogLevel.Warning,
+            BindingErrorOutcome,
+            message: logMessage,
+            extras: new Dictionary<string, object> { [Logging.LogFields.ErrorCode] = ErrorCodes.InvalidArgument });
     }
 
     private static string PreValidationLog(ArgumentShapeResult validation)

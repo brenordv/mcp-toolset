@@ -120,6 +120,13 @@ a `reason`).
 | `InvalidArgument`           | An argument was missing, malformed, or out of range (including an unknown `source_encoding`, or a `cwd` that escapes the base, is not a directory, or is denylisted). |
 | `InternalError`             | An unexpected fault; details go to the log, never the client.                                    |
 
+An `InvalidArgument` also covers a call whose argument names or types did not fit the matched tool's
+schema, caught before the tool runs; unlike a domain error it sets `IsError = true`. An unknown name is
+rejected with a `did_you_mean` when a schema name is close, `detail.missing_required` lists any required
+name left out (a `replace_text` with no `pattern`, say), and `detail.expected_arguments` lists every name
+the tool accepts. A known name sent with the wrong JSON type reports the same code once the names check out.
+Only argument names are echoed back, never values.
+
 ## Security model
 
 **In plain terms:**

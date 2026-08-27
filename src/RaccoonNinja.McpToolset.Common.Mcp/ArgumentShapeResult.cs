@@ -1,10 +1,10 @@
-namespace RaccoonNinja.McpToolset.Server.TextSearch.Tools;
+namespace RaccoonNinja.McpToolset.Common.Mcp;
 
 /// <summary>
 /// The outcome of validating a call's argument names against a tool's input schema: whether the names
 /// are well-formed, plus the pieces a failure envelope is built from.
 /// </summary>
-internal sealed record ArgumentShapeResult
+public sealed record ArgumentShapeResult
 {
     /// <summary>Whether every supplied name is a schema property and every required name is present.</summary>
     public bool IsValid { get; init; }

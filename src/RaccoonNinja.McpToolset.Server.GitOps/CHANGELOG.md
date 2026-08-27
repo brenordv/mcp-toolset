@@ -1,3 +1,17 @@
+## v2.1.0
+- Argument-shape mistakes now come back as the standard failure envelope with `error.code`
+  `InvalidArgument`, not a bare, bodiless SDK message (`An error occurred invoking '<tool>'.`). A call
+  whose argument names do not fit a tool's schema is rejected before the tool runs: the error names each
+  unknown key, suggests the schema name it likely meant when one is close, lists any missing required name
+  (a `git_status` with no `cwd`, say), and echoes the full `expected_arguments`. A known argument of the
+  wrong JSON type is reported with the same code after the SDK's binder rejects it, carrying the SDK's fixed
+  generic text in `detail.sdk_error`. Shape errors set `IsError = true`; ordinary domain errors keep
+  `IsError` unset as before.
+- Behavior change: an unknown argument name alongside valid ones is now rejected rather than silently
+  ignored by the SDK on defaults.
+- The shutdown metrics summary gained a `binding_error` outcome bucket per tool, separating a client that
+  flails on the argument contract from an ordinary command error.
+
 ## v2.0.0
 - Renamed the assembly to `git-ops`.
 
