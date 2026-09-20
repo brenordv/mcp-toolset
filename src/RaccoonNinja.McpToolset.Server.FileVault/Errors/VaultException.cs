@@ -44,6 +44,12 @@ public sealed class VaultException : Exception
     /// <summary>The project strings that were tried and rejected (<c>ambiguous_project</c>).</summary>
     public IReadOnlyList<string> Tried { get; private init; }
 
+    /// <summary>
+    /// A fixed enum string categorizing an <c>invalid_argument</c> for logs only (<c>cursor_malformed</c>,
+    /// <c>cursor_stale</c>, <c>limit</c>, <c>query_empty</c>). Never serialized to the wire body.
+    /// </summary>
+    public string Reason { get; private init; }
+
     /// <summary>No active or archived file exists for the pair.</summary>
     /// <param name="project">The project namespace.</param>
     /// <param name="name">The file name (or the Rust-parity <c>"{name} (version {N})"</c> form).</param>
@@ -169,6 +175,21 @@ public sealed class VaultException : Exception
     /// <returns>The composed exception.</returns>
     public static VaultException InvalidParent(string reason)
         => new(VaultErrorCode.InvalidParent, $"invalid parent link: {reason}");
+
+    /// <summary>
+    /// An argument value was rejected by a tool's own validation (a bad <c>limit</c>, a malformed
+    /// or stale <c>cursor</c>, an empty <c>query</c>). The <paramref name="message"/> is
+    /// server-composed and client-facing; <paramref name="reason"/> is a fixed enum string kept for
+    /// logs only.
+    /// </summary>
+    /// <param name="message">The client-facing message; never caller-supplied text.</param>
+    /// <param name="reason">The fixed log-only reason category.</param>
+    /// <returns>The composed exception.</returns>
+    public static VaultException InvalidArgument(string message, string reason)
+        => new(VaultErrorCode.InvalidArgument, message)
+        {
+            Reason = reason,
+        };
 
     /// <summary>set_meta was called with no field to change.</summary>
     /// <returns>The composed exception.</returns>

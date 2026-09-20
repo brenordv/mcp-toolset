@@ -23,6 +23,37 @@ public sealed record VaultConfig
     /// </summary>
     public const int DefaultSplitHintChars = 14_000;
 
+    /// <summary>Default page size for <c>vault_list</c> when the caller omits <c>limit</c>.</summary>
+    public const int DefaultListLimit = 50;
+
+    /// <summary>Hard ceiling a <c>vault_list</c> <c>limit</c> is clamped to.</summary>
+    public const int MaxListLimit = 500;
+
+    /// <summary>Default result cap for <c>vault_search</c> when the caller omits <c>limit</c>.</summary>
+    public const int DefaultSearchLimit = 20;
+
+    /// <summary>Hard ceiling a <c>vault_search</c> <c>limit</c> is clamped to.</summary>
+    public const int MaxSearchLimit = 100;
+
+    /// <summary>Maximum snippets returned per matched note by <c>vault_search</c>.</summary>
+    public const int MaxSnippetsPerNote = 3;
+
+    /// <summary>Context window, in UTF-16 code units, on each side of a snippet match.</summary>
+    public const int SnippetContextChars = 80;
+
+    /// <summary>Hard cap, in UTF-16 code units, on a single snippet's extracted text.</summary>
+    public const int MaxSnippetChars = 240;
+
+    /// <summary>Maximum whitespace-separated query terms honored; extras are ignored.</summary>
+    public const int MaxQueryTerms = 16;
+
+    /// <summary>
+    /// Maximum accepted length of an encoded <c>vault_list</c> cursor, checked before any decode.
+    /// A max-length project (512 chars) plus a max-length name (128 chars) encodes to roughly 915
+    /// base64url chars, so this leaves margin while still bounding decode work.
+    /// </summary>
+    public const int MaxCursorChars = 2_048;
+
     /// <summary>The store root (<c>~/.vault-mcp</c> or <c>$VAULT_MCP_HOME</c>).</summary>
     public string Home { get; init; }
 

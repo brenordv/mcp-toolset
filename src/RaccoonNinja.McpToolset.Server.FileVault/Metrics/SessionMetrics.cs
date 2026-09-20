@@ -15,6 +15,8 @@ public sealed class SessionMetrics
     private readonly ConcurrentDictionary<string, long> _toolCalls = new(StringComparer.Ordinal);
     private long _internalErrors;
     private long _migrationsApplied;
+    private long _queryFallbacks;
+    private long _snapshotReadFailures;
     private readonly Lock _durationsLock = new();
     private readonly Queue<int> _durationsMs = new(DurationRingSize);
 
@@ -29,6 +31,19 @@ public sealed class SessionMetrics
 
     /// <summary>Record one internal (non-domain) failure.</summary>
     public void RecordInternalError() => Interlocked.Increment(ref _internalErrors);
+
+    /// <summary>Record one query that fell back to the ranked any-term pass.</summary>
+    public void RecordQueryFallback() => Interlocked.Increment(ref _queryFallbacks);
+
+    /// <summary>Record <paramref name="count"/> snapshots that <c>vault_search</c> could not read.</summary>
+    /// <param name="count">The number of unreadable snapshots on one call.</param>
+    public void RecordSnapshotReadFailures(int count)
+    {
+        if (count > 0)
+        {
+            Interlocked.Add(ref _snapshotReadFailures, count);
+        }
+    }
 
     /// <summary>Record the number of migrations applied at startup.</summary>
     /// <param name="count">The migration count.</param>
@@ -72,6 +87,8 @@ public sealed class SessionMetrics
             ["call_duration_ms_p95"] = p95,
             ["internal_errors_total"] = Interlocked.Read(ref _internalErrors),
             ["migrations_applied"] = Interlocked.Read(ref _migrationsApplied),
+            ["query_fallback_total"] = Interlocked.Read(ref _queryFallbacks),
+            ["snapshot_read_failures_total"] = Interlocked.Read(ref _snapshotReadFailures),
         };
     }
 

@@ -1,3 +1,24 @@
+## v3.3.0
+- `vault_list` `query` now degrades gracefully on multi-word input: it matches every term first (unchanged for
+  queries that already hit) and, only when that matches nothing, falls back to a ranked any-term match. The result's
+  new `query_mode` reports which pass ran (`all_terms` or `any_term_fallback`); it is omitted when no query was
+  given. At most the first 16 terms are used.
+- `vault_list` is now paginated. It gained `limit` (default 50, max 500) and an opaque keyset `cursor`, and its
+  result gained `count`, `truncated`, and (when more pages exist) `cursor`. Pass the cursor back with the other
+  arguments unchanged to continue; fallback-mode results are a rescue path and do not paginate (they cap and set
+  `truncated` without a cursor). Behavior change: an unfiltered `vault_list` now returns at most 50 items per page
+  where it previously returned every active note in one response.
+- New `vault_search` tool (D11): case-insensitive substring search inside the bodies of active notes, returning per
+  note the matched terms and up to three snippets of surrounding context (never whole bodies; each snippet at most
+  240 characters). It takes `query` (required), `project` (omitted searches all projects), and `limit` (default 20,
+  max 100), and shares `vault_list`'s all-terms-then-fallback query model. Bodies are read one at a time on demand,
+  so there is no body index and no schema change; a note whose snapshot cannot be read is skipped and counted in
+  `skipped`.
+- New deviations D10 (`vault_list` fallback + pagination + `query_mode`) and D11 (`vault_search`). The pagination
+  fields intentionally mirror the toolset's `count`/`truncated`/`cursor` naming and opaque-cursor semantics without
+  adopting its `ResultEnvelope`, keeping the Rust-compatible `items` shape.
+- Cursor and limit misuse, and an empty `vault_search` query, come back as `invalid_argument`.
+
 ## v3.2.0
 - Argument-shape mistakes now come back as a structured error body with `code` `invalid_argument`, not a
   bare, bodiless SDK message (`An error occurred invoking '<tool>'.`). A call whose argument names do not

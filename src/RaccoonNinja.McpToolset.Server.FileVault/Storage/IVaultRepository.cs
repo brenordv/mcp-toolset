@@ -46,10 +46,23 @@ public interface IVaultRepository
     /// <returns>The resolved record.</returns>
     FileRecord GetVersion(string project, string name, int version);
 
-    /// <summary>List active files matching <paramref name="filter"/>.</summary>
+    /// <summary>
+    /// List active files matching <paramref name="filter"/>. A multi-word query matches strictly
+    /// (every term) first; when that yields nothing and the query has at least two terms, a ranked
+    /// any-term fallback runs and the returned <see cref="ListRows.Mode"/> reports which pass won.
+    /// </summary>
     /// <param name="filter">Project/tags/query filters.</param>
-    /// <returns>Matching rows, ordered by <c>updated_at DESC, name ASC</c>.</returns>
-    IReadOnlyList<FileSummaryRow> List(ListFilter filter);
+    /// <returns>The matching rows and the mode that produced them.</returns>
+    ListRows List(ListFilter filter);
+
+    /// <summary>
+    /// Return every active file (optionally scoped to <paramref name="project"/>) with the
+    /// <c>rel_path</c> of its current-version snapshot, so <c>vault_search</c> can read bodies on
+    /// demand. Archived files are excluded.
+    /// </summary>
+    /// <param name="project">The project filter, or <c>null</c> for all projects.</param>
+    /// <returns>The candidate rows.</returns>
+    IReadOnlyList<SearchCandidateRow> SearchCandidates(string project);
 
     /// <summary>Return the full version history, newest first.</summary>
     /// <param name="project">The project namespace.</param>

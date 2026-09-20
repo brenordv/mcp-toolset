@@ -181,13 +181,162 @@ public sealed class VaultService(IVaultRepository repository, FileStore files, V
         return (record, content, children);
     }
 
-    /// <summary>List active files, optionally filtered by project, required tags, and an FTS query.</summary>
+    /// <summary>
+    /// List active files for internal, uncapped enumeration (resources, prompts), optionally
+    /// filtered by project, required tags, and a query. Rows come back in the canonical list order.
+    /// </summary>
     /// <param name="project">The project filter, or null for all projects.</param>
     /// <param name="tags">Required tags (all must match).</param>
-    /// <param name="query">The FTS query, or null.</param>
+    /// <param name="query">The query, or null.</param>
     /// <returns>The matching rows.</returns>
     public IReadOnlyList<FileSummaryRow> List(ProjectName project, IReadOnlyList<string> tags, string query)
-        => repository.List(new ListFilter { Project = project?.Value, Tags = tags ?? [], Query = query, });
+        => Ordered(repository.List(new ListFilter { Project = project?.Value, Tags = tags ?? [], Query = query }));
+
+    /// <summary>
+    /// A single, capped, cursor-paginated page for the <c>vault_list</c> tool. Applies the
+    /// keyset rule: the repository materializes the full filtered window, then this layer sorts
+    /// with the shared comparer and skips past the cursor before taking the page (never cap in
+    /// SQL and filter afterward). A fallback-mode result never carries a cursor and rejects one as
+    /// stale.
+    /// </summary>
+    /// <param name="project">The project filter, or null for all projects.</param>
+    /// <param name="tags">Required tags (all must match).</param>
+    /// <param name="query">The query, or null.</param>
+    /// <param name="limit">The page size; null uses the default, values above the ceiling clamp.</param>
+    /// <param name="cursor">The opaque cursor to resume after, or null for the first page.</param>
+    /// <returns>The page and its pagination state.</returns>
+    public ListPageResult ListPage(
+        ProjectName project,
+        IReadOnlyList<string> tags,
+        string query,
+        int? limit,
+        string cursor)
+    {
+        var effectiveLimit = ClampLimit(limit, VaultConfig.DefaultListLimit, VaultConfig.MaxListLimit);
+        var listRows = repository.List(new ListFilter { Project = project?.Value, Tags = tags ?? [], Query = query });
+        ListMode? reportedMode = string.IsNullOrWhiteSpace(query) ? null : listRows.Mode;
+
+        if (listRows.Mode == ListMode.AnyTermFallback)
+        {
+            if (cursor is not null)
+            {
+                throw VaultException.InvalidArgument(ListCursor.Message, "cursor_stale");
+            }
+
+            var rescue = listRows.Rows.Take(effectiveLimit).ToList();
+            return new ListPageResult
+            {
+                Items = rescue,
+                Count = rescue.Count,
+                Truncated = listRows.Rows.Count > rescue.Count,
+                Cursor = null,
+                QueryMode = reportedMode,
+            };
+        }
+
+        var ordered = listRows.Rows.OrderBy(row => row, ListOrdering.Comparer).ToList();
+        IEnumerable<FileSummaryRow> afterCursor = ordered;
+        if (cursor is not null)
+        {
+            var key = ListCursor.Decode(cursor);
+            afterCursor = ordered.Where(row => ListOrdering.IsAfterCursor(row, key.UpdatedAt, key.Name, key.Project));
+        }
+
+        var remaining = afterCursor.ToList();
+        var page = remaining.Take(effectiveLimit).ToList();
+        var truncated = remaining.Count > page.Count;
+        return new ListPageResult
+        {
+            Items = page,
+            Count = page.Count,
+            Truncated = truncated,
+            Cursor = truncated && page.Count > 0 ? ListCursor.Encode(page[^1]) : null,
+            QueryMode = reportedMode,
+        };
+    }
+
+    /// <summary>
+    /// Search inside the bodies of active notes for the <c>vault_search</c> tool. Bodies are read
+    /// and matched one at a time (peak memory stays a single body), decoded UTF-8 with the
+    /// replacement fallback so malformed bytes never throw, and an unreadable snapshot is skipped
+    /// and counted rather than failing the call.
+    /// </summary>
+    /// <param name="project">The project filter, or null for all projects.</param>
+    /// <param name="query">The search query; at least one non-whitespace term is required.</param>
+    /// <param name="limit">The result cap; null uses the default, values above the ceiling clamp.</param>
+    /// <returns>The ranked matches and the scan counters.</returns>
+    public SearchOutcome Search(ProjectName project, string query, int? limit)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            throw VaultException.InvalidArgument("query must contain at least one non-whitespace term", "query_empty");
+        }
+
+        var effectiveLimit = ClampLimit(limit, VaultConfig.DefaultSearchLimit, VaultConfig.MaxSearchLimit);
+        var candidates = repository.SearchCandidates(project?.Value);
+        var terms = ContentSearcher.Tokenize(query);
+
+        var matched = new List<ContentMatch>();
+        var skipped = new List<SnapshotSkip>();
+        long bytesScanned = 0;
+        foreach (var candidate in candidates)
+        {
+            byte[] bytes;
+            try
+            {
+                bytes = files.ReadSnapshot(candidate.RelPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                skipped.Add(new SnapshotSkip
+                {
+                    Project = candidate.Project,
+                    Name = candidate.Name,
+                    ExceptionType = ex.GetType().Name,
+                });
+                continue;
+            }
+
+            bytesScanned += bytes.LongLength;
+            var match = ContentSearcher.MatchDocument(candidate, Encoding.UTF8.GetString(bytes), terms);
+            if (match.MatchedTerms.Count > 0)
+            {
+                matched.Add(match);
+            }
+        }
+
+        var result = ContentSearcher.SelectAndRank(matched, terms.Count);
+        var page = result.Matches.Take(effectiveLimit).ToList();
+        return new SearchOutcome
+        {
+            Items = page,
+            Count = page.Count,
+            Truncated = result.Matches.Count > page.Count,
+            Mode = result.Mode,
+            NotesScanned = candidates.Count,
+            BytesScanned = bytesScanned,
+            Skipped = skipped,
+        };
+    }
+
+    /// <summary>Return the rows in canonical order (fallback rows arrive already ordered by rank).</summary>
+    private static IReadOnlyList<FileSummaryRow> Ordered(ListRows listRows)
+        => listRows.Mode == ListMode.AnyTermFallback
+            ? listRows.Rows
+            : [.. listRows.Rows.OrderBy(row => row, ListOrdering.Comparer)];
+
+    /// <summary>Resolve a caller limit: null uses the default, non-positive is rejected, over-ceiling clamps.</summary>
+    private static int ClampLimit(int? limit, int defaultLimit, int maxLimit)
+    {
+        if (limit is null)
+        {
+            return defaultLimit;
+        }
+
+        return limit.Value > 0
+            ? Math.Min(limit.Value, maxLimit)
+            : throw VaultException.InvalidArgument("limit must be a positive integer", "limit");
+    }
 
     /// <summary>Return the version history of a file, newest first.</summary>
     /// <param name="project">The resolved project.</param>

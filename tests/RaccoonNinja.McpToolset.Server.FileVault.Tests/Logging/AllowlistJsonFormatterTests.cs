@@ -53,6 +53,39 @@ public class AllowlistJsonFormatterTests
     }
 
     [Fact]
+    public void Format_SearchAndPaginationFields_PassThrough()
+    {
+        // Arrange
+        var logEvent = Event(
+            exception: null,
+            new LogEventProperty(LogFields.QueryMode, new ScalarValue("any_term_fallback")),
+            new LogEventProperty(LogFields.PageItems, new ScalarValue(12)),
+            new LogEventProperty(LogFields.Truncated, new ScalarValue(true)),
+            new LogEventProperty(LogFields.CursorHash, new ScalarValue("abcd1234")),
+            new LogEventProperty(LogFields.NotesScanned, new ScalarValue(30)),
+            new LogEventProperty(LogFields.NotesMatched, new ScalarValue(4)),
+            new LogEventProperty(LogFields.BytesScanned, new ScalarValue(4_096L)),
+            new LogEventProperty(LogFields.SkippedUnreadable, new ScalarValue(1)),
+            new LogEventProperty(LogFields.Reason, new ScalarValue("cursor_stale")));
+
+        // Act
+        var line = FormatLine(logEvent);
+
+        // Assert
+        using var body = JsonDocument.Parse(line);
+        var root = body.RootElement;
+        Assert.Equal("any_term_fallback", root.GetProperty(LogFields.QueryMode).GetString());
+        Assert.Equal(12, root.GetProperty(LogFields.PageItems).GetInt32());
+        Assert.True(root.GetProperty(LogFields.Truncated).GetBoolean());
+        Assert.Equal("abcd1234", root.GetProperty(LogFields.CursorHash).GetString());
+        Assert.Equal(30, root.GetProperty(LogFields.NotesScanned).GetInt32());
+        Assert.Equal(4, root.GetProperty(LogFields.NotesMatched).GetInt32());
+        Assert.Equal(4_096L, root.GetProperty(LogFields.BytesScanned).GetInt64());
+        Assert.Equal(1, root.GetProperty(LogFields.SkippedUnreadable).GetInt32());
+        Assert.Equal("cursor_stale", root.GetProperty(LogFields.Reason).GetString());
+    }
+
+    [Fact]
     public void Format_VaultException_RecordsOnlyTheTypeName()
     {
         // Arrange

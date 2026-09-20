@@ -571,7 +571,7 @@ public sealed class SqliteVaultRepositoryTests : IDisposable
         SetUpdatedAt("proj", "new-a", 2_000);
 
         // Act
-        var rows = _repository.List(new ListFilter());
+        var rows = _repository.List(new ListFilter()).Rows;
 
         // Assert
         Assert.Equal(["new-a", "new-b", "old-note"], rows.Select(r => r.Name));
@@ -585,7 +585,7 @@ public sealed class SqliteVaultRepositoryTests : IDisposable
         _repository.CreateFirst(NewFile("proj-b", "note-b", "b"));
 
         // Act
-        var rows = _repository.List(new ListFilter { Project = "proj-a" });
+        var rows = _repository.List(new ListFilter { Project = "proj-a" }).Rows;
 
         // Assert
         var row = Assert.Single(rows);
@@ -600,7 +600,7 @@ public sealed class SqliteVaultRepositoryTests : IDisposable
         _repository.CreateFirst(NewFile("proj", "only-x", "b") with { Tags = ["x"] });
 
         // Act
-        var rows = _repository.List(new ListFilter { Tags = ["x", "y"] });
+        var rows = _repository.List(new ListFilter { Tags = ["x", "y"] }).Rows;
 
         // Assert
         var row = Assert.Single(rows);
@@ -615,7 +615,7 @@ public sealed class SqliteVaultRepositoryTests : IDisposable
         _repository.CreateFirst(NewFile("proj", "note-b", "b") with { Summary = "unrelated" });
 
         // Act
-        var rows = _repository.List(new ListFilter { Query = "flamingo" });
+        var rows = _repository.List(new ListFilter { Query = "flamingo" }).Rows;
 
         // Assert
         var row = Assert.Single(rows);
@@ -629,7 +629,7 @@ public sealed class SqliteVaultRepositoryTests : IDisposable
         _repository.CreateFirst(NewFile("proj", "note-a", "a"));
 
         // Act
-        var rows = _repository.List(new ListFilter { Query = "   " });
+        var rows = _repository.List(new ListFilter { Query = "   " }).Rows;
 
         // Assert
         Assert.Single(rows);
@@ -642,7 +642,7 @@ public sealed class SqliteVaultRepositoryTests : IDisposable
         _repository.CreateFirst(NewFile("proj", "note-a", "a"));
 
         // Act
-        var rows = _repository.List(new ListFilter { Query = "zzzzznomatch" });
+        var rows = _repository.List(new ListFilter { Query = "zzzzznomatch" }).Rows;
 
         // Assert
         Assert.Empty(rows);
@@ -656,7 +656,7 @@ public sealed class SqliteVaultRepositoryTests : IDisposable
         _repository.CreateFirst(NewFile("proj", "child-note", "leaf") with { Parent = "parent-note" });
 
         // Act
-        var rows = _repository.List(new ListFilter { Project = "proj" });
+        var rows = _repository.List(new ListFilter { Project = "proj" }).Rows;
 
         // Assert
         Assert.Equal("parent-note", rows.Single(r => r.Name == "child-note").Parent);
@@ -684,6 +684,136 @@ public sealed class SqliteVaultRepositoryTests : IDisposable
     }
 
     [Fact]
+    public void List_AndHitWithMultipleTerms_ReportsAllTermsMode()
+    {
+        // Arrange
+        _repository.CreateFirst(NewFile("proj", "note-a", "x") with { Summary = "alpha beta" });
+
+        // Act
+        var result = _repository.List(new ListFilter { Query = "alpha beta" });
+
+        // Assert
+        Assert.Equal(ListMode.AllTerms, result.Mode);
+        Assert.Equal("note-a", Assert.Single(result.Rows).Name);
+    }
+
+    [Fact]
+    public void List_AndMissWithMultipleTerms_FallsBackToRankedAnyTerm()
+    {
+        // Arrange
+        _repository.CreateFirst(NewFile("proj", "note-a", "x") with { Summary = "alpha alpha alpha" });
+        _repository.CreateFirst(NewFile("proj", "note-b", "y") with { Summary = "alpha" });
+        _repository.CreateFirst(NewFile("proj", "note-c", "z") with { Summary = "beta" });
+
+        // Act
+        var result = _repository.List(new ListFilter { Query = "alpha beta" });
+
+        // Assert
+        Assert.Equal(ListMode.AnyTermFallback, result.Mode);
+        var names = result.Rows.Select(r => r.Name).ToList();
+        Assert.Equal(3, names.Count);
+        Assert.Contains("note-a", names);
+        Assert.Contains("note-b", names);
+        Assert.Contains("note-c", names);
+        Assert.True(names.IndexOf("note-a") < names.IndexOf("note-b"));
+    }
+
+    [Fact]
+    public void List_SingleTermMiss_StaysEmptyAllTerms()
+    {
+        // Arrange
+        _repository.CreateFirst(NewFile("proj", "note-a", "x") with { Summary = "alpha" });
+
+        // Act
+        var result = _repository.List(new ListFilter { Query = "zzzznope" });
+
+        // Assert
+        Assert.Empty(result.Rows);
+        Assert.Equal(ListMode.AllTerms, result.Mode);
+    }
+
+    [Fact]
+    public void List_FallbackWithNoAnyTermMatch_ReportsFallbackModeAndEmptyRows()
+    {
+        // Arrange
+        _repository.CreateFirst(NewFile("proj", "note-a", "x") with { Summary = "alpha" });
+
+        // Act
+        var result = _repository.List(new ListFilter { Query = "zzznope yyynope" });
+
+        // Assert
+        Assert.Empty(result.Rows);
+        Assert.Equal(ListMode.AnyTermFallback, result.Mode);
+    }
+
+    [Fact]
+    public void List_TermsMatchOnlyAnotherProject_FallsBackWithinRequestedProject()
+    {
+        // Arrange
+        _repository.CreateFirst(NewFile("proj-x", "x-note", "c") with { Summary = "alpha beta" });
+        _repository.CreateFirst(NewFile("proj-y", "y-note", "c") with { Summary = "alpha only" });
+
+        // Act
+        var result = _repository.List(new ListFilter { Project = "proj-y", Query = "alpha beta" });
+
+        // Assert
+        Assert.Equal(ListMode.AnyTermFallback, result.Mode);
+        Assert.Equal("y-note", Assert.Single(result.Rows).Name);
+    }
+
+    [Theory]
+    [InlineData("OR zzznomatchxyz")]
+    [InlineData("NEAR(x,y) zzznomatchxyz")]
+    [InlineData("name: zzznomatchxyz")]
+    [InlineData("term* zzznomatchxyz")]
+    [InlineData("(unbalanced zzznomatchxyz")]
+    [InlineData("a\" zzznomatchxyz")]
+    public void List_HostileFallbackQuery_DoesNotThrow(string query)
+    {
+        // Arrange
+        _repository.CreateFirst(NewFile("proj", "note-a", "a"));
+
+        // Act
+        var exception = Record.Exception(() => _repository.List(new ListFilter { Query = query }));
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void SearchCandidates_ExcludesArchivedAndReturnsCurrentVersionRelPath()
+    {
+        // Arrange
+        _repository.CreateFirst(NewFile("proj", "multi", "v1"));
+        _repository.CommitVersion(Write("proj", "multi", baseVersion: 1, "v2 body"));
+        _repository.CreateFirst(NewFile("proj", "gone", "x"));
+        _repository.SetState("proj", "gone", FileState.Archived);
+
+        // Act
+        var candidates = _repository.SearchCandidates(null);
+
+        // Assert
+        var only = Assert.Single(candidates);
+        Assert.Equal("multi", only.Name);
+        Assert.Equal(2, only.CurrentVersion);
+        Assert.Equal(_repository.GetCurrent("proj", "multi").RelPath, only.RelPath);
+    }
+
+    [Fact]
+    public void SearchCandidates_ProjectFilter_ScopesToProject()
+    {
+        // Arrange
+        _repository.CreateFirst(NewFile("proj-a", "a", "x"));
+        _repository.CreateFirst(NewFile("proj-b", "b", "y"));
+
+        // Act
+        var candidates = _repository.SearchCandidates("proj-a");
+
+        // Assert
+        Assert.Equal("a", Assert.Single(candidates).Name);
+    }
+
+    [Fact]
     public void BuildFtsQuery_QuotesAndJoinsTokens()
     {
         // Act + Assert
@@ -691,6 +821,31 @@ public sealed class SqliteVaultRepositoryTests : IDisposable
         Assert.Equal("\"say\" \"\"\"hi\"\"\"", SqliteVaultRepository.BuildFtsQuery("say \"hi\""));
         Assert.Null(SqliteVaultRepository.BuildFtsQuery("   "));
         Assert.Null(SqliteVaultRepository.BuildFtsQuery(null));
+    }
+
+    [Fact]
+    public void BuildFtsOrQuery_QuotesAndOrJoinsTokens()
+    {
+        // Act + Assert
+        Assert.Equal("\"hello\" OR \"world\"", SqliteVaultRepository.BuildFtsOrQuery("hello world"));
+        Assert.Equal("\"say\" OR \"\"\"hi\"\"\"", SqliteVaultRepository.BuildFtsOrQuery("say \"hi\""));
+        Assert.Null(SqliteVaultRepository.BuildFtsOrQuery("   "));
+        Assert.Null(SqliteVaultRepository.BuildFtsOrQuery(null));
+    }
+
+    [Fact]
+    public void BuildFtsQueries_CapAtSixteenTokens()
+    {
+        // Arrange
+        var query = string.Join(' ', Enumerable.Range(1, 17).Select(i => "t" + i));
+
+        // Act
+        var and = SqliteVaultRepository.BuildFtsQuery(query);
+        var or = SqliteVaultRepository.BuildFtsOrQuery(query);
+
+        // Assert
+        Assert.Equal(16, and.Split(' ').Length);
+        Assert.Equal(16, or.Split(" OR ", StringSplitOptions.None).Length);
     }
 
     [Fact]
@@ -801,7 +956,7 @@ public sealed class SqliteVaultRepositoryTests : IDisposable
     }
 
     private List<string> ListNames(string query)
-        => _repository.List(new ListFilter { Query = query }).Select(r => r.Name).ToList();
+        => _repository.List(new ListFilter { Query = query }).Rows.Select(r => r.Name).ToList();
 
     private void SetUpdatedAt(string project, string name, long updatedAt)
     {
