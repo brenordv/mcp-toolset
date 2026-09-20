@@ -19,7 +19,11 @@ public sealed class McpProtocolTests : IAsyncLifetime
         + "only a note's summary, tags, or parent, use `vault_set_meta`; you never need to "
         + "resend content. Notes can be organized hierarchically: link a child note under a "
         + "main note via `parent`, and `vault_get` returns a note's parent and children so you "
-        + "can split a large note into smaller related ones.";
+        + "can split a large note into smaller related ones. Multi-word `vault_list` and "
+        + "`vault_search` queries match every term first and fall back to ranked any-term "
+        + "matching when nothing matches all terms (`query_mode` reports which ran). `vault_list` "
+        + "returns metadata only, is capped per page, and paginates via `cursor`; `vault_search` "
+        + "searches inside note bodies and returns capped snippets.";
 
     private static readonly string[] ListShapeTags = ["tag-b", "tag-a"];
 
@@ -27,8 +31,12 @@ public sealed class McpProtocolTests : IAsyncLifetime
     [
         "vault_save", "vault_set_meta", "vault_get", "vault_list", "vault_append",
         "vault_edit_section", "vault_edit_key", "vault_history", "vault_archive",
-        "vault_restore", "vault_purge",
+        "vault_restore", "vault_purge", "vault_search",
     ];
+
+    private static readonly string[] VaultListSchemaProperties = ["project", "tags", "query", "limit", "cursor"];
+
+    private static readonly string[] VaultSearchSchemaProperties = ["query", "project", "limit"];
 
     private static readonly string[] VaultSaveSchemaProperties =
         ["name", "content", "summary", "base_version", "project", "tags", "format", "parent"];
@@ -106,7 +114,7 @@ public sealed class McpProtocolTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ToolsList_ExposesAllElevenToolsWithSnakeCaseSchemas()
+    public async Task ToolsList_ExposesAllTwelveToolsWithSnakeCaseSchemas()
     {
         // Act
         var tools = await _client.ListToolsAsync();
@@ -126,6 +134,15 @@ public sealed class McpProtocolTests : IAsyncLifetime
         Assert.Equivalent(
             VaultGetSchemaProperties,
             SchemaProperties(tools.Single(t => t.Name == "vault_get")), strict: true);
+        Assert.Equivalent(
+            VaultListSchemaProperties,
+            SchemaProperties(tools.Single(t => t.Name == "vault_list")), strict: true);
+        Assert.Equivalent(
+            VaultSearchSchemaProperties,
+            SchemaProperties(tools.Single(t => t.Name == "vault_search")), strict: true);
+
+        var search = tools.Single(t => t.Name == "vault_search");
+        Assert.True(ToJson(search.JsonSchema).TryGetProperty("properties", out _));
     }
 
     [Fact]
@@ -448,6 +465,175 @@ public sealed class McpProtocolTests : IAsyncLifetime
         Assert.Equal(["tag-a", "tag-b"], item.GetProperty("tags").EnumerateArray().Select(t => t.GetString()));
         Assert.Equal(JsonValueKind.Null, item.GetProperty("parent").ValueKind);
     }
+
+    [Fact]
+    public async Task VaultList_MultiWordQueryWithOneMatchingTerm_FallsBackRanked()
+    {
+        // Arrange
+        await SaveTo("fallback-proj", "solo", "body", "gamma unique summary");
+
+        // Act
+        var result = await _client.CallToolAsync("vault_list", new Dictionary<string, object>
+        {
+            ["project"] = "fallback-proj",
+            ["query"] = "alpha beta gamma",
+        });
+
+        // Assert
+        var body = ToJson(result.StructuredContent);
+        Assert.Equal("any_term_fallback", body.GetProperty("query_mode").GetString());
+        Assert.NotEmpty(body.GetProperty("items").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task VaultSearch_FindsBodyOnlyPhrase_WhileVaultListDoesNot()
+    {
+        // Arrange
+        await SaveTo("split", "body-note", "the secret bodyonlytoken lives here", "ordinary summary");
+
+        // Act
+        var search = await _client.CallToolAsync("vault_search", new Dictionary<string, object>
+        {
+            ["project"] = "split",
+            ["query"] = "bodyonlytoken",
+        });
+        var list = await _client.CallToolAsync("vault_list", new Dictionary<string, object>
+        {
+            ["project"] = "split",
+            ["query"] = "bodyonlytoken",
+        });
+
+        // Assert
+        var item = ToJson(search.StructuredContent).GetProperty("items").EnumerateArray().Single();
+        Assert.Equal("body-note", item.GetProperty("name").GetString());
+        Assert.Contains(
+            "bodyonlytoken",
+            item.GetProperty("snippets").EnumerateArray().First().GetProperty("text").GetString());
+        Assert.Empty(ToJson(list.StructuredContent).GetProperty("items").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task VaultList_FindsSummaryOnlyTerm_WhileVaultSearchDoesNot()
+    {
+        // Arrange
+        await SaveTo("split2", "meta-note", "plain body text", "summaryonlytoken here");
+
+        // Act
+        var list = await _client.CallToolAsync("vault_list", new Dictionary<string, object>
+        {
+            ["project"] = "split2",
+            ["query"] = "summaryonlytoken",
+        });
+        var search = await _client.CallToolAsync("vault_search", new Dictionary<string, object>
+        {
+            ["project"] = "split2",
+            ["query"] = "summaryonlytoken",
+        });
+
+        // Assert
+        Assert.Single(ToJson(list.StructuredContent).GetProperty("items").EnumerateArray());
+        Assert.Empty(ToJson(search.StructuredContent).GetProperty("items").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task VaultList_Pagination_CursorWalksAllItemsAndOmitsCursorOnFinalPage()
+    {
+        // Arrange
+        for (var i = 0; i < 3; i++)
+        {
+            await SaveTo("paging", "page-" + i, "body", "s");
+        }
+
+        // Act
+        var first = ToJson((await _client.CallToolAsync("vault_list", new Dictionary<string, object>
+        {
+            ["project"] = "paging",
+            ["limit"] = 2,
+        })).StructuredContent);
+        var cursor = first.GetProperty("cursor").GetString();
+        var second = ToJson((await _client.CallToolAsync("vault_list", new Dictionary<string, object>
+        {
+            ["project"] = "paging",
+            ["limit"] = 2,
+            ["cursor"] = cursor,
+        })).StructuredContent);
+
+        // Assert
+        Assert.Equal(2, first.GetProperty("count").GetInt32());
+        Assert.True(first.GetProperty("truncated").GetBoolean());
+        Assert.False(string.IsNullOrEmpty(cursor));
+
+        Assert.Equal(1, second.GetProperty("count").GetInt32());
+        Assert.False(second.GetProperty("truncated").GetBoolean());
+        Assert.False(second.TryGetProperty("cursor", out _));
+
+        var names = first.GetProperty("items").EnumerateArray()
+            .Concat(second.GetProperty("items").EnumerateArray())
+            .Select(item => item.GetProperty("name").GetString())
+            .ToList();
+        Assert.Equal(3, names.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task VaultList_MisspelledLimit_RejectedWithSuggestion()
+    {
+        // Act
+        var result = await _client.CallToolAsync("vault_list", new Dictionary<string, object>
+        {
+            ["project"] = "argshape",
+            ["limt"] = 5,
+        });
+
+        // Assert
+        var error = ParseErrorBody(result).GetProperty("error");
+        Assert.Equal("invalid_argument", error.GetProperty("code").GetString());
+        Assert.Contains("limit", Suggestions(error.GetProperty("unknown_arguments")));
+    }
+
+    [Fact]
+    public async Task VaultSearch_UnknownArgument_RejectedAsInvalidArgument()
+    {
+        // Act
+        var result = await _client.CallToolAsync("vault_search", new Dictionary<string, object>
+        {
+            ["query"] = "x",
+            ["bogus"] = "y",
+        });
+
+        // Assert
+        Assert.Equal("invalid_argument", ParseErrorBody(result).GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task VaultSearch_WrongTypedLimit_RejectedAsInvalidArgument()
+    {
+        // Act
+        var result = await _client.CallToolAsync("vault_search", new Dictionary<string, object>
+        {
+            ["query"] = "x",
+            ["limit"] = "not-a-number",
+        });
+
+        // Assert
+        Assert.Equal("invalid_argument", ParseErrorBody(result).GetProperty("error").GetProperty("code").GetString());
+    }
+
+    private async Task SaveTo(string project, string name, string content, string summary)
+    {
+        var result = await _client.CallToolAsync("vault_save", new Dictionary<string, object>
+        {
+            ["name"] = name,
+            ["content"] = content,
+            ["summary"] = summary,
+            ["project"] = project,
+        });
+        Assert.False(result.IsError ?? false);
+    }
+
+    private static string[] Suggestions(JsonElement unknownArguments)
+        => [.. unknownArguments.EnumerateArray()
+            .Where(item => item.TryGetProperty("did_you_mean", out _))
+            .Select(item => item.GetProperty("did_you_mean").GetString())];
 
     private async Task Save(string name, string content, int? baseVersion)
     {

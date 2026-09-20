@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text;
+using Dapper;
 using RaccoonNinja.McpToolset.Server.FileVault.Configuration;
 using RaccoonNinja.McpToolset.Server.FileVault.Domain;
 using RaccoonNinja.McpToolset.Server.FileVault.Errors;
@@ -603,10 +605,209 @@ public sealed class VaultServiceTests : IDisposable
         Assert.EndsWith(".txt", record.RelPath);
     }
 
+    [Fact]
+    public void ListPage_WalkAcrossPages_CoversEverySetOnceWithNoGaps()
+    {
+        // Arrange
+        var names = SeedActiveFiles(5);
+
+        // Act
+        var seen = new List<string>();
+        string cursor = null;
+        var guard = 0;
+        ListPageResult page;
+        do
+        {
+            page = _service.ListPage(Project, tags: null, query: null, limit: 2, cursor);
+            seen.AddRange(page.Items.Select(row => row.Name));
+            cursor = page.Cursor;
+            Assert.True(++guard < 50);
+        }
+        while (cursor is not null);
+
+        // Assert
+        Assert.False(page.Truncated);
+        Assert.Null(page.Cursor);
+        Assert.Equal(names.OrderBy(name => name, StringComparer.Ordinal), seen.OrderBy(name => name, StringComparer.Ordinal));
+        Assert.Equal(seen.Count, seen.Distinct().Count());
+    }
+
+    [Fact]
+    public void ListPage_MutationBetweenPages_TerminatesWithoutDuplicates()
+    {
+        // Arrange
+        SeedActiveFiles(5);
+        var page1 = _service.ListPage(Project, tags: null, query: null, limit: 2, cursor: null);
+        ArchiveOneSeeded();
+
+        // Act
+        var seen = new List<string>(page1.Items.Select(row => row.Name));
+        var cursor = page1.Cursor;
+        var guard = 0;
+        while (cursor is not null && ++guard < 50)
+        {
+            var page = _service.ListPage(Project, tags: null, query: null, limit: 2, cursor);
+            seen.AddRange(page.Items.Select(row => row.Name));
+            cursor = page.Cursor;
+        }
+
+        // Assert
+        Assert.Equal(seen.Count, seen.Distinct().Count());
+    }
+
+    [Fact]
+    public void ListPage_DefaultLimit_CapsAtFifty()
+    {
+        // Arrange
+        SeedActiveFiles(51);
+
+        // Act
+        var page = _service.ListPage(Project, tags: null, query: null, limit: null, cursor: null);
+
+        // Assert
+        Assert.Equal(VaultConfig.DefaultListLimit, page.Count);
+        Assert.True(page.Truncated);
+        Assert.NotNull(page.Cursor);
+    }
+
+    [Fact]
+    public void ListPage_LimitAboveCeiling_ClampsToMax()
+    {
+        // Arrange
+        SeedActiveFiles(VaultConfig.MaxListLimit + 5);
+
+        // Act
+        var page = _service.ListPage(Project, tags: null, query: null, limit: 10_000, cursor: null);
+
+        // Assert
+        Assert.Equal(VaultConfig.MaxListLimit, page.Count);
+        Assert.True(page.Truncated);
+    }
+
+    [Fact]
+    public void ListPage_ZeroLimit_ThrowsInvalidArgument()
+    {
+        // Arrange
+        SeedActiveFiles(1);
+
+        // Act
+        Action act = () => _service.ListPage(Project, tags: null, query: null, limit: 0, cursor: null);
+
+        // Assert
+        Assert.Equal(VaultErrorCode.InvalidArgument, Assert.Throws<VaultException>(act).Code);
+    }
+
+    [Fact]
+    public void ListPage_NegativeLimit_ThrowsInvalidArgument()
+    {
+        // Arrange
+        SeedActiveFiles(1);
+
+        // Act
+        Action act = () => _service.ListPage(Project, tags: null, query: null, limit: -3, cursor: null);
+
+        // Assert
+        Assert.Equal(VaultErrorCode.InvalidArgument, Assert.Throws<VaultException>(act).Code);
+    }
+
+    [Fact]
+    public void ListPage_CursorWithFallbackQuery_ThrowsInvalidArgument()
+    {
+        // Arrange
+        SaveNote("alpha-note", "x", "alpha");
+        SaveNote("beta-note", "y", "beta");
+
+        // Act
+        Action act = () => _service.ListPage(Project, tags: null, query: "alpha beta", limit: 10, cursor: "any-cursor");
+
+        // Assert
+        Assert.Equal(VaultErrorCode.InvalidArgument, Assert.Throws<VaultException>(act).Code);
+    }
+
+    [Fact]
+    public void Search_UnreadableSnapshot_SkippedAndCounted()
+    {
+        // Arrange
+        SaveNote("readable", "the needle is here");
+        SaveNote("broken", "also has a needle");
+        var brokenRelPath = _service.Get(Project, FileName.Parse("broken"), version: null).Record.RelPath;
+        _files.RemoveSnapshots([brokenRelPath]);
+
+        // Act
+        var outcome = _service.Search(Project, "needle", limit: 10);
+
+        // Assert
+        Assert.Equal("broken", Assert.Single(outcome.Skipped).Name);
+        Assert.Equal("readable", Assert.Single(outcome.Items).Candidate.Name);
+    }
+
+    [Fact]
+    public void Search_ArchivedNote_ExcludedEvenWhenBodyMatches()
+    {
+        // Arrange
+        SaveNote("archived-hit", "contains a needle");
+        _service.Archive(Project, FileName.Parse("archived-hit"));
+        SaveNote("active-hit", "also a needle");
+
+        // Act
+        var outcome = _service.Search(Project, "needle", limit: 10);
+
+        // Assert
+        Assert.Equal("active-hit", Assert.Single(outcome.Items).Candidate.Name);
+    }
+
+    [Fact]
+    public void Search_InvalidUtf8Snapshot_DecodesWithReplacementAndSucceeds()
+    {
+        // Arrange
+        SaveNote("garbled", "placeholder");
+        var relPath = _service.Get(Project, FileName.Parse("garbled"), version: null).Record.RelPath;
+        var fullPath = Path.Combine(_config.FilesDir, relPath.Replace('/', Path.DirectorySeparatorChar));
+        File.WriteAllBytes(fullPath, [0xFF, 0xFE, .. Encoding.ASCII.GetBytes("needle")]);
+
+        // Act
+        var outcome = _service.Search(Project, "needle", limit: 10);
+
+        // Assert
+        Assert.Empty(outcome.Skipped);
+        Assert.Equal("garbled", Assert.Single(outcome.Items).Candidate.Name);
+    }
+
     private void UseSplitHintThreshold(int chars)
         => _service = new VaultService(
             new SqliteVaultRepository(_factory), _files, _config with { SplitHintChars = chars });
 
     private Committed Save(string content, int? baseVersion)
         => _service.Save(Project, Name, content, "summary", baseVersion, null, VaultFormat.Text, ParentUpdate.Leave);
+
+    private void SaveNote(string name, string content, string summary = "s")
+        => _service.Save(Project, FileName.Parse(name), content, summary, baseVersion: null, tags: null, VaultFormat.Text, ParentUpdate.Leave);
+
+    /// <summary>
+    /// Seed <paramref name="count"/> active files directly (no snapshots), each with a distinct
+    /// <c>updated_at</c> so the list order is total. Cheap enough for large-count pagination tests
+    /// because <c>ListPage</c> reads metadata only.
+    /// </summary>
+    private List<string> SeedActiveFiles(int count)
+    {
+        var names = new List<string>(count);
+        using var connection = _factory.Open();
+        using var transaction = connection.BeginTransaction();
+        for (var i = 0; i < count; i++)
+        {
+            var name = "seed-" + i.ToString("D4", CultureInfo.InvariantCulture);
+            names.Add(name);
+            connection.Execute(
+                "INSERT INTO files(project, name, current_version, format, summary, state, parent_id, created_at, updated_at) "
+                + "VALUES(@project, @name, 1, 'text', 's', 'active', NULL, @ts, @ts)",
+                new { project = Project.Value, name, ts = 1_700_000_000L + i },
+                transaction);
+        }
+
+        transaction.Commit();
+        return names;
+    }
+
+    private void ArchiveOneSeeded()
+        => _service.Archive(Project, FileName.Parse("seed-0000"));
 }

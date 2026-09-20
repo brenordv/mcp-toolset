@@ -21,4 +21,28 @@ public sealed record CallInfo
     /// <see cref="ContentSizeBytes"/> on append/edit, where the payload is only a delta.
     /// </summary>
     public int? CommittedChars { get; set; }
+
+    /// <summary>The matching mode (wire string) for a query tool, once known.</summary>
+    public string QueryMode { get; set; }
+
+    /// <summary>The item count on a returned <c>vault_list</c> page.</summary>
+    public int? PageItems { get; set; }
+
+    /// <summary>Whether more results existed beyond the returned page.</summary>
+    public bool? Truncated { get; set; }
+
+    /// <summary>The opaque hash of a cursor argument, when one was supplied.</summary>
+    public string CursorHash { get; set; }
+
+    /// <summary>How many notes <c>vault_search</c> enumerated.</summary>
+    public int? NotesScanned { get; set; }
+
+    /// <summary>How many notes matched, for <c>vault_search</c>.</summary>
+    public int? NotesMatched { get; set; }
+
+    /// <summary>Total bytes read across scanned snapshots, for <c>vault_search</c>.</summary>
+    public long? BytesScanned { get; set; }
+
+    /// <summary>How many notes were skipped because their snapshot could not be read.</summary>
+    public int? SkippedUnreadable { get; set; }
 }

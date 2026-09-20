@@ -1,5 +1,6 @@
 using Dapper;
 using Microsoft.Data.Sqlite;
+using RaccoonNinja.McpToolset.Server.FileVault.Configuration;
 using RaccoonNinja.McpToolset.Server.FileVault.Domain;
 using RaccoonNinja.McpToolset.Server.FileVault.Errors;
 using RaccoonNinja.McpToolset.Server.FileVault.Extensions;
@@ -222,23 +223,19 @@ public sealed class SqliteVaultRepository(SqliteConnectionFactory factory) : IVa
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<FileSummaryRow> List(ListFilter filter)
+    public ListRows List(ListFilter filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
         using var connection = factory.Open();
 
-        // Optional FTS pre-filter producing a set of matching file ids.
-        List<long> ftsIds = null;
-        var ftsQuery = BuildFtsQuery(filter.Query);
-        if (ftsQuery is not null)
+        // Pass 1: the strict all-terms FTS id set (null when no query was given).
+        HashSet<long> andIds = null;
+        var ftsAndQuery = BuildFtsQuery(filter.Query);
+        if (ftsAndQuery is not null)
         {
-            ftsIds = connection
-                .Query<long>("SELECT rowid FROM files_fts WHERE files_fts MATCH @query", new { query = ftsQuery })
-                .ToList();
-            if (ftsIds.Count == 0)
-            {
-                return [];
-            }
+            andIds = connection
+                .Query<long>("SELECT rowid FROM files_fts WHERE files_fts MATCH @query", new { query = ftsAndQuery })
+                .ToHashSet();
         }
 
         var sql =
@@ -251,26 +248,83 @@ public sealed class SqliteVaultRepository(SqliteConnectionFactory factory) : IVa
             parameters.Add("project", filter.Project);
         }
 
+        // Advisory only: the all-terms caller re-sorts with the canonical comparer (which adds the
+        // ordinal project tiebreak), and the fallback pass re-sorts by rank. Kept so the raw rows
+        // arrive in a sensible order for callers that do not sort.
         sql += " ORDER BY f.updated_at DESC, f.name ASC";
 
-        var raw = connection
+        // The full active window is materialized once and reused by both passes. The FTS id
+        // filter is applied in memory: a SQL IN-list binds one parameter per id and a broad hit
+        // set on a large vault would blow SQLITE_MAX_VARIABLE_NUMBER.
+        var allRows = connection
             .Query<(long Id, string Project, string Name, int CurrentVersion, string Summary, long UpdatedAt, string Parent)>(
                 sql, parameters)
             .ToList();
 
-        // The FTS id filter is applied in memory: a SQL IN-list binds one parameter per id and
-        // a broad FTS hit set on a large vault would blow SQLITE_MAX_VARIABLE_NUMBER.
-        if (ftsIds is not null)
+        var pass1Source = andIds is null ? allRows : allRows.Where(row => andIds.Contains(row.Id)).ToList();
+        var pass1 = AttachTags(connection, pass1Source, filter.Tags);
+
+        // The fallback trigger fires on the FINAL, fully filtered pass-1 output (after the project
+        // and tag filters), not on the raw FTS id set, so a query whose terms match only outside
+        // the requested project still falls back within it.
+        if (pass1.Count > 0 || ftsAndQuery is null || TokenCount(filter.Query) < 2)
         {
-            var idSet = ftsIds.ToHashSet();
-            raw = raw.Where(row => idSet.Contains(row.Id)).ToList();
+            return new ListRows { Rows = [.. pass1.Select(entry => entry.Row)], Mode = ListMode.AllTerms };
         }
 
-        // Bulk-load tags for the matched files, then attach and apply the tag filter in memory.
-        var tagMap = LoadTagsBulk(connection, raw.Select(r => r.Id).ToList());
-        var required = filter.Tags ?? [];
-        var output = new List<FileSummaryRow>(raw.Count);
-        foreach (var row in raw)
+        // Pass 2: ranked any-term fallback. bm25-derived rank is ascending (a smaller value is a
+        // better match), then the shared list ordering breaks ties; rank stays internal and is
+        // discarded before returning.
+        var rankByRow = new Dictionary<long, double>();
+        foreach (var (rowId, rank) in connection.Query<(long RowId, double Rank)>(
+            "SELECT rowid, rank FROM files_fts WHERE files_fts MATCH @query ORDER BY rank",
+            new { query = BuildFtsOrQuery(filter.Query) }))
+        {
+            rankByRow[rowId] = rank;
+        }
+
+        var orSource = allRows.Where(row => rankByRow.ContainsKey(row.Id)).ToList();
+        var fallback = AttachTags(connection, orSource, filter.Tags)
+            .OrderBy(entry => rankByRow[entry.Id])
+            .ThenBy(entry => entry.Row, ListOrdering.Comparer)
+            .Select(entry => entry.Row)
+            .ToList();
+        return new ListRows { Rows = fallback, Mode = ListMode.AnyTermFallback };
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<SearchCandidateRow> SearchCandidates(string project)
+    {
+        using var connection = factory.Open();
+        var sql =
+            "SELECT f.project AS Project, f.name AS Name, f.summary AS Summary, "
+            + "f.current_version AS CurrentVersion, f.updated_at AS UpdatedAt, v.rel_path AS RelPath "
+            + "FROM files f JOIN versions v ON v.file_id = f.id AND v.version = f.current_version "
+            + "WHERE f.state = 'active'";
+        var parameters = new DynamicParameters();
+        if (project is not null)
+        {
+            sql += " AND f.project = @project";
+            parameters.Add("project", project);
+        }
+
+        return connection.Query<SearchCandidateRow>(sql, parameters).ToList();
+    }
+
+    /// <summary>
+    /// Load tags for <paramref name="rows"/> in bulk, apply the required-tag filter, and pair each
+    /// surviving row with its id so a later ranking pass can order it. Keeping the id alongside the
+    /// summary row is what lets the fallback pass sort by an FTS rank the summary row never carries.
+    /// </summary>
+    private static List<(long Id, FileSummaryRow Row)> AttachTags(
+        SqliteConnection connection,
+        List<(long Id, string Project, string Name, int CurrentVersion, string Summary, long UpdatedAt, string Parent)> rows,
+        IReadOnlyList<string> requiredTags)
+    {
+        var tagMap = LoadTagsBulk(connection, rows.Select(row => row.Id).ToList());
+        IReadOnlyList<string> required = requiredTags ?? [];
+        var output = new List<(long, FileSummaryRow)>(rows.Count);
+        foreach (var row in rows)
         {
             var tags = tagMap.TryGetValue(row.Id, out var loaded) ? loaded : [];
             if (required.Count > 0 && !required.All(tags.Contains))
@@ -278,7 +332,7 @@ public sealed class SqliteVaultRepository(SqliteConnectionFactory factory) : IVa
                 continue;
             }
 
-            output.Add(new FileSummaryRow
+            output.Add((row.Id, new FileSummaryRow
             {
                 Project = row.Project,
                 Name = row.Name,
@@ -287,11 +341,14 @@ public sealed class SqliteVaultRepository(SqliteConnectionFactory factory) : IVa
                 UpdatedAt = row.UpdatedAt,
                 Parent = row.Parent,
                 Tags = tags,
-            });
+            }));
         }
 
         return output;
     }
+
+    private static int TokenCount(string raw)
+        => raw is null ? 0 : raw.Split((char[])null, StringSplitOptions.RemoveEmptyEntries).Length;
 
     /// <inheritdoc />
     public IReadOnlyList<VersionRow> History(string project, string name)
@@ -387,21 +444,40 @@ public sealed class SqliteVaultRepository(SqliteConnectionFactory factory) : IVa
     /// <summary>
     /// Build a safe FTS5 MATCH expression from free user text: each whitespace-separated token
     /// becomes a quoted term (AND-combined), so user punctuation cannot create invalid query
-    /// syntax. Returns <c>null</c> when the input has no usable tokens (no filter, not zero hits).
+    /// syntax. At most the first <see cref="VaultConfig.MaxQueryTerms"/> tokens are used. Returns
+    /// <c>null</c> when the input has no usable tokens (no filter, not zero hits).
     /// </summary>
     internal static string BuildFtsQuery(string raw)
     {
-        if (raw is null)
-        {
-            return null;
-        }
-
-        var terms = raw
-            .Split((char[])null, StringSplitOptions.RemoveEmptyEntries)
-            .Select(token => "\"" + token.Replace("\"", "\"\"") + "\"")
-            .ToArray();
+        var terms = QuoteTerms(raw);
         return terms.Length == 0 ? null : string.Join(' ', terms);
     }
+
+    /// <summary>
+    /// The any-term counterpart of <see cref="BuildFtsQuery"/>: the same quoted tokens joined with
+    /// <c>OR</c> instead of an implicit AND. FTS5 binds implicit AND tighter than OR, so a flat
+    /// OR-join of quoted phrases is unambiguous. Returns <c>null</c> when there are no usable
+    /// tokens.
+    /// </summary>
+    internal static string BuildFtsOrQuery(string raw)
+    {
+        var terms = QuoteTerms(raw);
+        return terms.Length == 0 ? null : string.Join(" OR ", terms);
+    }
+
+    /// <summary>
+    /// Split free text into at most <see cref="VaultConfig.MaxQueryTerms"/> FTS-safe quoted terms:
+    /// each whitespace-separated token double-quoted with any embedded quote doubled, so user
+    /// punctuation and operators become inert phrases.
+    /// </summary>
+    private static string[] QuoteTerms(string raw)
+        => raw is null
+            ? []
+            : raw
+                .Split((char[])null, StringSplitOptions.RemoveEmptyEntries)
+                .Take(VaultConfig.MaxQueryTerms)
+                .Select(token => "\"" + token.Replace("\"", "\"\"") + "\"")
+                .ToArray();
 
     private static FileRecord FetchRecord(SqliteConnection connection, string project, string name, int? version)
     {

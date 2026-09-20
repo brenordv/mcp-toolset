@@ -35,7 +35,11 @@ public static class Program
         + "only a note's summary, tags, or parent, use `vault_set_meta`; you never need to "
         + "resend content. Notes can be organized hierarchically: link a child note under a "
         + "main note via `parent`, and `vault_get` returns a note's parent and children so you "
-        + "can split a large note into smaller related ones.";
+        + "can split a large note into smaller related ones. Multi-word `vault_list` and "
+        + "`vault_search` queries match every term first and fall back to ranked any-term "
+        + "matching when nothing matches all terms (`query_mode` reports which ran). `vault_list` "
+        + "returns metadata only, is capped per page, and paginates via `cursor`; `vault_search` "
+        + "searches inside note bodies and returns capped snippets.";
 
     public static async Task<int> Main(string[] args)
     {

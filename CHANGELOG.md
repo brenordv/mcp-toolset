@@ -1,4 +1,16 @@
 # Toolset Changelog
+## v17
+- Updated MCP: `file-vault` to v3.3.0. `vault_list` multi-word queries now match every term first and fall back to a
+  ranked any-term match when nothing matches all of them (`query_mode` reports which ran; only the first 16 terms are
+  used), and `vault_list` is now paginated with `limit` (default 50, max 500) and an opaque keyset `cursor` (its
+  result adds `count`, `truncated`, `cursor`, `query_mode`). Behavior change: an unfiltered `vault_list` returns at
+  most 50 items per page, with a `cursor` to continue, where it previously returned every active note in one response.
+  A new `vault_search` tool searches inside note bodies with case-insensitive substring terms and returns capped
+  per-note snippets (never whole bodies), sharing the same all-terms-then-fallback query model; it takes `query`,
+  `project` (omitted searches all projects), and `limit` (default 20, max 100). Two new deviations, D10 (`vault_list`
+  fallback + pagination) and D11 (`vault_search`); the pagination fields mirror the toolset's `count`/`truncated`/`cursor`
+  naming without adopting its `ResultEnvelope`, keeping `file-vault`'s Rust-compatible `items` shape.
+
 ## v16
 - Updated MCP: `git-ops` to v2.1.0 and `file-vault` to v3.2.0. Both now return a structured error for an 
   unbindable tool argument instead of the SDK's opaque `An error occurred invoking '<tool>'.`. A call whose
