@@ -51,7 +51,7 @@ public static class Program
         var reason = "graceful";
         try
         {
-            await builder.Build().RunAsync().ConfigureAwait(false);
+            await builder.Build().RunAsync();
         }
         catch (OperationCanceledException)
         {
@@ -65,7 +65,7 @@ public static class Program
         finally
         {
             ServerEventLog.Stop(bootstrapLogger, metrics.Summary(), reason);
-            await Log.CloseAndFlushAsync().ConfigureAwait(false);
+            await Log.CloseAndFlushAsync();
         }
         return 0;
     }

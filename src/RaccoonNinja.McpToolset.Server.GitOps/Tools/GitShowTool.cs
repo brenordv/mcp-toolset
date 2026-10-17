@@ -27,7 +27,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
             if (RevPathExpression.IsRevPath(@ref))
             {
                 throw new RejectedArgumentException(
@@ -35,7 +35,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
                     new Dictionary<string, object> { ["param"] = "ref" });
             }
 
-            var sha = await refVerifier.VerifyRequiredRefAsync(root, @ref, cancellationToken).ConfigureAwait(false);
+            var sha = await refVerifier.VerifyRequiredRefAsync(root, @ref, cancellationToken);
             var pathspecs = ToolCommon.ConfinePaths(root, paths);
 
             var metaIntent = new GitIntent
@@ -46,8 +46,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
                 AttachedOptions = [new AttachedOption("--max-count", "1")],
                 VerifiedRefs = [sha],
             };
-            var metaResult = await common.ExecuteAsync(metaIntent, ctx, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            var metaResult = await common.ExecuteAsync(metaIntent, ctx, cancellationToken: cancellationToken);
             var commits = LogParser.Parse(metaResult.Stdout);
             var commit = commits.Count > 0 ? commits[0] : null;
 
@@ -59,8 +58,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
                 VerifiedRefs = [sha],
                 Pathspecs = pathspecs,
             };
-            var patchResult = await common.ExecuteAsync(patchIntent, ctx, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            var patchResult = await common.ExecuteAsync(patchIntent, ctx, cancellationToken: cancellationToken);
             var files = DiffParser.ParseUnified(patchResult.Stdout);
 
             var payload = new Dictionary<string, object> { ["commit"] = commit, ["files"] = files, };

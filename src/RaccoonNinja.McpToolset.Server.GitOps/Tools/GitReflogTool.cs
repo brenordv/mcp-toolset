@@ -21,7 +21,7 @@ public sealed class GitReflogTool(ToolCommon common)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
 
             var attached = new List<AttachedOption>
             {
@@ -35,7 +35,7 @@ public sealed class GitReflogTool(ToolCommon common)
                 Flags = [$"--format={ReflogParser.ReflogFormat}"],
                 AttachedOptions = attached,
             };
-            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
             var entries = ReflogParser.Parse(result.Stdout);
 
             var filtersApplied = FiltersAppliedBuilder.Create()

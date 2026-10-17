@@ -21,7 +21,7 @@ public sealed class RefVerifier(string gitExecutable = "git") : IRefVerifier
             new[] { "rev-parse", "--verify", "--end-of-options", reference },
             BootstrapTimeout,
             onTimeout: null,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken);
 
         if (exitCode != 0)
             throw new RefNotFoundException("ref not found; try git_branch_list or git_log",

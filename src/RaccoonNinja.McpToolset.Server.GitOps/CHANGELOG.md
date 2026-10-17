@@ -1,3 +1,7 @@
+## v2.2.1
+- Internal: removed every `ConfigureAwait(false)` call. The stdio host has no synchronization context, so
+  continuations run on the same threads as before. No wire or behavior change.
+
 ## v2.2.0
 - `git_ls_files` gained a `stage` flag. With `stage: true` it runs `git ls-files -z --stage` and returns
   `{path, mode, object_id, stage}` objects instead of path strings, so an agent can tell whether a committed

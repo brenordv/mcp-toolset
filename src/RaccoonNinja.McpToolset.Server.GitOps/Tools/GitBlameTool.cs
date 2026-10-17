@@ -27,9 +27,9 @@ public sealed class GitBlameTool(ToolCommon common, IRefVerifier refVerifier)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
             var rel = PathConfinement.Confine(root, path ?? string.Empty);
-            var verifiedRefs = await refVerifier.VerifyOptionalRefsAsync(root, [@ref], cancellationToken).ConfigureAwait(false);
+            var verifiedRefs = await refVerifier.VerifyOptionalRefsAsync(root, [@ref], cancellationToken);
 
             var attached = new List<AttachedOption>();
             (int Start, int End)? lineRange = null;
@@ -54,7 +54,7 @@ public sealed class GitBlameTool(ToolCommon common, IRefVerifier refVerifier)
                 VerifiedRefs = verifiedRefs,
                 Pathspecs = [rel],
             };
-            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
             var lines = BlameParser.Parse(result.Stdout);
 
             var filtersApplied = FiltersAppliedBuilder.Create()

@@ -20,7 +20,7 @@ public sealed class GitStatusTool(ToolCommon common)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
             var intent = new GitIntent
             {
                 Subcommand = "status",
@@ -33,7 +33,7 @@ public sealed class GitStatusTool(ToolCommon common)
                     "--ahead-behind",
                 ],
             };
-            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
             var status = StatusParser.Parse(result.Stdout);
             return ToolCommon.SingleSuccess(status, root, truncated: result.Truncated);
         });

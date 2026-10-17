@@ -1,3 +1,7 @@
+## v1.1.1
+- Internal: removed every `ConfigureAwait(false)` call. The stdio host has no synchronization context, so
+  continuations run on the same threads as before. No wire or behavior change.
+
 ## v1.1.0
 - Argument-shape mistakes now come back as an `InvalidArgument` failure envelope instead of the SDK's bare
   `An error occurred invoking '<tool>'.`. A call whose argument names do not fit a tool's schema is rejected

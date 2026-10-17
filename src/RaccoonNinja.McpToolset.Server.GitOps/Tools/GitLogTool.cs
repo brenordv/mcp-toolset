@@ -31,8 +31,8 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
-            var verifiedRefs = await refVerifier.VerifyOptionalRefsOrRangesAsync(root, [@ref], cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
+            var verifiedRefs = await refVerifier.VerifyOptionalRefsOrRangesAsync(root, [@ref], cancellationToken);
 
             var intent = new GitIntent
             {
@@ -43,7 +43,7 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
                 VerifiedRefs = verifiedRefs,
                 Pathspecs = ToolCommon.ConfinePaths(root, paths),
             };
-            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
             var commits = LogParser.Parse(result.Stdout);
 
             var filtersApplied = FiltersAppliedBuilder.Create()

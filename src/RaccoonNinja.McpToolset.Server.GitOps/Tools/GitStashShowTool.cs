@@ -22,7 +22,7 @@ public sealed class GitStashShowTool(ToolCommon common)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
             if (index < 0)
                 throw new RejectedArgumentException(
                     "stash index must be >= 0",
@@ -46,8 +46,8 @@ public sealed class GitStashShowTool(ToolCommon common)
                 Flags = ["--numstat", "-z"],
                 VerifiedRefs = [stashRef],
             };
-            var unified = await common.ExecuteAsync(unifiedIntent, ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
-            var numstatResult = await common.ExecuteAsync(numstatIntent, ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var unified = await common.ExecuteAsync(unifiedIntent, ctx, cancellationToken: cancellationToken);
+            var numstatResult = await common.ExecuteAsync(numstatIntent, ctx, cancellationToken: cancellationToken);
             var files = DiffParser.ParseUnified(unified.Stdout);
             var numstat = DiffParser.ParseNumstatZ(numstatResult.Stdout);
             var diff = DiffParser.AssembleDiffResult(files, "ref_to_ref",

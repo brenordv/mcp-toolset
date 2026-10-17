@@ -30,9 +30,9 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
             GuardRangeCombination(fromRef, toRef);
-            var verifiedRefs = await refVerifier.VerifyOptionalRefsOrRangesAsync(root, [fromRef, toRef], cancellationToken).ConfigureAwait(false);
+            var verifiedRefs = await refVerifier.VerifyOptionalRefsOrRangesAsync(root, [fromRef, toRef], cancellationToken);
 
             var flags = BuildFlags(staged);
             var attached = BuildAttachedOptions(contextLines);
@@ -40,8 +40,8 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
             var mode = DetermineMode(staged, verifiedRefs.Count > 0, statOnly);
 
             var (resultModel, truncated) = statOnly
-                ? await ExecuteStatOnlyAsync(root, flags, verifiedRefs, pathspecs, ctx, cancellationToken).ConfigureAwait(false)
-                : await ExecuteUnifiedAsync(root, flags, attached, verifiedRefs, pathspecs, mode, ctx, cancellationToken).ConfigureAwait(false);
+                ? await ExecuteStatOnlyAsync(root, flags, verifiedRefs, pathspecs, ctx, cancellationToken)
+                : await ExecuteUnifiedAsync(root, flags, attached, verifiedRefs, pathspecs, mode, ctx, cancellationToken);
 
             var filtersApplied = FiltersAppliedBuilder.Create()
                 .Flag("staged", staged)
@@ -132,9 +132,9 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
         CallContext ctx, CancellationToken cancellationToken)
     {
         var numstatResult = await common.ExecuteAsync(
-            NumstatIntent(root, flags, verifiedRefs, pathspecs), ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+            NumstatIntent(root, flags, verifiedRefs, pathspecs), ctx, cancellationToken: cancellationToken);
         var nameStatusResult = await common.ExecuteAsync(
-            NameStatusIntent(root, flags, verifiedRefs, pathspecs), ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+            NameStatusIntent(root, flags, verifiedRefs, pathspecs), ctx, cancellationToken: cancellationToken);
 
         var numstat = DiffParser.ParseNumstatZ(numstatResult.Stdout);
         var changeTypes = DiffParser.ParseNameStatusZ(nameStatusResult.Stdout);
@@ -159,9 +159,9 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
             VerifiedRefs = verifiedRefs,
             Pathspecs = pathspecs,
         };
-        var unifiedResult = await common.ExecuteAsync(unifiedIntent, ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var unifiedResult = await common.ExecuteAsync(unifiedIntent, ctx, cancellationToken: cancellationToken);
         var numstatResult = await common.ExecuteAsync(
-            NumstatIntent(root, flags, verifiedRefs, pathspecs), ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+            NumstatIntent(root, flags, verifiedRefs, pathspecs), ctx, cancellationToken: cancellationToken);
 
         var files = DiffParser.ParseUnified(unifiedResult.Stdout);
         var numstat = DiffParser.ParseNumstatZ(numstatResult.Stdout);

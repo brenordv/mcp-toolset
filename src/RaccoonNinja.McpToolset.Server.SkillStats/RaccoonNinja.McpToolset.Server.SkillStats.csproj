@@ -10,7 +10,7 @@
          parameter names, and the wire contract uses snake_case (days_back, skill, limit).
          Scoped to this project only. -->
     <NoWarn>$(NoWarn);CA1707</NoWarn>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
   </PropertyGroup>
 
   <ItemGroup>

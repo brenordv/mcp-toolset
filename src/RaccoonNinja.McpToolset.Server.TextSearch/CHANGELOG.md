@@ -1,3 +1,7 @@
+## v1.4.3
+- Internal: removed every `ConfigureAwait(false)` call. The stdio host has no synchronization context, so
+  continuations run on the same threads as before. No wire or behavior change.
+
 ## v1.4.2
 - Fixed: an ignore-file line (`.gitignore`, an agent-ignore file, or `.mcpignore`) that translated to an
   invalid .NET regex took every content tool down with `InternalError` (`detail.type: RegexParseException`),

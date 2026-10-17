@@ -21,7 +21,7 @@ public sealed class GitLsFilesTool(ToolCommon common)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
 
             var intent = new GitIntent
             {
@@ -30,7 +30,7 @@ public sealed class GitLsFilesTool(ToolCommon common)
                 Flags = stage ? ["-z", "--stage"] : ["-z"],
                 Pathspecs = ToolCommon.ConfinePaths(root, paths),
             };
-            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
             IReadOnlyList<object> entries = stage
                 ? LsFilesParser.ParseStage(result.Stdout)
                 : LsFilesParser.Parse(result.Stdout);

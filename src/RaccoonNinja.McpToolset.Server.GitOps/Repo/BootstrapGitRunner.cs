@@ -29,7 +29,7 @@ internal static class BootstrapGitRunner
         // Close stdin immediately so git never blocks on it.
         try { process.StandardInput.Close(); } catch { /* ignore */ }
 
-        return await ReadToExitAsync(process, timeout, onTimeout, cancellationToken).ConfigureAwait(false);
+        return await ReadToExitAsync(process, timeout, onTimeout, cancellationToken);
     }
 
     /// <summary>Compose <c>git [hardening...] -C cwd tail...</c> into a full argv list.</summary>
@@ -95,8 +95,8 @@ internal static class BootstrapGitRunner
         try
         {
             var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
-            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
-            var stdout = await stdoutTask.ConfigureAwait(false);
+            await process.WaitForExitAsync(timeoutCts.Token);
+            var stdout = await stdoutTask;
             return (stdout, process.ExitCode);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)

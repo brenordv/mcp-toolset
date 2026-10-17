@@ -25,7 +25,7 @@ public sealed class ToolCommon(
 
     public async Task<string> ResolveAndLogAsync(string cwd, CallContext ctx, RootHolder holder, CancellationToken cancellationToken = default)
     {
-        var resolution = await resolver.ResolveAsync(cwd, cancellationToken).ConfigureAwait(false);
+        var resolution = await resolver.ResolveAsync(cwd, cancellationToken);
         ctx.Log(
             LogLevel.Debug,
             resolution.CacheHit ? "cache_hit" : "cache_miss",
@@ -55,7 +55,7 @@ public sealed class ToolCommon(
         RunResult result;
         try
         {
-            result = await runner.RunAsync(argv, env, intent.RepoRoot, timeoutMs, outputCapBytes, ctx.CallId, cancellationToken).ConfigureAwait(false);
+            result = await runner.RunAsync(argv, env, intent.RepoRoot, timeoutMs, outputCapBytes, ctx.CallId, cancellationToken);
         }
         catch (GitTimeoutException)
         {
@@ -144,7 +144,7 @@ public sealed class ToolCommon(
     {
         try
         {
-            var envelope = await body().ConfigureAwait(false);
+            var envelope = await body();
             // WrapAsync is the single owner of per-call outcome metrics, so a tool that runs
             // several git executions is still counted exactly once.
             metrics.RecordToolCall(ctx.Tool, "ok");

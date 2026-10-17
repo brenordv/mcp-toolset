@@ -132,7 +132,7 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var envelope = await body().ConfigureAwait(false);
+            var envelope = await body();
             metrics.RecordToolCall(ctx.Tool, "ok");
             metrics.RecordDurationMs((int)stopwatch.ElapsedMilliseconds);
             if (envelope.Truncated)
