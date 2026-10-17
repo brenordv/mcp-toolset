@@ -1,9 +1,13 @@
+using System.Globalization;
 using RaccoonNinja.McpToolset.Common.Files.Selection;
 
 namespace RaccoonNinja.McpToolset.Common.Files.Tests.Selection;
 
 public sealed class IgnoreRulesTests
 {
+    private static readonly string[] BracketShapeTemplates =
+        ["[{0}]", "[!{0}]", "[{0}", "[a{0}z]", "a{0}b", "[{0}-x]", "[x-{0}]", "[]{0}]", "{0}"];
+
     [Theory]
     [InlineData("bin", "bin", false)]
     [InlineData("bin", "src/bin", false)]
@@ -133,6 +137,68 @@ public sealed class IgnoreRulesTests
 
         // Assert
         Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void Parse_LeadingCloseBracketInClass_IsLiteralMember()
+    {
+        // Arrange
+        var rules = IgnoreRules.Parse(["[]ab]x"]);
+
+        // Act & Assert
+        Assert.True(rules.IsIgnored("]x", isDirectory: false));
+        Assert.True(rules.IsIgnored("ax", isDirectory: false));
+        Assert.False(rules.IsIgnored("cx", isDirectory: false));
+    }
+
+    [Fact]
+    public void Parse_NegatedLeadingCloseBracketInClass_ExcludesIt()
+    {
+        // Arrange
+        var rules = IgnoreRules.Parse(["[!]ab]x"]);
+
+        // Act & Assert
+        Assert.True(rules.IsIgnored("cx", isDirectory: false));
+        Assert.False(rules.IsIgnored("]x", isDirectory: false));
+        Assert.False(rules.IsIgnored("ax", isDirectory: false));
+    }
+
+    [Fact]
+    public void Parse_ReversedRange_IsSkippedNotThrown()
+    {
+        // Arrange
+        var lines = new[] { "[z-a]", "*.log" };
+
+        // Act
+        var rules = IgnoreRules.Parse(lines);
+
+        // Assert
+        Assert.Equal(["*.log"], rules.Patterns);
+        Assert.True(rules.IsIgnored("a.log", isDirectory: false));
+    }
+
+    [Fact]
+    public void Parse_AnyPrintableAsciiInBracketShapes_NeverThrows()
+    {
+        // Arrange
+        var failures = new List<(string Pattern, string Exception)>();
+
+        // Act
+        for (var c = ' '; c <= '~'; c++)
+        {
+            foreach (var template in BracketShapeTemplates)
+            {
+                var pattern = string.Format(CultureInfo.InvariantCulture, template, c);
+                var exception = Record.Exception(() => IgnoreRules.Parse([pattern]));
+                if (exception is not null)
+                {
+                    failures.Add((pattern, exception.GetType().Name));
+                }
+            }
+        }
+
+        // Assert
+        Assert.Empty(failures);
     }
 
     [Fact]

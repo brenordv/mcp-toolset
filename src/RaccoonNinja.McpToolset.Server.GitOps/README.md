@@ -79,9 +79,10 @@ A few rules apply to every call regardless of tool:
 | [`git_diff`](#git_diff)               | Unified diff (staged / ref-to-ref / worktree / stat-only) | `cwd`, `staged`, `fromRef`, `toRef`, `paths`, `contextLines`, `statOnly`                   |
 | [`git_log`](#git_log)                 | Commit history with filters                               | `cwd`, `paths`, `author`, `since`, `until`, `grep`, `pickaxe`, `maxCount`, `ref`, `follow` |
 | [`git_show`](#git_show)               | Inspect one commit/tag/tree + its diffs                   | `cwd`, `ref`, `paths`                                                                      |
+| [`git_file_at_ref`](#git_file_at_ref) | One file's content, mode, and blob id at a ref            | `cwd`, `path`, `ref`                                                                       |
 | [`git_blame`](#git_blame)             | Per-line author/commit/time for a file                    | `cwd`, `path`, `lineStart`, `lineEnd`, `ref`                                               |
 | [`git_grep`](#git_grep)               | Search tracked content (optionally at a ref)              | `cwd`, `pattern`, `paths`, `ref`, `ignoreCase`, `fixedString`, `maxCount`                  |
-| [`git_ls_files`](#git_ls_files)       | List tracked paths                                        | `cwd`, `paths`                                                                             |
+| [`git_ls_files`](#git_ls_files)       | List tracked paths (optionally with mode and blob id)     | `cwd`, `paths`, `stage`                                                                    |
 | [`git_branch_list`](#git_branch_list) | List local (and optionally remote) branches               | `cwd`, `includeRemote`                                                                     |
 | [`git_reflog`](#git_reflog)           | Recent reflog entries                                     | `cwd`, `maxCount`                                                                          |
 | [`git_stash_list`](#git_stash_list)   | List stash entries                                        | `cwd`                                                                                      |
@@ -174,10 +175,16 @@ and is verified to a SHA before use.
 Runs two passes: a one-commit `git log` for metadata (same format as `git_log`), and `git show --format=` for the
 patch, parsed into the same `FileDiff` shape as `git_diff`. `paths` restricts the diff section.
 
+A `ref` in `<rev>:<path>` form (`HEAD:README.md`, `:README.md`) names a file, not a commit, and is rejected with a
+`RejectedArgument` that points at `git_file_at_ref`. A colon inside `@{...}` or `^{...}` is part of the commit-ish,
+and `:/text` (commit search by message) is accepted.
+
 ```mermaid
 flowchart TD
     A[git_show: cwd, ref, paths] --> B[Resolve root]
-    B --> C[Verify ref → SHA<br/>required]
+    B --> R{ref is rev:path?}
+    R -- yes --> X[RejectedArgument → use git_file_at_ref]
+    R -- no --> C[Verify ref → SHA<br/>required]
     C --> D["git log -1 --pretty=format:… SHA<br/>(metadata)"]
     C --> E["git show --format= SHA -- paths<br/>(patch)"]
     D --> F[Commit record]
@@ -185,6 +192,39 @@ flowchart TD
     F --> H["payload { commit, files }"]
     G --> H
     H --> I[ResultEnvelope]
+```
+
+---
+
+### `git_file_at_ref`
+
+Returns one tracked file's content as of a ref, the equivalent of `git show <ref>:<path>`. `ref` defaults to `HEAD`
+and takes any commit-ish; the file goes in `path`, never inside `ref`. A file deleted since is still readable at an
+earlier ref.
+
+The payload is `{path, ref_sha, mode, object_id, size, is_binary, content}`. `size` is the blob's byte count. A blob
+with a NUL byte in its first 8000 bytes (git's own binary heuristic) comes back with `is_binary: true` and
+`content: null`. A `120000` entry is a symlink, and its content is the link target text.
+
+Committed content is returned as-is: git-ops has no secret denylist or content scan, the same trust class as the
+hunks `git_show` returns and the lines `git_grep` returns.
+
+Errors: `PathNotFound` when the path does not exist at that ref, `RejectedArgument` (with `param`) when `path` is
+empty, names a directory or the repository root, or when `ref` is a `<rev>:<path>` expression or a blob id.
+
+```mermaid
+flowchart TD
+    A[git_file_at_ref: cwd, path, ref] --> B[Resolve root]
+    B --> C[Guards: non-empty file path,<br/>no rev:path in ref, confine path]
+    C --> D[Verify ref → SHA<br/>default HEAD]
+    D --> E["git ls-tree -z -l SHA -- path"]
+    E --> F{exact path is a blob?}
+    F -- no entry --> G[PathNotFound]
+    F -- tree / submodule --> H[RejectedArgument]
+    F -- blob --> I["git show --format= BLOB"]
+    I --> J[Binary check: NUL in first 8000 bytes]
+    J --> K["payload { path, ref_sha, mode, object_id, size, is_binary, content }"]
+    K --> L[ResultEnvelope]
 ```
 
 ---
@@ -248,12 +288,18 @@ flowchart TD
 Lists tracked paths, optionally restricted to a subset of repo-relative paths. NUL-delimited output parsed into
 entries. Useful for enumerating what's under version control before drilling in.
 
+By default each result is a path string. With `stage: true` the tool runs `git ls-files --stage` and each result
+becomes an object `{path, mode, object_id, stage}`: `mode` is the six octal digits git stores (`100644` for a
+regular file, `100755` for an executable one, `120000` for a symlink, `160000` for a submodule), `object_id` is the
+staged blob, and `stage` is 0 for a normal entry or 1 to 3 for the sides of an unmerged one. That is how to check
+whether a committed script carries the executable bit.
+
 ```mermaid
 flowchart LR
-    A[git_ls_files: cwd, paths] --> B[Resolve root]
+    A[git_ls_files: cwd, paths, stage] --> B[Resolve root]
     B --> C[Confine paths]
-    C --> D["git ls-files -z -- paths"]
-    D --> E[LsFilesParser → entries]
+    C --> D["git ls-files -z [--stage] -- paths"]
+    D --> E[LsFilesParser → paths or entries]
     E --> F[ResultEnvelope · pre_filter_count]
 ```
 

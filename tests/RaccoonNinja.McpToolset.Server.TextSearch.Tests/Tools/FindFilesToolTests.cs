@@ -118,6 +118,36 @@ public sealed class FindFilesToolTests
         Assert.Equal(1, envelope.SkippedSymlinks);
     }
 
+    [Fact]
+    public async Task Find_Glob_LeadingCloseBracketIgnoreLine_StillHonorsTheRule()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("proj/.gitignore", "[]]keep.txt\n");
+        harness.Write("proj/]keep.txt", "1");
+        harness.Write("proj/other.txt", "2");
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(glob: "*.txt", cwd: harness.Dir("proj"));
+
+        // Assert
+        Assert.Equal(["other.txt"], TextSearchHarness.Paths(envelope));
+    }
+
+    [Fact]
+    public async Task Find_Glob_ReversedRange_IsPatternInvalid()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(glob: "[z-a]");
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.PatternInvalid, envelope.Error.Code);
+    }
+
     private static bool TryCreateSymlink(string link, string target)
     {
         try

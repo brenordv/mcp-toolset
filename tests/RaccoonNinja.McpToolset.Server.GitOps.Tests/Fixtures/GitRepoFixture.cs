@@ -79,7 +79,7 @@ public sealed class GitRepoFixture : IAsyncLifetime
     /// result matches git's canonicalized output. A no-op where no ancestor is a symlink, which is the
     /// usual case on Windows and Linux temp directories.
     /// </summary>
-    private static string RealPath(string path)
+    internal static string RealPath(string path)
     {
         var full = Path.GetFullPath(path);
         var root = Path.GetPathRoot(full) ?? string.Empty;

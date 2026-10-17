@@ -423,6 +423,116 @@ public class GitToolsIntegrationTests
     }
 
     [Fact]
+    public async Task GitFileAtRefTool_ReturnsContentAtOlderRef()
+    {
+        // Arrange
+        var tool = new GitFileAtRefTool(_common, _refVerifier);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, "alpha.txt", @ref: "HEAD~1");
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var file = Assert.IsType<FileAtRef>(envelope.Results[0]);
+        Assert.Equal("alpha 1\nalpha 2\nalpha 3\n", file.Content);
+        Assert.Equal(24, file.Size);
+        Assert.Equal("100644", file.Mode);
+        Assert.False(file.IsBinary);
+        Assert.True(RefVerifier.IsResolvedObjectName(file.RefSha));
+        Assert.True(RefVerifier.IsResolvedObjectName(file.ObjectId));
+    }
+
+    [Fact]
+    public async Task GitFileAtRefTool_DefaultRef_IsHead()
+    {
+        // Arrange
+        var tool = new GitFileAtRefTool(_common, _refVerifier);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, "alpha.txt");
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var file = Assert.IsType<FileAtRef>(envelope.Results[0]);
+        Assert.Equal("alpha 1\nalpha changed\nalpha 3\n", file.Content);
+    }
+
+    [Fact]
+    public async Task GitFileAtRefTool_MissingPath_IsPathNotFound()
+    {
+        // Arrange
+        var tool = new GitFileAtRefTool(_common, _refVerifier);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, "nope.txt");
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.PathNotFound, envelope.Error.Code);
+    }
+
+    [Fact]
+    public async Task GitFileAtRefTool_UnknownRef_IsRefNotFound()
+    {
+        // Arrange
+        var tool = new GitFileAtRefTool(_common, _refVerifier);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, "alpha.txt", @ref: "no-such-branch");
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RefNotFound, envelope.Error.Code);
+    }
+
+    [Fact]
+    public async Task GitFileAtRefTool_RevPathInRef_IsRejected()
+    {
+        // Arrange
+        var tool = new GitFileAtRefTool(_common, _refVerifier);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, "alpha.txt", @ref: "HEAD:alpha.txt");
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal("ref", envelope.Error.Detail["param"]);
+    }
+
+    [Fact]
+    public async Task GitFileAtRefTool_BlobIdAsRef_IsRejected()
+    {
+        // Arrange
+        var tool = new GitFileAtRefTool(_common, _refVerifier);
+        var first = await tool.InvokeAsync(_fixture.RepoPath, "alpha.txt");
+        var blobId = Assert.IsType<FileAtRef>(first.Results[0]).ObjectId;
+
+        // Act
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, "alpha.txt", @ref: blobId);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal("ref", envelope.Error.Detail["param"]);
+    }
+
+    [Fact]
+    public async Task GitShowTool_RevPathRef_IsRejectedWithHint()
+    {
+        // Arrange
+        var tool = new GitShowTool(_common, _refVerifier);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, @ref: "HEAD:alpha.txt");
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Contains("git_file_at_ref", envelope.Error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task GitToolsEnvelope_IsSerializableToJson()
     {
         // Arrange

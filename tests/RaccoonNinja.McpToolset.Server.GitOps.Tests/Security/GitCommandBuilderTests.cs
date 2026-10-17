@@ -159,6 +159,31 @@ public class GitCommandBuilderTests
     }
 
     [Fact]
+    public void Build_LsTreeWithRefAndPath_EmitsBarrierThenRefThenDashDashPath()
+    {
+        // Arrange
+        const string sha = "0123456789abcdef0123456789abcdef01234567";
+        var intent = new GitIntent
+        {
+            Subcommand = "ls-tree",
+            RepoRoot = Path.GetTempPath(),
+            Flags = ["-z", "-l"],
+            VerifiedRefs = [sha],
+            Pathspecs = ["dir/file.txt"],
+        };
+
+        // Act
+        var (argv, _) = GitCommandBuilder.Build(intent);
+
+        // Assert
+        var refIdx = argv.IndexOf(sha);
+        var pathIdx = argv.IndexOf("dir/file.txt");
+        Assert.Equal("--end-of-options", argv[refIdx - 1]);
+        Assert.Equal("--", argv[pathIdx - 1]);
+        Assert.True(refIdx < pathIdx);
+    }
+
+    [Fact]
     public void Build_SeparatesPathspecsWithDoubleDash()
     {
         // Arrange

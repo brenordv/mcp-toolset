@@ -5,6 +5,9 @@ namespace RaccoonNinja.McpToolset.Common.Files.Tests.Selection;
 
 public sealed class GlobCompilerTests
 {
+    private static readonly string[] BracketShapeTemplates =
+        ["[{0}]", "[!{0}]", "[{0}", "[a{0}z]", "a{0}b", "[{0}-x]", "[x-{0}]", "[]{0}]", "{0}"];
+
     [Theory]
     [InlineData("**/*.cs", "a/b/Foo.cs", true)]
     [InlineData("**/*.cs", "Foo.cs", true)]
@@ -200,6 +203,55 @@ public sealed class GlobCompilerTests
         // Act
         // Assert
         Assert.Throws<RegexCompilationException>(() => GlobCompiler.Compile("{a,{b,{c,{d,{e,f}}}}}.txt"));
+    }
+
+    [Fact]
+    public void Compile_LeadingCloseBracketInClass_IsLiteralMember()
+    {
+        // Arrange
+        var regex = GlobCompiler.Compile("[]ab]x");
+
+        // Act & Assert
+        Assert.Matches(regex, "]x");
+        Assert.Matches(regex, "ax");
+        Assert.DoesNotMatch(regex, "cx");
+    }
+
+    [Fact]
+    public void Compile_ReversedRange_ThrowsRegexCompilationException()
+    {
+        // Arrange
+        const string glob = "[z-a]";
+
+        // Act
+        var exception = Assert.Throws<RegexCompilationException>(() => GlobCompiler.Compile(glob));
+
+        // Assert
+        Assert.Contains("ReversedCharacterRange", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compile_AnyPrintableAsciiInBracketShapes_ThrowsOnlyTypedError()
+    {
+        // Arrange
+        var failures = new List<(string Pattern, string Exception)>();
+
+        // Act
+        for (var c = ' '; c <= '~'; c++)
+        {
+            foreach (var template in BracketShapeTemplates)
+            {
+                var pattern = string.Format(CultureInfo.InvariantCulture, template, c);
+                var exception = Record.Exception(() => GlobCompiler.Compile(pattern));
+                if (exception is not null and not RegexCompilationException)
+                {
+                    failures.Add((pattern, exception.GetType().Name));
+                }
+            }
+        }
+
+        // Assert
+        Assert.Empty(failures);
     }
 
     [Fact]

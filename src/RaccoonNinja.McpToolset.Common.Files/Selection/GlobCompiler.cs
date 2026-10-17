@@ -27,6 +27,7 @@ public static class GlobCompiler
     /// <param name="caseSensitive">When <c>true</c>, match case-sensitively; otherwise case-insensitively (the default).</param>
     /// <returns>A compiled regex that matches a whole path against <paramref name="glob"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="glob"/> is <c>null</c>.</exception>
+    /// <exception cref="RegexCompilationException">Thrown when the glob is too long, nests braces too deeply, or translates to a regex .NET cannot parse (a reversed range such as <c>[z-a]</c>).</exception>
     public static Regex Compile(string glob, bool caseSensitive = false)
     {
         ArgumentNullException.ThrowIfNull(glob);
@@ -47,7 +48,15 @@ public static class GlobCompiler
             options |= RegexOptions.IgnoreCase;
         }
 
-        return new Regex(anchored, options, MatchTimeout);
+        try
+        {
+            return new Regex(anchored, options, MatchTimeout);
+        }
+        catch (RegexParseException ex)
+        {
+            // The parse message quotes the translated regex, which the caller never wrote; the error kind alone is diagnosable.
+            throw new RegexCompilationException($"glob is not a valid pattern ({ex.Error})", ex);
+        }
     }
 
     /// <summary>Translate the glob span <c>[start, end)</c> into a regex fragment (recursively, for brace alternatives).</summary>
@@ -67,7 +76,7 @@ public static class GlobCompiler
                     i++;
                     break;
                 case '[':
-                    i = AppendCharClass(s, i, end, sb);
+                    i = BracketExpression.Append(s, i, end, sb);
                     break;
                 case '{':
                     i = AppendBraceGroup(s, i, end, sb, depth);
@@ -100,40 +109,6 @@ public static class GlobCompiler
 
         sb.Append(".*");
         return i + 2;
-    }
-
-    /// <summary>Copy a <c>[...]</c> class, turning a leading <c>!</c> or <c>^</c> into regex negation and escaping class metacharacters.</summary>
-    private static int AppendCharClass(string s, int i, int end, StringBuilder sb)
-    {
-        var close = s.IndexOf(']', i + 1);
-        if (close < 0 || close >= end)
-        {
-            sb.Append(Regex.Escape("["));
-            return i + 1;
-        }
-
-        sb.Append('[');
-        var j = i + 1;
-        if (j < close && (s[j] == '!' || s[j] == '^'))
-        {
-            sb.Append('^');
-            j++;
-        }
-
-        while (j < close)
-        {
-            var ch = s[j];
-            if (ch is '\\' or '^' or ']')
-            {
-                sb.Append('\\');
-            }
-
-            sb.Append(ch);
-            j++;
-        }
-
-        sb.Append(']');
-        return close + 1;
     }
 
     /// <summary>Turn a balanced <c>{a,b,...}</c> group into <c>(?:a|b|...)</c>, translating each top-level alternative.</summary>

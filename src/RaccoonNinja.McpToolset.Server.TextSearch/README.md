@@ -207,6 +207,9 @@ never re-includable, so a file they ignore is never listed, read, or searched. T
 content scan are independent of all three and always apply, so re-including an ignored path still cannot
 surface a secret.
 
+A line the server cannot compile (a reversed range such as `[z-a]`, which git itself never matches) is
+skipped. Every other line still applies, and the secret denylist and content scan are unaffected.
+
 ## Package roots
 
 Package roots let one instance also search out-of-tree dependency caches (the NuGet, Cargo, or npm stores,

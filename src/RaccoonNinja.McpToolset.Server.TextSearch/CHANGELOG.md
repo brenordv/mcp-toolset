@@ -1,3 +1,16 @@
+## v1.4.2
+- Fixed: an ignore-file line (`.gitignore`, an agent-ignore file, or `.mcpignore`) that translated to an
+  invalid .NET regex took every content tool down with `InternalError` (`detail.type: RegexParseException`),
+  even a literal `search_text` or an `inspect_files` call. The ignore files above a scoped `cwd` are read
+  too, so one bad line anywhere between the base root and the file was enough. Such a line is now skipped
+  and every other line still applies.
+- Fixed: bracket expressions now follow git's reading. A `]` right after the opening `[` (or after `!`/`^`)
+  is a literal member, so `[]ab]` matches `]`, `a`, or `b`, and `[]` or `[!]` with no later `]` no longer
+  produces an invalid regex. A `[` inside a class is literal and never starts .NET class subtraction.
+- Fixed: a glob argument that cannot compile (a reversed range such as `[z-a]`) now returns
+  `PatternInvalid` instead of `InternalError`. The message names the parse error kind
+  (`ReversedCharacterRange`), not the translated regex.
+
 ## v1.4.1
 - Internal: the argument-shape name validator moved to the shared `Common.Mcp` library, shared with the
   other servers that run the same filter. No wire or behavior change.

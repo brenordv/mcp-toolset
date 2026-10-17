@@ -27,6 +27,23 @@ public sealed class SearchTextToolTests
     }
 
     [Fact]
+    public async Task Search_Literal_WithUncompilableIgnoreLineAboveProject_Succeeds()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write(".gitignore", "[z-a]\n");
+        harness.Write("proj/Cargo.lock", "name = \"reqwest\"\n");
+
+        // Act
+        var envelope = await harness.Search.InvokeAsync(pattern: "name = \"reqwest\"", cwd: harness.Dir("proj"));
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var match = Assert.IsType<ContentMatch>(Assert.Single(envelope.Results));
+        Assert.Equal("Cargo.lock", match.Path);
+    }
+
+    [Fact]
     public async Task Search_Regex_MatchesPerLine()
     {
         // Arrange
