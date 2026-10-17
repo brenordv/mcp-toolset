@@ -83,7 +83,7 @@ internal sealed class IgnoreRule
         }
         catch (RegexParseException)
         {
-            // BracketExpression leaves a reversed range ([z-a]) as the only parse failure; git never matches one, so the line is skipped.
+            // Ignore-file content is untrusted: a line the translator cannot express as a .NET regex contributes no rule instead of failing every gated read.
             return null;
         }
 
@@ -161,7 +161,7 @@ internal sealed class IgnoreRule
                     i++;
                     break;
                 case '[':
-                    i = BracketExpression.Append(p, i, p.Length, sb);
+                    i = BracketExpression.Append(p, i, p.Length, sb, rejectReversedRange: false);
                     break;
                 case '\\':
                     i = AppendEscaped(p, i, sb);

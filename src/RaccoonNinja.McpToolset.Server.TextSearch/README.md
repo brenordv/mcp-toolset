@@ -207,8 +207,12 @@ never re-includable, so a file they ignore is never listed, read, or searched. T
 content scan are independent of all three and always apply, so re-including an ignored path still cannot
 surface a secret.
 
-A line the server cannot compile (a reversed range such as `[z-a]`, which git itself never matches) is
-skipped. Every other line still applies, and the secret denylist and content scan are unaffected.
+Ranges and negation in bracket expressions follow git: a reversed range such as `[z-a]` matches
+only its first character (`z`), and a bracket expression never matches `/`. Three differences
+remain: a backslash inside brackets is a literal character, POSIX classes such as
+`[:alpha:]` are not supported, and a `[` with no closing `]` is a literal `[` (git never matches
+such a line). A line the server cannot compile is skipped; every other line
+applies, and the secret denylist and content scan are unaffected.
 
 ## Package roots
 

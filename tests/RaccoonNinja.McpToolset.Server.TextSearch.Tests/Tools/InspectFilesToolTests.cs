@@ -91,7 +91,7 @@ public sealed class InspectFilesToolTests
     }
 
     [Fact]
-    public async Task Inspect_Paths_WithUncompilableIgnoreLineInProject_Succeeds()
+    public async Task Inspect_Paths_WithReversedRangeIgnoreLineInProject_Succeeds()
     {
         // Arrange
         using var harness = new TextSearchHarness();

@@ -76,7 +76,7 @@ public static class GlobCompiler
                     i++;
                     break;
                 case '[':
-                    i = BracketExpression.Append(s, i, end, sb);
+                    i = BracketExpression.Append(s, i, end, sb, rejectReversedRange: true);
                     break;
                 case '{':
                     i = AppendBraceGroup(s, i, end, sb, depth);

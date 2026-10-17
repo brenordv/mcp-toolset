@@ -27,7 +27,7 @@ public sealed class SearchTextToolTests
     }
 
     [Fact]
-    public async Task Search_Literal_WithUncompilableIgnoreLineAboveProject_Succeeds()
+    public async Task Search_Literal_WithReversedRangeIgnoreLineAboveProject_Succeeds()
     {
         // Arrange
         using var harness = new TextSearchHarness();

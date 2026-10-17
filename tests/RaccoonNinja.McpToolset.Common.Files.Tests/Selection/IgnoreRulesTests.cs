@@ -127,6 +127,18 @@ public sealed class IgnoreRulesTests
     [InlineData("[!abc].txt", "a.txt", false)]
     [InlineData("file?.txt", "file1.txt", true)]
     [InlineData("file?.txt", "file12.txt", false)]
+    [InlineData("[z-ab]x", "zx", true)]
+    [InlineData("[z-ab]x", "bx", true)]
+    [InlineData("[z-ab]x", "ax", false)]
+    [InlineData("[!z-a]x", "cx", true)]
+    [InlineData("[!z-a]x", "zx", false)]
+    [InlineData("[a-c-e]x", "-x", true)]
+    [InlineData("[a-c-e]x", "dx", false)]
+    [InlineData("[--0]x", ".x", true)]
+    [InlineData("[--0]x", "1x", false)]
+    [InlineData("[--0]x", "/x", false)]
+    [InlineData("d[!a]x", "d/x", false)]
+    [InlineData("d[.-0]x", "d/x", false)]
     public void IsIgnored_CharacterClassAndQuestionMark_MatchAsGlob(string pattern, string path, bool expected)
     {
         // Arrange
@@ -164,21 +176,31 @@ public sealed class IgnoreRulesTests
     }
 
     [Fact]
-    public void Parse_ReversedRange_IsSkippedNotThrown()
+    public void Parse_ReversedRange_MatchesItsLowEndOnly()
     {
         // Arrange
-        var lines = new[] { "[z-a]", "*.log" };
+        var rules = IgnoreRules.Parse(["[z-a]"]);
 
-        // Act
-        var rules = IgnoreRules.Parse(lines);
-
-        // Assert
-        Assert.Equal(["*.log"], rules.Patterns);
-        Assert.True(rules.IsIgnored("a.log", isDirectory: false));
+        // Act & Assert
+        Assert.Equal(["[z-a]"], rules.Patterns);
+        Assert.True(rules.IsIgnored("z", isDirectory: false));
+        Assert.False(rules.IsIgnored("a", isDirectory: false));
+        Assert.False(rules.IsIgnored("m", isDirectory: false));
     }
 
     [Fact]
-    public void Parse_AnyPrintableAsciiInBracketShapes_NeverThrows()
+    public void Parse_ReincludeWithNegatedClass_DoesNotCrossSlash()
+    {
+        // Arrange
+        var rules = IgnoreRules.Parse(["*.secret", "!public[!_]*.secret"]);
+
+        // Act & Assert
+        Assert.True(rules.IsIgnored("public/x.secret", isDirectory: false));
+        Assert.False(rules.IsIgnored("publicx.secret", isDirectory: false));
+    }
+
+    [Fact]
+    public void Parse_AnyPrintableAsciiInBracketShapes_CompilesEveryLine()
     {
         // Arrange
         var failures = new List<(string Pattern, string Exception)>();
@@ -189,10 +211,15 @@ public sealed class IgnoreRulesTests
             foreach (var template in BracketShapeTemplates)
             {
                 var pattern = string.Format(CultureInfo.InvariantCulture, template, c);
-                var exception = Record.Exception(() => IgnoreRules.Parse([pattern]));
+                IgnoreRules rules = null;
+                var exception = Record.Exception(() => rules = IgnoreRules.Parse([pattern]));
                 if (exception is not null)
                 {
                     failures.Add((pattern, exception.GetType().Name));
+                }
+                else if (template != "{0}" && rules.Patterns.Count != 1)
+                {
+                    failures.Add((pattern, "Skipped"));
                 }
             }
         }

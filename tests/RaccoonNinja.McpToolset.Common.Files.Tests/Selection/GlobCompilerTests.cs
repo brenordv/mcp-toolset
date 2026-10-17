@@ -99,6 +99,7 @@ public sealed class GlobCompilerTests
     [InlineData("[a-c].txt", "b.txt", true)]
     [InlineData("[!a].txt", "b.txt", true)]
     [InlineData("[!a].txt", "a.txt", false)]
+    [InlineData("a[!b]c", "a/c", false)]
     public void Compile_CharacterClass_MatchesAndNegates(string glob, string path, bool expected)
     {
         // Arrange
@@ -217,12 +218,11 @@ public sealed class GlobCompilerTests
         Assert.DoesNotMatch(regex, "cx");
     }
 
-    [Fact]
-    public void Compile_ReversedRange_ThrowsRegexCompilationException()
+    [Theory]
+    [InlineData("[z-a]")]
+    [InlineData("[z-ab]")]
+    public void Compile_ReversedRange_ThrowsRegexCompilationException(string glob)
     {
-        // Arrange
-        const string glob = "[z-a]";
-
         // Act
         var exception = Assert.Throws<RegexCompilationException>(() => GlobCompiler.Compile(glob));
 

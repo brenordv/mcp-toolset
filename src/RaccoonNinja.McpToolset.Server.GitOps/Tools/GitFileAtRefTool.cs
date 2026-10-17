@@ -34,11 +34,10 @@ public sealed class GitFileAtRefTool(ToolCommon common, IRefVerifier refVerifier
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
             var confined = ValidateAndConfine(root, path, @ref);
             var sha = await refVerifier
-                .VerifyRequiredRefAsync(root, string.IsNullOrWhiteSpace(@ref) ? "HEAD" : @ref, cancellationToken)
-                .ConfigureAwait(false);
+                .VerifyRequiredRefAsync(root, string.IsNullOrWhiteSpace(@ref) ? "HEAD" : @ref, cancellationToken);
 
             var treeIntent = new GitIntent
             {
@@ -52,7 +51,7 @@ public sealed class GitFileAtRefTool(ToolCommon common, IRefVerifier refVerifier
                 treeIntent,
                 ctx,
                 stderrClassifier: ClassifyNotATreeObject,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+                cancellationToken: cancellationToken);
             var entry = SelectBlob(LsTreeParser.Parse(treeResult.Stdout), confined);
 
             var blobIntent = new GitIntent
@@ -62,8 +61,7 @@ public sealed class GitFileAtRefTool(ToolCommon common, IRefVerifier refVerifier
                 Flags = ["--format="],
                 VerifiedRefs = [entry.ObjectId],
             };
-            var showResult = await common.ExecuteAsync(blobIntent, ctx, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            var showResult = await common.ExecuteAsync(blobIntent, ctx, cancellationToken: cancellationToken);
 
             var bytes = showResult.Stdout;
             var isBinary = TextDecoding.IsLikelyBinary(bytes);

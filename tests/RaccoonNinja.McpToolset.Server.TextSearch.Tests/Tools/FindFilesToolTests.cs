@@ -135,6 +135,23 @@ public sealed class FindFilesToolTests
     }
 
     [Fact]
+    public async Task Find_Glob_ReversedRangeIgnoreLine_HidesOnlyItsLowEnd()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("proj/.gitignore", "[z-a].txt\n");
+        harness.Write("proj/z.txt", "1");
+        harness.Write("proj/a.txt", "1");
+        harness.Write("proj/m.txt", "1");
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(glob: "*.txt", cwd: harness.Dir("proj"));
+
+        // Assert
+        Assert.Equal(["a.txt", "m.txt"], TextSearchHarness.Paths(envelope));
+    }
+
+    [Fact]
     public async Task Find_Glob_ReversedRange_IsPatternInvalid()
     {
         // Arrange
