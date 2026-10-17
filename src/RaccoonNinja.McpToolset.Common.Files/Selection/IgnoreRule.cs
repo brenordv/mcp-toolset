@@ -15,11 +15,12 @@ internal sealed class IgnoreRule
 
     private readonly Regex _regex;
 
-    private IgnoreRule(string source, bool negated, bool directoryOnly, Regex regex)
+    private IgnoreRule(string source, bool negated, bool directoryOnly, IgnoreTier tier, Regex regex)
     {
         Source = source;
         Negated = negated;
         DirectoryOnly = directoryOnly;
+        Tier = tier;
         _regex = regex;
     }
 
@@ -32,6 +33,9 @@ internal sealed class IgnoreRule
     /// <summary>Whether the pattern ended in <c>/</c> and so matches directories only.</summary>
     public bool DirectoryOnly { get; }
 
+    /// <summary>The tier of the ignore file the rule came from; <see cref="IgnoreRules.Combine"/> orders rules by it.</summary>
+    public IgnoreTier Tier { get; }
+
     /// <summary>
     /// Compile <paramref name="rawLine"/> into a rule anchored under <paramref name="basePath"/>, or
     /// return <c>null</c> when the line is blank, a comment, or a pattern .NET cannot compile, and so
@@ -39,7 +43,8 @@ internal sealed class IgnoreRule
     /// </summary>
     /// <param name="rawLine">A single line from an ignore file.</param>
     /// <param name="basePath">The root-relative POSIX directory the ignore file lives in (<c>""</c> for the root).</param>
-    public static IgnoreRule TryCompile(string rawLine, string basePath)
+    /// <param name="tier">The tier of the ignore file the line came from.</param>
+    public static IgnoreRule TryCompile(string rawLine, string basePath, IgnoreTier tier)
     {
         var line = Preprocess(rawLine, out var negated);
         if (line is null)
@@ -87,7 +92,7 @@ internal sealed class IgnoreRule
             return null;
         }
 
-        return new IgnoreRule(rawLine, negated, directoryOnly, regex);
+        return new IgnoreRule(rawLine, negated, directoryOnly, tier, regex);
     }
 
     /// <summary>Whether this rule matches <paramref name="relativePath"/> given whether it is a directory.</summary>

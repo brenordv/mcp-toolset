@@ -425,6 +425,23 @@ public sealed class ReadJsonToolTests
     }
 
     [Fact]
+    public async Task ReadJson_DeeperGitignoreReinclude_CannotOverrideShallowerMcpignore()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write(".mcpignore", "*.hidden\n");
+        harness.Write("sub/.gitignore", "!keep.hidden\n");
+        harness.Write("sub/keep.hidden", """{"a":1}""");
+
+        // Act
+        var envelope = await harness.ReadJson.InvokeAsync(path: "sub/keep.hidden");
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.NotFound, envelope.Error.Code);
+    }
+
+    [Fact]
     public async Task ReadJson_SecretShapedContent_IsWithheld()
     {
         // Arrange

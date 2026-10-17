@@ -201,6 +201,12 @@ Four tiers decide which non-secret files a walk skips, applied least-specific fi
 4. **`.mcpignore`**, the most specific tier, which overrides all above. Use a base-root `.mcpignore` to
    *augment* the defaults rather than replace them.
 
+A more specific tier wins regardless of directory depth, in both directions: a `!` line in a
+nested `.gitignore` cannot re-include a path that a shallower agent-ignore file or `.mcpignore`
+hides, and a `!` line in a `.mcpignore` re-includes a path a nested `.gitignore` or agent-ignore
+file hides. A base-root `.mcpignore` therefore applies to every project under the base root, so
+keep its `!` lines narrow. Within one tier, a deeper file overrides a shallower one, as in git.
+
 The default tier is a convenience filter that `include_ignored` can re-include for one call. The `.gitignore`,
 agent-ignore, and `.mcpignore` tiers, by contrast, are a hard boundary: enforced root-down (ancestor rules included) and
 never re-includable, so a file they ignore is never listed, read, or searched. The secret denylist and the

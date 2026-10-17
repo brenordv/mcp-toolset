@@ -152,6 +152,24 @@ public sealed class FindFilesToolTests
     }
 
     [Fact]
+    public async Task Find_Glob_DeeperGitignoreReinclude_CannotOverrideShallowerMcpignore()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("proj/.mcpignore", "*.hidden\n");
+        harness.Write("proj/sub/.gitignore", "!keep.hidden\n");
+        harness.Write("proj/sub/keep.hidden", "1");
+        harness.Write("proj/sub/a.txt", "1");
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(glob: "sub/*", cwd: harness.Dir("proj"));
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(["sub/.gitignore", "sub/a.txt"], TextSearchHarness.Paths(envelope));
+    }
+
+    [Fact]
     public async Task Find_Glob_ReversedRange_IsPatternInvalid()
     {
         // Arrange

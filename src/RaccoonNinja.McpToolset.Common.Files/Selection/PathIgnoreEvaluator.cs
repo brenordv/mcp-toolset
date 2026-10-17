@@ -9,16 +9,16 @@ namespace RaccoonNinja.McpToolset.Common.Files.Selection;
 /// that matches the directory would never match <c>bin/x.dll</c> on its own. This evaluator restores the
 /// missing ancestor tests: it accumulates the project ignore-file chain (<c>.gitignore</c>, the agent-ignore files, <c>.mcpignore</c>) from the root down
 /// and reports the path ignored when any ancestor directory or the leaf itself matches. Like
-/// <see cref="IgnoreRules"/>, this is a convenience rail against clobbering generated trees, not a security
-/// boundary; the boundary is <see cref="Security.SecretDenylist"/>.
+/// <see cref="IgnoreRules"/>, it is not the secret control; secrets are guarded by
+/// <see cref="Security.SecretDenylist"/> and the content scan.
 /// </summary>
 public static class PathIgnoreEvaluator
 {
     /// <summary>
     /// Whether <paramref name="relativePath"/> is ignored under the ignore files reachable from
     /// <paramref name="rootDirectory"/>, testing each ancestor directory as a directory and then the leaf
-    /// as a file. Rules accumulate root-first so a deeper ignore file overrides a shallower one, exactly as
-    /// the walker composes them while descending.
+    /// as a file. Rules accumulate root-first and are ordered by <see cref="IgnoreRules.Combine"/>, exactly
+    /// as the walker composes them while descending.
     /// </summary>
     /// <param name="rootDirectory">The real absolute root directory the relative path is anchored under.</param>
     /// <param name="relativePath">The <c>/</c>-separated root-relative path of the file to test.</param>

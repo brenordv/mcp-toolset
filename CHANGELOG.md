@@ -1,4 +1,7 @@
 # Toolset Changelog
+## v20
+- Updated MCP: `text-search` to v1.4.4 and `text-edit` to v1.3.3. Ignore tiers now win by specificity regardless of directory depth, as the `text-search` README's tier list already stated: a `!` line in a nested `.gitignore` can no longer re-include a path a shallower agent-ignore file or `.mcpignore` hides, and a nested agent-ignore `!` line can no longer re-include a path a shallower `.mcpignore` hides. Within one tier a deeper file still overrides a shallower one, as in git. Behavior change: a `.mcpignore` `!` line now overrides a nested `.gitignore` or agent-ignore file, so a base-root `.mcpignore` re-include applies over every project's own ignore files. The secret denylist and content scan are unaffected. Both servers share the fix through `Common.Files`.
+
 ## v19
 - Updated MCP: `git-ops` to v2.2.1, `text-search` to v1.4.3, `text-edit` to v1.3.2, `file-vault` to v3.3.1, and `skill-stats` to v1.1.1. Internal only: removed every `ConfigureAwait(false)` call from the five servers. The stdio hosts have no synchronization context, so continuations run on the same threads as before. No wire or behavior change.
 

@@ -279,6 +279,29 @@ public sealed class IgnoreRulesTests
     }
 
     [Fact]
+    public void Combine_MoreSpecificTierWins_OverDeeperLessSpecificSet()
+    {
+        // Arrange
+        var dir = Directory.CreateTempSubdirectory("ignorerules-tier-");
+        try
+        {
+            File.WriteAllText(Path.Combine(dir.FullName, IgnoreRules.McpIgnoreFileName), "*.hidden\n");
+            var sub = Directory.CreateDirectory(Path.Combine(dir.FullName, "sub"));
+            File.WriteAllText(Path.Combine(sub.FullName, IgnoreRules.GitIgnoreFileName), "!keep.hidden\n");
+
+            // Act
+            var rules = IgnoreRules.Combine([IgnoreRules.Load(dir.FullName), IgnoreRules.Load(sub.FullName, "sub")]);
+
+            // Assert
+            Assert.True(rules.IsIgnored("sub/keep.hidden", isDirectory: false));
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public void Patterns_ExposesSourceLinesInOrder()
     {
         // Arrange

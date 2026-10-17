@@ -97,6 +97,106 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
     }
 
     [Fact]
+    public void IsIgnored_DeeperGitignoreReinclude_CannotOverrideShallowerMcpignore()
+    {
+        // Arrange
+        WriteIgnoreFile(string.Empty, IgnoreRules.McpIgnoreFileName, "*.hidden\n");
+        WriteIgnoreFile("sub", IgnoreRules.GitIgnoreFileName, "!keep.hidden\n");
+
+        // Act
+        var actual = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.hidden");
+
+        // Assert
+        Assert.True(actual);
+    }
+
+    [Fact]
+    public void IsIgnored_DeeperAgentIgnoreReinclude_CannotOverrideShallowerMcpignore()
+    {
+        // Arrange
+        WriteIgnoreFile(string.Empty, IgnoreRules.McpIgnoreFileName, "*.hidden\n");
+        WriteIgnoreFile("sub", ".cursorignore", "!keep.hidden\n");
+
+        // Act
+        var actual = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.hidden");
+
+        // Assert
+        Assert.True(actual);
+    }
+
+    [Fact]
+    public void IsIgnored_DeeperGitignoreReinclude_CannotOverrideShallowerAgentIgnore()
+    {
+        // Arrange
+        WriteIgnoreFile(string.Empty, ".cursorignore", "*.hidden\n");
+        WriteIgnoreFile("sub", IgnoreRules.GitIgnoreFileName, "!keep.hidden\n");
+
+        // Act
+        var actual = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.hidden");
+
+        // Assert
+        Assert.True(actual);
+    }
+
+    [Fact]
+    public void IsIgnored_ShallowerMcpignoreReinclude_OverridesDeeperGitignore()
+    {
+        // Arrange
+        WriteIgnoreFile(string.Empty, IgnoreRules.McpIgnoreFileName, "!keep.log\n");
+        WriteIgnoreFile("sub", IgnoreRules.GitIgnoreFileName, "*.log\n");
+
+        // Act
+        var reincluded = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.log");
+        var stillIgnored = PathIgnoreEvaluator.IsIgnored(_root, "sub/other.log");
+
+        // Assert
+        Assert.False(reincluded);
+        Assert.True(stillIgnored);
+    }
+
+    [Fact]
+    public void IsIgnored_ShallowerMcpignoreReinclude_OverridesDeeperAgentIgnoreDirectory()
+    {
+        // Arrange
+        WriteIgnoreFile(string.Empty, IgnoreRules.McpIgnoreFileName, "!dist/\n");
+        WriteIgnoreFile("proj", ".claudeignore", "dist/\n");
+
+        // Act
+        var actual = PathIgnoreEvaluator.IsIgnored(_root, "proj/dist/app.js");
+
+        // Assert
+        Assert.False(actual);
+    }
+
+    [Fact]
+    public void IsIgnored_DeeperGitignoreReinclude_OverridesShallowerGitignore()
+    {
+        // Arrange
+        WriteIgnoreFile(string.Empty, IgnoreRules.GitIgnoreFileName, "*.log\n");
+        WriteIgnoreFile("sub", IgnoreRules.GitIgnoreFileName, "!keep.log\n");
+
+        // Act
+        var actual = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.log");
+
+        // Assert
+        Assert.False(actual);
+    }
+
+    [Fact]
+    public void IsIgnored_DeeperMcpignoreReinclude_OverridesShallowerMcpignore()
+    {
+        // Arrange
+        WriteIgnoreFile(string.Empty, IgnoreRules.McpIgnoreFileName, "*.hidden\n");
+        WriteIgnoreFile("sub", IgnoreRules.McpIgnoreFileName, "!keep.hidden\n");
+
+        // Act
+        var actual = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.hidden");
+
+        // Assert
+        Assert.False(actual);
+    }
+
+    [Fact]
     public void IsIgnored_AgentIgnoreFileLeaf_IsIgnored()
     {
         // Arrange

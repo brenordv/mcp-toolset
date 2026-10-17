@@ -2,14 +2,16 @@ namespace RaccoonNinja.McpToolset.Common.Files.Selection;
 
 /// <summary>
 /// An ordered set of project ignore rules (<c>.gitignore</c>, the AI-agent ignore files, and
-/// <c>.mcpignore</c>) evaluated with git's last-match-wins
-/// semantics: the last rule that matches a path decides, and a <c>!</c> rule re-includes what an earlier
-/// rule excluded. Matching is per-entry, which is all the pruning walker needs: it never descends an
-/// ignored directory, so a path is only ever tested once its ancestors are known to be un-ignored, and
-/// "everything under an ignored directory is ignored" falls out of pruning rather than descendant
-/// matching. Ignore is a convenience rail against clobbering <c>bin/</c>, <c>obj/</c>, and the like; it
-/// is not a security boundary (an agent can edit <c>.gitignore</c>). The boundary is
-/// <see cref="Security.SecretDenylist"/>.
+/// <c>.mcpignore</c>) evaluated with git's last-match-wins semantics: the last rule that matches
+/// a path decides, and a <c>!</c> rule re-includes what an earlier rule excluded. Rules are
+/// ordered tier by tier (the built-in default, then <c>.gitignore</c>, then the agent-ignore
+/// files, then <c>.mcpignore</c>) and root-down within each tier, so a nested <c>.gitignore</c>
+/// cannot re-include what a shallower <c>.mcpignore</c> hides. Matching is per-entry, which is
+/// all the pruning walker needs: it never descends an ignored directory, so a path is only ever
+/// tested once its ancestors are known to be un-ignored. Every tool honors these rules, but they
+/// are not the secret control: ignore files are ordinary editable files, so secrets are guarded
+/// by <see cref="Security.SecretDenylist"/> and the content scan, which no ignore rule can
+/// override.
 /// </summary>
 public sealed class IgnoreRules
 {
@@ -49,8 +51,9 @@ public sealed class IgnoreRules
     public IReadOnlyList<string> Patterns => _rules.Select(rule => rule.Source).ToArray();
 
     /// <summary>
-    /// Compile ignore-file <paramref name="lines"/> into a rule set anchored under <paramref name="basePath"/>.
-    /// Blank lines and comments contribute nothing.
+    /// Compile ignore-file <paramref name="lines"/> into a rule set anchored under <paramref name="basePath"/>,
+    /// in the built-in default tier (the least specific). Blank lines and comments contribute nothing.
+    /// Project ignore files are read through <see cref="Load"/>, which assigns their own tiers.
     /// </summary>
     /// <param name="lines">The raw lines of an ignore file, in order.</param>
     /// <param name="basePath">The root-relative POSIX directory the ignore file lives in (<c>""</c> for the root).</param>
@@ -60,10 +63,16 @@ public sealed class IgnoreRules
     {
         ArgumentNullException.ThrowIfNull(lines);
 
+        return Parse(lines, basePath, IgnoreTier.BuiltInDefault);
+    }
+
+    /// <summary>Compile <paramref name="lines"/> into a rule set of the given <paramref name="tier"/>, anchored under <paramref name="basePath"/>.</summary>
+    private static IgnoreRules Parse(IEnumerable<string> lines, string basePath, IgnoreTier tier)
+    {
         var rules = new List<IgnoreRule>();
         foreach (var line in lines)
         {
-            var rule = IgnoreRule.TryCompile(line, basePath ?? string.Empty);
+            var rule = IgnoreRule.TryCompile(line, basePath ?? string.Empty, tier);
             if (rule is not null)
             {
                 rules.Add(rule);
@@ -89,29 +98,35 @@ public sealed class IgnoreRules
         var sets = new List<IgnoreRules>();
         foreach (var fileName in IgnoreFileNames)
         {
-            AddFileIfPresent(sets, Path.Combine(directory, fileName), basePath ?? string.Empty);
+            var tier = fileName switch
+            {
+                GitIgnoreFileName => IgnoreTier.GitIgnore,
+                McpIgnoreFileName => IgnoreTier.McpIgnore,
+                _ => IgnoreTier.AgentIgnore,
+            };
+            AddFileIfPresent(sets, Path.Combine(directory, fileName), basePath ?? string.Empty, tier);
         }
 
         return sets.Count == 0 ? Empty : Combine(sets);
     }
 
     /// <summary>
-    /// Concatenate rule sets so later ones take precedence (deeper ignore files win over shallower ones,
-    /// matching git). The first set is the least specific.
+    /// Merge rule sets for evaluation. Rules are ordered by tier, least specific first, so a more specific
+    /// tier (<c>.mcpignore</c> over the agent-ignore files over <c>.gitignore</c> over the built-in default)
+    /// wins regardless of directory depth. Within one tier the input order is kept, so a set passed later
+    /// (a deeper ignore file) overrides an earlier one, as in git.
     /// </summary>
-    /// <param name="sets">The rule sets, least-specific first.</param>
+    /// <param name="sets">The rule sets, root first.</param>
     /// <returns>The combined rule set.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="sets"/> is <c>null</c>.</exception>
     public static IgnoreRules Combine(IEnumerable<IgnoreRules> sets)
     {
         ArgumentNullException.ThrowIfNull(sets);
 
-        var combined = new List<IgnoreRule>();
-        foreach (var set in sets)
-        {
-            combined.AddRange(set._rules);
-        }
-
+        var combined = sets
+            .SelectMany(set => set._rules)
+            .OrderBy(rule => rule.Tier)
+            .ToArray();
         return new IgnoreRules(combined);
     }
 
@@ -139,11 +154,11 @@ public sealed class IgnoreRules
         return ignored;
     }
 
-    private static void AddFileIfPresent(List<IgnoreRules> sets, string path, string basePath)
+    private static void AddFileIfPresent(List<IgnoreRules> sets, string path, string basePath, IgnoreTier tier)
     {
         if (File.Exists(path))
         {
-            sets.Add(Parse(File.ReadLines(path), basePath));
+            sets.Add(Parse(File.ReadLines(path), basePath, tier));
         }
     }
 }

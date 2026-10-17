@@ -1,3 +1,12 @@
+## v1.4.4
+- Fixed: a `!` line in a nested `.gitignore` could re-include a path that a shallower agent-ignore file or
+  `.mcpignore` hides, and one in a nested agent-ignore file could re-include a path a shallower `.mcpignore`
+  hides. Ignore tiers now win by specificity regardless of directory depth, as the README's tier list
+  already stated; within one tier a deeper file still overrides a shallower one. The other direction
+  changes too: a `!` line in a `.mcpignore` now re-includes a path a nested `.gitignore` or agent-ignore
+  file hides, so a base-root `.mcpignore` re-include applies to every project under the base root. The
+  secret denylist and content scan are unaffected.
+
 ## v1.4.3
 - Internal: removed every `ConfigureAwait(false)` call. The stdio host has no synchronization context, so
   continuations run on the same threads as before. No wire or behavior change.
