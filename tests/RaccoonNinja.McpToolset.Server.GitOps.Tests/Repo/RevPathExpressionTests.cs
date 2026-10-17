@@ -12,6 +12,7 @@ public sealed class RevPathExpressionTests
     [InlineData(":0:x")]
     [InlineData("HEAD@{1}:file")]
     [InlineData("HEAD^{commit}:file")]
+    [InlineData("HEAD:")]
     public void IsRevPath_PathExpression_IsTrue(string reference)
     {
         // Act

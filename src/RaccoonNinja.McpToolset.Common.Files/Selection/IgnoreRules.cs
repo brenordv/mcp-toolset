@@ -51,6 +51,21 @@ public sealed class IgnoreRules
     public IReadOnlyList<string> Patterns => _rules.Select(rule => rule.Source).ToArray();
 
     /// <summary>
+    /// Whether the last segment of <paramref name="relativePath"/> is one of <see cref="IgnoreFileNames"/>.
+    /// The comparison is ordinal and ignores case, as the secret denylist's name matching does.
+    /// </summary>
+    /// <param name="relativePath">A <c>/</c>-separated root-relative path.</param>
+    /// <returns><c>true</c> when the path names an ignore file at any depth; otherwise <c>false</c>.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="relativePath"/> is null or blank.</exception>
+    public static bool IsIgnoreFileName(string relativePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+
+        var fileName = relativePath[(relativePath.LastIndexOf('/') + 1)..];
+        return IgnoreFileNames.Contains(fileName, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Compile ignore-file <paramref name="lines"/> into a rule set anchored under <paramref name="basePath"/>,
     /// in the built-in default tier (the least specific). Blank lines and comments contribute nothing.
     /// Project ignore files are read through <see cref="Load"/>, which assigns their own tiers.
@@ -72,7 +87,7 @@ public sealed class IgnoreRules
         var rules = new List<IgnoreRule>();
         foreach (var line in lines)
         {
-            var rule = IgnoreRule.TryCompile(line, basePath ?? string.Empty, tier);
+            var rule = IgnoreRule.TryCompile(line, basePath, tier);
             if (rule is not null)
             {
                 rules.Add(rule);
@@ -104,7 +119,7 @@ public sealed class IgnoreRules
                 McpIgnoreFileName => IgnoreTier.McpIgnore,
                 _ => IgnoreTier.AgentIgnore,
             };
-            AddFileIfPresent(sets, Path.Combine(directory, fileName), basePath ?? string.Empty, tier);
+            AddFileIfPresent(sets, Path.Combine(directory, fileName), basePath, tier);
         }
 
         return sets.Count == 0 ? Empty : Combine(sets);

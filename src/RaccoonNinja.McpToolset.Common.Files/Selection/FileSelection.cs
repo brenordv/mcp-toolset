@@ -60,7 +60,20 @@ public sealed class FileSelection
     private WalkResult Walk(FileSelector selector, SafeRegexOptions regexOptions, CancellationToken cancellationToken)
     {
         var match = BuildMatch(selector, regexOptions);
-        var result = _walker.Walk(
+
+        // A walk prunes with rules loaded from its own root down, and inside a subtree that include_ignored
+        // re-included it applies no project rules at all. A scoped call or an include_ignored call can
+        // therefore meet files the project tier hides, so in those two cases each candidate is also tested
+        // against the project tier anchored at the base root. The test runs in the match predicate, ahead
+        // of the walker's sort and cap, so the cap counts only files that are returned.
+        if (!selector.IncludeIgnored.IsEmpty || _prefix.Length > 0)
+        {
+            var projectIgnore = new PathIgnoreEvaluator(_anchor.CanonicalRoot);
+            var selectorMatch = match;
+            match = path => (selectorMatch is null || selectorMatch(path)) && !projectIgnore.IsIgnored(ToBaseRelative(path));
+        }
+
+        return _walker.Walk(
             new FileWalkOptions
             {
                 Start = selector.Root ?? ".",
@@ -69,24 +82,6 @@ public sealed class FileSelection
                 MaxResults = selector.MaxFiles,
             },
             cancellationToken);
-
-        // The walk prunes ignored entries using rules anchored at its own (possibly scoped) root, and it can
-        // re-include default-tier paths via include_ignored. Neither is authoritative for the project ignore
-        // boundary: a scoped walk never consults .gitignore/.mcpignore above its root, and a re-include could
-        // pull back a project-ignored file. Re-check every surfaced entry against the project tier anchored at
-        // the base root, but only in the cases those gaps can arise: a re-include request or a scoped call.
-        if (selector.IncludeIgnored.IsEmpty && _prefix.Length == 0)
-        {
-            return result;
-        }
-
-        var filtered = result.Entries.Where(entry => !IsProjectIgnored(entry.RelativePath)).ToList();
-        return new WalkResult
-        {
-            Entries = filtered,
-            SkippedSymlinks = result.SkippedSymlinks,
-            Truncated = result.Truncated,
-        };
     }
 
     private static Func<string, bool> BuildMatch(FileSelector selector, SafeRegexOptions regexOptions)

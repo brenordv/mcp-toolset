@@ -1,16 +1,18 @@
 using RaccoonNinja.McpToolset.Common.Files.Security;
+using RaccoonNinja.McpToolset.Common.Files.Selection;
 using RaccoonNinja.McpToolset.Common.Files.Storage;
 using RaccoonNinja.McpToolset.Server.TextEdit.Journal;
 
 namespace RaccoonNinja.McpToolset.Server.TextEdit.Content;
 
 /// <summary>
-/// Restores a journaled batch. Undo is a second write path, so it shares the same confinement and denylist
-/// gate the forward path uses: every stored journal path is untrusted input, re-confined and re-denylisted
-/// before anything is written, and a row that no longer confines or is now denylisted is skipped and named,
-/// never restored. The hash gate (current content equals the recorded post-image) is a concurrency check
-/// layered on top of that gate, not a substitute for it. A file deleted since the batch is recreated from
-/// its pre-image, with any missing parent directory created only under the re-confined path.
+/// Restores a journaled batch. Undo is a second write path, so it shares the confinement, denylist, and
+/// ignore-file gates the forward path uses: every stored journal path is untrusted input, re-confined,
+/// re-denylisted, and re-checked against the ignore-file names before anything is written, and a row that
+/// no longer confines, is now denylisted, or names an ignore file is skipped and named, never restored.
+/// The hash gate (current content equals the recorded post-image) is a concurrency check layered on top
+/// of those gates, not a substitute for them. A file deleted since the batch is recreated from its
+/// pre-image, with any missing parent directory created only under the re-confined path.
 /// </summary>
 public sealed class Undoer(IRootResolver root, ISecretDenylist denylist, JournalStore journal, long maxBytes)
 {
@@ -18,7 +20,7 @@ public sealed class Undoer(IRootResolver root, ISecretDenylist denylist, Journal
     private readonly ISecretDenylist _denylist = denylist ?? throw new ArgumentNullException(nameof(denylist));
     private readonly JournalStore _journal = journal ?? throw new ArgumentNullException(nameof(journal));
 
-    /// <summary>Undo <paramref name="batchId"/>, restoring each row that still confines, is not denylisted, and matches its post-image.</summary>
+    /// <summary>Undo <paramref name="batchId"/>, restoring each row that still confines, is not denylisted, does not name an ignore file, and matches its post-image.</summary>
     /// <param name="batchId">The batch to undo (assumed to exist; the caller validates it first).</param>
     /// <returns>The undo outcome.</returns>
     public UndoOutcome Undo(long batchId)
@@ -43,6 +45,12 @@ public sealed class Undoer(IRootResolver root, ISecretDenylist denylist, Journal
             if (_denylist.IsDeniedFile(confined.RelativePath))
             {
                 skipped.Add(new SkippedUndo(confined.RelativePath, UndoSkipReason.Denied));
+                continue;
+            }
+
+            if (IgnoreRules.IsIgnoreFileName(confined.RelativePath))
+            {
+                skipped.Add(new SkippedUndo(confined.RelativePath, UndoSkipReason.IgnoreFile));
                 continue;
             }
 

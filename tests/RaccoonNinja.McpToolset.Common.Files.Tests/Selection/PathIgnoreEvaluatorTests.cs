@@ -219,6 +219,41 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         Assert.Throws<ArgumentException>(() => PathIgnoreEvaluator.IsIgnored(_root, "   "));
     }
 
+    [Fact]
+    public void IsIgnored_ReusedInstance_AnswersLikeTheStaticForm()
+    {
+        // Arrange
+        WriteIgnoreFile(string.Empty, IgnoreRules.GitIgnoreFileName, "gen/\n*.log\n");
+        WriteIgnoreFile("sub", IgnoreRules.GitIgnoreFileName, "!keep.log\n");
+        var evaluator = new PathIgnoreEvaluator(_root);
+
+        // Act
+        bool[] actual =
+        [
+            evaluator.IsIgnored("gen/x.cs"),
+            evaluator.IsIgnored("gen/y.cs"),
+            evaluator.IsIgnored("sub/keep.log"),
+            evaluator.IsIgnored("sub/other.log"),
+            evaluator.IsIgnored("src/a.cs"),
+            evaluator.IsIgnored("sub/keep.log"),
+        ];
+
+        // Assert
+        Assert.Equal([true, true, false, true, false, false], actual);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Constructor_BlankRoot_ThrowsArgumentException(string root)
+    {
+        // Act
+        var act = () => new PathIgnoreEvaluator(root);
+
+        // Assert
+        Assert.ThrowsAny<ArgumentException>(act);
+    }
+
     private void WriteIgnoreFile(string relativeDir, string fileName, string contents)
     {
         var dir = relativeDir.Length == 0

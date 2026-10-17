@@ -4,7 +4,7 @@ namespace RaccoonNinja.McpToolset.Server.TextEdit.Journal;
 /// One journaled file row: a root-relative path, the pre-image hash and blob reference, the post-image
 /// hash (null until the write is finalized), the persisted encoding-detection triple, and the outcome.
 /// Undo restores a row from its pre-image blob when the file's current hash still equals
-/// <see cref="PostHash"/> (or when the file is gone), and never from an out-of-root or denylisted path.
+/// <see cref="PostHash"/> (or when the file is gone), and never from an out-of-root, denylisted, or ignore-file path.
 /// </summary>
 public sealed record FileRecord
 {

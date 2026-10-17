@@ -35,7 +35,8 @@ Call `describe_scope` first to learn the base root, the scope model, and the cap
 share one selector: give exactly one of `glob` (primary), `regex`, or `paths`, or none to mean "everything
 in the scope", optionally narrowed by `extensions`. A glob with no `/` matches the basename at any depth, so
 `*.cs` is recursive. Ignore rules (`.gitignore`, the agent-ignore files, `.mcpignore`) always apply; there is no `include_ignored` on
-the write path.
+the write path. The ignore files themselves are never written: a selected `.gitignore`, agent-ignore
+file, or `.mcpignore` is refused with `ignore_file`.
 
 **Scoping a call.** The optional `cwd` argument is an absolute working directory inside the base root. Pass
 it to scope an edit to one project: the selector and every write are confined to that `cwd`, so a scoped
@@ -64,7 +65,8 @@ file keeps each physical terminator.
 
 **`undo_batch(batch_id)`** and **`undo_last_batch()`** restore each file whose current content still equals
 what the batch wrote; a file changed since is skipped and named (never clobbered), a since-deleted file is
-recreated, and a journal row that no longer confines or is now denylisted is skipped as a security measure.
+recreated, and a journal row that no longer confines, is now denylisted, or names an ignore file is skipped
+as a security measure.
 
 ### Notes that save a round trip
 
@@ -102,7 +104,7 @@ single element carrying the batch id, the counts, and the per-file entries.
 ```
 
 A per-file `outcome` is `changed`, `refused`, or `unchanged`; a refused file carries a `refusal_reason`
-(`denied`, `out_of_root`, `ignored`, `not_found`, `is_directory`, `binary`, `too_large`,
+(`denied`, `ignore_file`, `out_of_root`, `ignored`, `not_found`, `is_directory`, `binary`, `too_large`,
 `low_confidence_encoding`, `regex_timeout`, `io_error`, `write_failed`). An `undo` result carries `restored`, `recreated`, and `skipped` (each with
 a `reason`).
 
@@ -135,10 +137,14 @@ Only argument names are echoed back, never values.
   per-call `cwd` narrows it further: a scoped edit cannot write outside that project, even via an explicit
   `../other` path.
 - It never writes a known secret file, and no option can change that (`MCP_TEXTEDIT_EXTRA_DENY` only adds).
+- It never writes an ignore file (`.gitignore`, the agent-ignore files, `.mcpignore`), so editing ignore
+  rules through text-edit cannot widen what text-search or text-edit may reach. One gap remains: an
+  ignore file that is a symbolic link to a file whose own name is not an ignore-file name takes its
+  rules from that file, which text-edit may write.
 - Symlinks that point outside the base, or at a secret, are refused by their real target, not their name.
 - Every write is journaled with a pre-image, so a batch can be undone even after a crash mid-batch.
-- Undo is a second write path, so it re-runs confinement and the denylist on every stored journal path
-  before restoring; the hash gate is layered on top, not a substitute.
+- Undo is a second write path, so it re-runs confinement, the denylist, and the ignore-file check on
+  every stored journal path before restoring; the hash gate is layered on top, not a substitute.
 - No absolute path from your machine is ever returned to the model or written into the journal.
 
 **The reachable write surface is the whole base root, so keep the base tight.** As with text-search, the

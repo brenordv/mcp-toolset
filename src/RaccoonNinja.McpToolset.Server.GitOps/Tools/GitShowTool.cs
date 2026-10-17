@@ -17,7 +17,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
     public Task<ResultEnvelope> InvokeAsync(
         [Description("Absolute working directory.")]
         string cwd,
-        [Description("Ref to inspect (branch, tag, SHA, HEAD, HEAD~n, ...). A <rev>:<path> file expression is rejected; use git_file_at_ref for a file's content.")]
+        [Description("Ref to inspect (branch, tag, SHA, HEAD, HEAD~n, ...). A <rev>:<path> expression (a file or tree) is rejected; use git_file_at_ref for a file's content.")]
         string @ref = null,
         [Description("Restrict the diff section to these repo-relative paths.")]
         string[] paths = null,
@@ -31,7 +31,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
             if (RevPathExpression.IsRevPath(@ref))
             {
                 throw new RejectedArgumentException(
-                    "ref is a <rev>:<path> expression that names a file; use git_file_at_ref with ref and path",
+                    "ref is a <rev>:<path> expression that names a file or tree, not a commit; use git_file_at_ref with ref and path to read a file",
                     new Dictionary<string, object> { ["param"] = "ref" });
             }
 

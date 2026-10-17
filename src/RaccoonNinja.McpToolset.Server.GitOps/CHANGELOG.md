@@ -1,3 +1,9 @@
+## v2.2.2
+- `git_show` now says a rejected `<rev>:<path>` ref names "a file or tree, not a commit". `HEAD:` (the
+  root tree) is rejected the same way as `HEAD:README.md`.
+- Internal: the tests share one temp-repository helper that reports a hung git as a timeout, instead of
+  three copies that surfaced a hang as an unrelated `InvalidOperationException`.
+
 ## v2.2.1
 - Internal: removed every `ConfigureAwait(false)` call. The stdio host has no synchronization context, so
   continuations run on the same threads as before. No wire or behavior change.

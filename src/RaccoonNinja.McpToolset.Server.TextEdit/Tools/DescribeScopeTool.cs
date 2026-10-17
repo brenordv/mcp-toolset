@@ -21,7 +21,8 @@ public sealed class DescribeScopeTool(ToolCommon common, EditConfig config, Scop
         + "default-ignore would hide. The project ignore-file tier (see ignore_files) is always enforced "
         + "root-down (ancestor rules included), so an ignored file is never written. Across ignore files a "
         + "more specific kind wins regardless of depth (.mcpignore over the agent-ignore files over "
-        + ".gitignore); within one kind a deeper file overrides a shallower one. The secret denylist is "
+        + ".gitignore); within one kind a deeper file overrides a shallower one. The ignore files "
+        + "themselves are never written, by either mutation tool or by undo. The secret denylist is "
         + "independent and always applies.";
 
     /// <summary>Report the base root, scope model, ignore tiers, denylist, encoding, column unit, journal retention, and every cap.</summary>

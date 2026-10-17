@@ -2,8 +2,8 @@ namespace RaccoonNinja.McpToolset.Server.TextEdit.Content;
 
 /// <summary>
 /// The per-file reasons the write gate declines to rewrite a file. Each is a stable wire string reported
-/// in the tool result's <c>refusal_reason</c> and counted in the session metrics; a spike in any of them
-/// is the signal that something is probing the boundary.
+/// per file in the tool result's <c>refusal_reason</c>. The batch log line carries only the aggregate
+/// refused count, and the session metric <c>refusals_total</c> counts only call-level (<c>cwd</c>) refusals.
 /// </summary>
 public static class RefusalReason
 {
@@ -12,6 +12,9 @@ public static class RefusalReason
 
     /// <summary>The path is on the non-overridable secret denylist.</summary>
     public const string Denied = "denied";
+
+    /// <summary>The path is a project ignore file (<c>.gitignore</c>, an agent-ignore file, or <c>.mcpignore</c>); editing one would change what the toolset may read or write.</summary>
+    public const string IgnoreFile = "ignore_file";
 
     /// <summary>The path is ignored by a project ignore rule (<c>.gitignore</c>, an agent-ignore file, or <c>.mcpignore</c>), ancestor or leaf.</summary>
     public const string Ignored = "ignored";

@@ -36,7 +36,7 @@ public sealed class GitFileAtRefToolTests : IDisposable
     public void Dispose() => _repo.Dispose();
 
     [Fact]
-    public async Task NestedPath_IsReturned()
+    public async Task NestedPath_ReturnsItsContentAtHead()
     {
         // Arrange
         var cwd = _repo.RepoPath;

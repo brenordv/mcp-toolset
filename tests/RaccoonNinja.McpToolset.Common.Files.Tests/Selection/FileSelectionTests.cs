@@ -250,6 +250,62 @@ public sealed class FileSelectionTests : IDisposable
         Assert.Equal(["a.cs"], paths);
     }
 
+    [Fact]
+    public void Select_ScopedGlob_AncestorIgnoredFilesDoNotConsumeTheCap()
+    {
+        // Arrange
+        Write(".gitignore", "gen/\n");
+        Write("proj/gen/a.cs", "1");
+        Write("proj/gen/b.cs", "1");
+        Write("proj/gen/c.cs", "1");
+        Write("proj/zz.cs", "1");
+        var scoped = new FileSelection(new RootConfinement(Path.Combine(_rootDir, "proj")), new SecretDenylist(), defaultIgnore: null, anchor: new RootConfinement(_rootDir), prefix: "proj");
+
+        // Act
+        var result = scoped.Select(FileSelector.Create(glob: "*.cs", maxFiles: 2));
+
+        // Assert
+        Assert.Equal(["zz.cs"], Paths(result));
+        Assert.False(result.Truncated);
+    }
+
+    [Fact]
+    public void Select_IncludeIgnored_ProjectIgnoredFilesDoNotConsumeTheCap()
+    {
+        // Arrange
+        Write(".gitignore", "*.map\n");
+        Write("vendor/a.map", "1");
+        Write("vendor/b.map", "1");
+        Write("vendor/c.js", "1");
+        var selection = new FileSelection(new RootConfinement(_rootDir), new SecretDenylist(), IgnoreRules.Parse(["vendor/"]));
+
+        // Act
+        var result = selection.Select(FileSelector.Create(glob: "vendor/*", includeIgnored: IncludeGlobSet.Compile(["vendor/**"]), maxFiles: 1));
+
+        // Assert
+        Assert.Equal(["vendor/c.js"], Paths(result));
+        Assert.False(result.Truncated);
+    }
+
+    [Fact]
+    public void Select_ScopedGlob_MoreFilesThanCap_StillMarksTruncated()
+    {
+        // Arrange
+        Write(".gitignore", "gen/\n");
+        Write("proj/gen/a.cs", "1");
+        Write("proj/x.cs", "1");
+        Write("proj/y.cs", "1");
+        Write("proj/z.cs", "1");
+        var scoped = new FileSelection(new RootConfinement(Path.Combine(_rootDir, "proj")), new SecretDenylist(), defaultIgnore: null, anchor: new RootConfinement(_rootDir), prefix: "proj");
+
+        // Act
+        var result = scoped.Select(FileSelector.Create(glob: "*.cs", maxFiles: 2));
+
+        // Assert
+        Assert.Equal(["x.cs", "y.cs"], Paths(result));
+        Assert.True(result.Truncated);
+    }
+
     private static string[] Paths(WalkResult result)
         => result.Entries.Select(entry => entry.RelativePath).ToArray();
 

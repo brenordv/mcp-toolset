@@ -12,8 +12,9 @@ namespace RaccoonNinja.McpToolset.Server.TextEdit.Content;
 
 /// <summary>
 /// The single mutation choke point. Every candidate path passes through the same unconditional sequence,
-/// run on the confined resolved path and never on the raw input: confine, denylist, ancestor-aware ignore,
-/// exists-and-is-a-file, size cap, encoding detection, the not-binary and rewrite-confidence gates, then
+/// run on the confined resolved path and never on the raw input: confine, denylist, ignore-file name,
+/// ancestor-aware ignore, exists-and-is-a-file, size cap, encoding detection, the not-binary and
+/// rewrite-confidence gates, then
 /// the transform. Files that would actually change are written under the journal's write-ahead protocol:
 /// pre-images are recorded and the batch rows committed as pending before any disk write, the atomic writes
 /// run, and the post-image hashes finalize the rows. A batch that changes nothing writes no journal row.
@@ -225,6 +226,11 @@ public sealed class GatedFileWriter
         if (_denylist.IsDeniedFile(baseRelative))
         {
             return Refusal(baseRelative, RefusalReason.Denied);
+        }
+
+        if (IgnoreRules.IsIgnoreFileName(baseRelative))
+        {
+            return Refusal(baseRelative, RefusalReason.IgnoreFile);
         }
 
         if (PathIgnoreEvaluator.IsIgnored(_baseRoot.CanonicalRoot, baseRelative))

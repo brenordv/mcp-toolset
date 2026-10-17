@@ -12,6 +12,6 @@ public sealed record UndoOutcome
     /// <summary>The root-relative paths recreated because the file had been deleted since the batch.</summary>
     public IReadOnlyList<string> Recreated { get; init; } = [];
 
-    /// <summary>The rows skipped (out of root, denylisted, changed since, or unreadable), each named.</summary>
+    /// <summary>The rows skipped (out of root, denylisted, an ignore file, changed since, or unreadable), each named.</summary>
     public IReadOnlyList<SkippedUndo> Skipped { get; init; } = [];
 }

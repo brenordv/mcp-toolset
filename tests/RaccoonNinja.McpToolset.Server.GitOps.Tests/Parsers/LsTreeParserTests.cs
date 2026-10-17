@@ -8,7 +8,7 @@ public sealed class LsTreeParserTests
     private const string ObjectId = "0123456789abcdef0123456789abcdef01234567";
 
     [Fact]
-    public void Parse_BlobWithPaddedSize()
+    public void Parse_BlobWithPaddedSize_ReadsEveryField()
     {
         // Arrange
         var bytes = Encoding.UTF8.GetBytes($"100644 blob {ObjectId}      24\tREADME.md\0");

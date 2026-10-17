@@ -11,7 +11,7 @@ public static class TextDecoding
     /// <summary>Decode raw git bytes as UTF-8 (invalid sequences become replacement chars).</summary>
     public static string Decode(byte[] raw)
     {
-        return raw == null || raw.Length == 0
+        return raw is null or { Length: 0 }
             ? string.Empty
             : Encoding.UTF8.GetString(raw);
     }
@@ -21,7 +21,7 @@ public static class TextDecoding
     /// <returns><c>true</c> when a NUL occurs in the scanned prefix; <c>false</c> for null or empty input.</returns>
     public static bool IsLikelyBinary(byte[] raw)
     {
-        if (raw == null || raw.Length == 0)
+        if (raw is null or { Length: 0 })
         {
             return false;
         }

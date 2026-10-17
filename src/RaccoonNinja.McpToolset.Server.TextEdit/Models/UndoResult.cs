@@ -17,7 +17,7 @@ public sealed record UndoResult
     [JsonPropertyName("recreated")]
     public IReadOnlyList<string> Recreated { get; init; } = [];
 
-    /// <summary>The files skipped (out of root, denylisted, changed since, or unreadable), each named.</summary>
+    /// <summary>The files skipped (out of root, denylisted, an ignore file, changed since, or unreadable), each named.</summary>
     [JsonPropertyName("skipped")]
     public IReadOnlyList<SkippedFile> Skipped { get; init; } = [];
 }

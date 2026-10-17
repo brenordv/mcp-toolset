@@ -264,6 +264,18 @@ public sealed class IgnoreRulesTests
     }
 
     [Fact]
+    public void IsIgnored_NullBasePath_AnchorsRulesAtTheRoot()
+    {
+        // Arrange
+        var rules = IgnoreRules.Parse(["logs/*.txt", "*.tmp"], basePath: null);
+
+        // Act & Assert
+        Assert.True(rules.IsIgnored("logs/a.txt", isDirectory: false));
+        Assert.False(rules.IsIgnored("sub/logs/a.txt", isDirectory: false));
+        Assert.True(rules.IsIgnored("nested/x.tmp", isDirectory: false));
+    }
+
+    [Fact]
     public void Combine_LaterSetOverridesEarlier()
     {
         // Arrange
@@ -438,5 +450,47 @@ public sealed class IgnoreRulesTests
         {
             dir.Delete(recursive: true);
         }
+    }
+
+    [Theory]
+    [InlineData(".gitignore")]
+    [InlineData("sub/.mcpignore")]
+    [InlineData("a/b/.claudeignore")]
+    [InlineData(".GitIgnore")]
+    [InlineData("x/.GEMINIIGNORE")]
+    public void IsIgnoreFileName_IgnoreFileAtAnyDepthOrCase_ReturnsTrue(string path)
+    {
+        // Act
+        var actual = IgnoreRules.IsIgnoreFileName(path);
+
+        // Assert
+        Assert.True(actual);
+    }
+
+    [Theory]
+    [InlineData("gitignore")]
+    [InlineData(".gitignore.bak")]
+    [InlineData("notes.txt")]
+    [InlineData(".gitignore/x.txt")]
+    [InlineData(".npmignore")]
+    public void IsIgnoreFileName_OtherName_ReturnsFalse(string path)
+    {
+        // Act
+        var actual = IgnoreRules.IsIgnoreFileName(path);
+
+        // Assert
+        Assert.False(actual);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void IsIgnoreFileName_Blank_ThrowsArgumentException(string path)
+    {
+        // Act
+        var act = () => { IgnoreRules.IsIgnoreFileName(path); };
+
+        // Assert
+        Assert.ThrowsAny<ArgumentException>(act);
     }
 }

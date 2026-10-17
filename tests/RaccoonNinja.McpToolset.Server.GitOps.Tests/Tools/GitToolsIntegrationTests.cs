@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors;
 using RaccoonNinja.McpToolset.Server.GitOps.Metrics;
 using RaccoonNinja.McpToolset.Server.GitOps.Models;
 using RaccoonNinja.McpToolset.Server.GitOps.Repo;
@@ -137,7 +138,7 @@ public class GitToolsIntegrationTests
 
         // Assert
         Assert.Null(envelope.Error);
-        Assert.Contains(envelope.Results.Cast<RaccoonNinja.McpToolset.Server.GitOps.Models.Branch>(),
+        Assert.Contains(envelope.Results.Cast<Branch>(),
             b => b.Name == "main");
     }
 
@@ -201,7 +202,7 @@ public class GitToolsIntegrationTests
         }
         else
         {
-            Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.PcreUnavailable, envelope.Error.Code);
+            Assert.Equal(ErrorCodes.PcreUnavailable, envelope.Error.Code);
         }
     }
 
@@ -238,7 +239,7 @@ public class GitToolsIntegrationTests
         var tool = new GitGrepTool(_common, _refVerifier);
         var envelope = await tool.InvokeAsync(_fixture.RepoPath, pattern);
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
         Assert.Equal("pattern", envelope.Error.Detail["param"]);
     }
 
@@ -257,7 +258,7 @@ public class GitToolsIntegrationTests
         var tool = new GitGrepTool(_common, _refVerifier);
         var envelope = await tool.InvokeAsync(_fixture.RepoPath, "-verbose");
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
         Assert.Equal("pattern", envelope.Error.Detail["param"]);
     }
 
@@ -300,7 +301,7 @@ public class GitToolsIntegrationTests
 
         // Assert
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.GitCommandError, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
         Assert.True(envelope.Error.Detail.ContainsKey("git_exit_code"));
         Assert.False(envelope.Error.Detail.ContainsKey("stderr_tail"));
     }
@@ -316,7 +317,7 @@ public class GitToolsIntegrationTests
 
         // Assert
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
     }
 
     [Fact]
@@ -334,7 +335,7 @@ public class GitToolsIntegrationTests
 
             // Assert
             Assert.NotNull(envelope.Error);
-            Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.NotAGitRepository, envelope.Error.Code);
+            Assert.Equal(ErrorCodes.NotAGitRepository, envelope.Error.Code);
         }
         finally
         {
@@ -359,7 +360,7 @@ public class GitToolsIntegrationTests
         var tool = new GitLogTool(_common, _refVerifier);
         var envelope = await tool.InvokeAsync(_fixture.RepoPath, @ref: "A....B");
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
     }
 
     [Fact]
@@ -401,7 +402,7 @@ public class GitToolsIntegrationTests
         var tool = new GitDiffTool(_common, _refVerifier);
         var envelope = await tool.InvokeAsync(_fixture.RepoPath, fromRef: fromRef, toRef: toRef);
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
         Assert.Equal(param, envelope.Error.Detail["param"]);
     }
 
@@ -411,7 +412,7 @@ public class GitToolsIntegrationTests
         var tool = new GitLogTool(_common, _refVerifier);
         var envelope = await tool.InvokeAsync(_fixture.RepoPath, @ref: "-x..HEAD");
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
     }
 
     [Fact]
@@ -468,7 +469,7 @@ public class GitToolsIntegrationTests
 
         // Assert
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.PathNotFound, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.PathNotFound, envelope.Error.Code);
     }
 
     [Fact]
@@ -482,7 +483,7 @@ public class GitToolsIntegrationTests
 
         // Assert
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RefNotFound, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.RefNotFound, envelope.Error.Code);
     }
 
     [Fact]
@@ -496,7 +497,7 @@ public class GitToolsIntegrationTests
 
         // Assert
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
         Assert.Equal("ref", envelope.Error.Detail["param"]);
     }
 
@@ -513,7 +514,7 @@ public class GitToolsIntegrationTests
 
         // Assert
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
         Assert.Equal("ref", envelope.Error.Detail["param"]);
     }
 
@@ -528,8 +529,23 @@ public class GitToolsIntegrationTests
 
         // Assert
         Assert.NotNull(envelope.Error);
-        Assert.Equal(RaccoonNinja.McpToolset.Server.GitOps.Errors.ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
         Assert.Contains("git_file_at_ref", envelope.Error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GitShowTool_RootTreeRef_IsRejectedAsFileOrTree()
+    {
+        // Arrange
+        var tool = new GitShowTool(_common, _refVerifier);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, @ref: "HEAD:");
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Contains("file or tree", envelope.Error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

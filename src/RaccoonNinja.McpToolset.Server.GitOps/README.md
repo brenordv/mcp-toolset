@@ -175,7 +175,8 @@ and is verified to a SHA before use.
 Runs two passes: a one-commit `git log` for metadata (same format as `git_log`), and `git show --format=` for the
 patch, parsed into the same `FileDiff` shape as `git_diff`. `paths` restricts the diff section.
 
-A `ref` in `<rev>:<path>` form (`HEAD:README.md`, `:README.md`) names a file, not a commit, and is rejected with a
+A `ref` in `<rev>:<path>` form (`HEAD:README.md`, `:README.md`, or `HEAD:` for the root tree) names a file or tree,
+not a commit, and is rejected with a
 `RejectedArgument` that points at `git_file_at_ref`. A colon inside `@{...}` or `^{...}` is part of the commit-ish,
 and `:/text` (commit search by message) is accepted.
 

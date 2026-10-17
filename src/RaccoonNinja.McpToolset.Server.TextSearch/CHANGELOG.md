@@ -1,3 +1,10 @@
+## v1.4.5
+- Fixed: a `cwd`-scoped or `include_ignored` call could return too few files, or none, with
+  `truncated: true` when files hidden by an ignore file above the `cwd` (or inside a re-included
+  directory) sorted ahead of the wanted ones. The ignore check now runs before the result cap.
+- Changed: the `include_ignored` example is `["build/**"]`; a `node_modules/` that `.gitignore` also
+  lists stays hidden.
+
 ## v1.4.4
 - Fixed: a `!` line in a nested `.gitignore` could re-include a path that a shallower agent-ignore file or
   `.mcpignore` hides, and one in a nested agent-ignore file could re-include a path a shallower `.mcpignore`

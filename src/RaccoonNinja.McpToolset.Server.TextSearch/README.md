@@ -74,11 +74,12 @@ refused with a path-free error; the same denylist and ignore tiers apply as unde
   match counts as two units.
 - **`search_text` matches per line.** A pattern that spans a newline will not match; `match_start`/
   `match_end` are offsets into the line.
-- **`include_ignored` takes globs, not a boolean.** Pass globs (for example `["node_modules/**"]`) to
-  re-include otherwise-ignored paths for one call; omit or pass an empty list to keep every ignore tier in
-  force. It only ever re-includes the built-in default tier: a `.gitignore`, agent-ignore, or `.mcpignore`
-  match is a hard boundary it can never cross, and it never reaches the secret denylist or content scan, which run first and
-  independently.
+- **`include_ignored` takes globs, not a boolean.** Pass globs (for example `["build/**"]` for a tracked
+  build directory) to re-include otherwise-ignored paths for one call; omit or pass an empty list to keep
+  every ignore tier in force. It only ever re-includes the built-in default tier: a `.gitignore`,
+  agent-ignore, or `.mcpignore` match is a hard boundary it can never cross, and it never reaches the
+  secret denylist or content scan, which run first and independently. A default-tier directory that your
+  `.gitignore` also lists, such as `node_modules/` in most JavaScript projects, stays hidden.
 - **Denylisted files are omitted, not flagged.** Reporting that a credential file exists is itself a useful
   recon, so the tools stay silent about it.
 - **`read_json` paths are dot/bracket syntax with Python-style indexing.** `a.b.c`, `items[0]`,

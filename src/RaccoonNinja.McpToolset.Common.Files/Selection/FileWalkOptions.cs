@@ -13,7 +13,8 @@ public sealed record FileWalkOptions
     /// <summary>
     /// A predicate over an entry's root-relative path deciding whether it is returned. <c>null</c> (the
     /// default) returns every entry that survives pruning. Pruning always runs first, so the predicate
-    /// never sees a denylisted, ignored, or symlinked path.
+    /// never sees a denylisted or symlinked path, nor an ignored one unless <see cref="IncludeIgnored"/>
+    /// re-included it. The cap in <see cref="MaxResults"/> counts only entries the predicate accepts.
     /// </summary>
     public Func<string, bool> Match { get; init; }
 

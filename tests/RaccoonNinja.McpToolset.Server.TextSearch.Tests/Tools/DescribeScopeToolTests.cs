@@ -93,4 +93,35 @@ public sealed class DescribeScopeToolTests
         var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
         Assert.Empty(info.PackageRoots);
     }
+
+    [Fact]
+    public async Task DescribeScope_ContentScanOn_ReportsDefaultDetectors()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+
+        // Act
+        var envelope = await harness.Describe.InvokeAsync();
+
+        // Assert
+        var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
+        Assert.True(info.ContentScanEnabled);
+        Assert.Contains("pem_private_key", info.ContentScanDetectors);
+        Assert.DoesNotContain("jwt", info.ContentScanDetectors);
+    }
+
+    [Fact]
+    public async Task DescribeScope_ContentScanOff_ReportsDisabledWithNoDetectors()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness(secretScan: false);
+
+        // Act
+        var envelope = await harness.Describe.InvokeAsync();
+
+        // Assert
+        var info = Assert.IsType<ScopeInfo>(Assert.Single(envelope.Results));
+        Assert.False(info.ContentScanEnabled);
+        Assert.Empty(info.ContentScanDetectors);
+    }
 }
