@@ -1,4 +1,8 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using RaccoonNinja.McpToolset.Common.Files.Security;
+using RaccoonNinja.McpToolset.Common.Files.Selection;
 using RaccoonNinja.McpToolset.Server.TextEdit.Content;
 using RaccoonNinja.McpToolset.Server.TextEdit.Errors;
 using RaccoonNinja.McpToolset.Server.TextEdit.Tests.TestSupport;
@@ -41,6 +45,31 @@ public sealed class GatedFileWriterTests : IDisposable
 
         // Assert
         Assert.Equal(RefusalReason.Denied, outcome.Files[0].Reason);
+    }
+
+    [Fact]
+    public void Apply_ClientConfigOptOutValue_RefusesEachFileAsDenied()
+    {
+        // Arrange
+        const string original = "{}";
+        const string mcpConfig = ".mcp.json";
+        const string userConfig = "user/.claude.json";
+        const string projectSettings = "proj/.claude/settings.json";
+        const string localSettings = "proj/.claude/settings.local.json";
+        using var harness = new TextEditHarness(extraDeny: ".mcp.json;.claude.json;**/.claude/settings*.json");
+        harness.WriteText(mcpConfig, original);
+        harness.WriteText(userConfig, original);
+        harness.WriteText(projectSettings, original);
+        harness.WriteText(localSettings, original);
+        var replacer = new Replacer(original, "{ }", false, false, harness.Config);
+
+        // Act
+        var outcome = harness.Apply("replace_text", replacer, mcpConfig, userConfig, projectSettings, localSettings);
+
+        // Assert
+        Assert.Equal(4, outcome.Refused);
+        Assert.All(outcome.Files, file => Assert.Equal(RefusalReason.Denied, file.Reason));
+        Assert.Equal(original, harness.ReadText(projectSettings));
     }
 
     [Fact]
@@ -121,8 +150,7 @@ public sealed class GatedFileWriterTests : IDisposable
     [Fact]
     public void Apply_AncestorGitignore_RefusesWriteInScopedCwd()
     {
-        // Arrange: the .gitignore sits at the base root, ABOVE the scoped cwd. The ignore check anchors at
-        // the base root, so a cwd-scoped write must still refuse the ancestor-ignored file.
+        // Arrange
         _harness.WriteText(".gitignore", "appsettings.Production.json\n");
         _harness.WriteText("proj/appsettings.Production.json", "hello world");
         var scope = _harness.Resolver.Resolve(_harness.Dir("proj"));
@@ -248,8 +276,7 @@ public sealed class GatedFileWriterTests : IDisposable
         var effective = new RootConfinement(_harness.Dir("proj"));
         var replacer = Replace("world", "text");
 
-        // Act: the writer confines every candidate against the effective (cwd) root, so a path escaping it
-        // is refused even though it stays inside the base.
+        // Act
         var outcome = _harness.Writer.Apply(
             "replace_text", ["../sibling.txt"], replacer, "t", null, false, null, 0, false, effective, CancellationToken.None);
 
@@ -266,7 +293,7 @@ public sealed class GatedFileWriterTests : IDisposable
         var effective = new RootConfinement(_harness.Dir("proj"));
         var replacer = Replace("world", "text");
 
-        // Act: selection yields the cwd-relative "a.txt", but the outcome and journal use the base-relative path.
+        // Act
         var outcome = _harness.Writer.Apply(
             "replace_text", ["a.txt"], replacer, "t", null, false, null, 0, false, effective, CancellationToken.None);
 
@@ -277,6 +304,186 @@ public sealed class GatedFileWriterTests : IDisposable
         Assert.Equal("proj/a.txt", Assert.Single(rows).Path);
     }
 
+    [Theory]
+    [MemberData(nameof(IgnoreFileNames))]
+    public void Apply_IgnoreFileAtAnyDepth_IsRefusedAndNeverWritten(string fileName)
+    {
+        // Arrange
+        var path = $"sub/{fileName}";
+        _harness.WriteText(path, "hello world");
+        var replacer = Replace("world", "text");
+
+        // Act
+        var outcome = _harness.Apply("replace_text", replacer, path);
+
+        // Assert
+        Assert.Equal(RefusalReason.IgnoreFile, Assert.Single(outcome.Files).Reason);
+        Assert.Null(outcome.BatchId);
+        Assert.Equal("hello world", _harness.ReadText(path));
+    }
+
+    [Fact]
+    public void Apply_IgnoredIgnoreFile_ReportsIgnoreFileNotIgnored()
+    {
+        // Arrange
+        _harness.WriteText(".gitignore", ".mcpignore\n");
+        _harness.WriteText(".mcpignore", "hello world\n");
+
+        // Act
+        var outcome = _harness.Apply("replace_text", Replace("world", "text"), ".mcpignore");
+
+        // Assert
+        Assert.Equal(RefusalReason.IgnoreFile, Assert.Single(outcome.Files).Reason);
+    }
+
+    [Fact]
+    public void Apply_IgnoreFileAddressedByShortName_IsRefused()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip("8.3 short names exist only on Windows.");
+        }
+
+        // Arrange
+        _harness.WriteText(".mcpignore", "hello world\n");
+        var shortName = ShortFileName(Path.Combine(_harness.Root, ".mcpignore"));
+        if (shortName is null or ".mcpignore")
+        {
+            Assert.Skip("This volume generated no 8.3 short name.");
+        }
+
+        // Act
+        var outcome = _harness.Apply("replace_text", Replace("world", "text"), shortName);
+
+        // Assert
+        var file = Assert.Single(outcome.Files);
+        Assert.Equal(".mcpignore", file.Path);
+        Assert.Equal(RefusalReason.IgnoreFile, file.Reason);
+        Assert.Equal("hello world\n", _harness.ReadText(".mcpignore"));
+    }
+
+    [Fact]
+    public void Apply_SymlinkToIgnoreFile_IsRefusedAsIgnoreFile()
+    {
+        // Arrange
+        _harness.WriteText(".gitignore", "hello world\n");
+        if (!TryCreateFileLink(Path.Combine(_harness.Root, "notes.txt"), Path.Combine(_harness.Root, ".gitignore")))
+        {
+            Assert.Skip("Creating symbolic links is not permitted in this environment.");
+        }
+
+        // Act
+        var outcome = _harness.Apply("replace_text", Replace("world", "text"), "notes.txt");
+
+        // Assert
+        var file = Assert.Single(outcome.Files);
+        Assert.Equal(".gitignore", file.Path);
+        Assert.Equal(RefusalReason.IgnoreFile, file.Reason);
+        Assert.Equal("hello world\n", _harness.ReadText(".gitignore"));
+    }
+
+    [Fact]
+    public void Apply_HardLinkToIgnoreFile_LeavesIgnoreFileUnchanged()
+    {
+        // Arrange
+        _harness.WriteText(".mcpignore", "seed\n");
+        CreateHardLink(Path.Combine(_harness.Root, "rules.txt"), Path.Combine(_harness.Root, ".mcpignore"));
+        _harness.WriteText(".mcpignore", "hello world\n");
+
+        // Act
+        var outcome = _harness.Apply("replace_text", Replace("world", "text"), "rules.txt");
+
+        // Assert
+        var file = Assert.Single(outcome.Files);
+        Assert.Equal("rules.txt", file.Path);
+        Assert.Null(file.Reason);
+        Assert.True(file.Changed);
+        Assert.Equal("hello text\n", _harness.ReadText("rules.txt"));
+        Assert.Equal("hello world\n", _harness.ReadText(".mcpignore"));
+    }
+
+    #region Test Helpers
+
+    public static TheoryData<string> IgnoreFileNames()
+    {
+        var data = new TheoryData<string>();
+        foreach (var name in IgnoreRules.IgnoreFileNames)
+        {
+            data.Add(name);
+        }
+
+        return data;
+    }
+
     private Replacer Replace(string pattern, string replacement)
         => new(pattern, replacement, isRegex: false, caseSensitive: false, _harness.Config);
+
+    [DllImport("kernel32.dll", EntryPoint = "GetShortPathNameW", SetLastError = true, CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint GetShortPathName(string longPath, [Out] char[] shortPath, uint bufferLength);
+
+    private static string ShortFileName(string fullPath)
+    {
+        var buffer = new char[1024];
+        var length = GetShortPathName(fullPath, buffer, (uint)buffer.Length);
+        return length == 0 || length >= buffer.Length
+            ? null
+            : Path.GetFileName(new string(buffer, 0, (int)length));
+    }
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", SetLastError = true, CharSet = CharSet.Unicode, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateHardLinkW(string fileName, string existingFileName, IntPtr securityAttributes);
+
+    private static void CreateHardLink(string link, string target)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            if (!CreateHardLinkW(link, target, IntPtr.Zero))
+            {
+                throw new Win32Exception(Marshal.GetLastPInvokeError());
+            }
+
+            return;
+        }
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = "ln",
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        psi.ArgumentList.Add(target);
+        psi.ArgumentList.Add(link);
+
+        using var process = Process.Start(psi) ?? throw new InvalidOperationException("failed to start ln");
+        var stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"ln failed ({process.ExitCode}): {stderr}");
+        }
+    }
+
+    private static bool TryCreateFileLink(string link, string target)
+    {
+        try
+        {
+            File.CreateSymbolicLink(link, target);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    #endregion
 }

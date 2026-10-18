@@ -26,7 +26,7 @@ public sealed class RepoRootResolver(string gitExecutable = "git") : IRepoRootRe
         if (_cache.TryGetValue(key, out var cached))
             return new RepoRootResolution(cached, true);
 
-        var root = await RunShowToplevelAsync(cwd, cancellationToken).ConfigureAwait(false);
+        var root = await RunShowToplevelAsync(cwd, cancellationToken);
         _cache.TryAdd(key, root);
         return new RepoRootResolution(root, false);
     }
@@ -67,7 +67,7 @@ public sealed class RepoRootResolver(string gitExecutable = "git") : IRepoRootRe
                 ShowToplevelArgs,
                 BootstrapTimeout,
                 onTimeout: null,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

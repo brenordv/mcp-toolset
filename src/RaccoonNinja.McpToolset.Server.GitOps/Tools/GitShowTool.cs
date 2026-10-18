@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Server.GitOps.Envelope;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
 using RaccoonNinja.McpToolset.Server.GitOps.Extensions;
 using RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 using RaccoonNinja.McpToolset.Server.GitOps.Repo;
@@ -16,7 +17,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
     public Task<ResultEnvelope> InvokeAsync(
         [Description("Absolute working directory.")]
         string cwd,
-        [Description("Ref to inspect (branch, tag, SHA, HEAD, HEAD~n, ...).")]
+        [Description("Ref to inspect (branch, tag, SHA, HEAD, HEAD~n, ...). A <rev>:<path> expression (a file or tree) is rejected; use git_file_at_ref for a file's content.")]
         string @ref = null,
         [Description("Restrict the diff section to these repo-relative paths.")]
         string[] paths = null,
@@ -26,8 +27,15 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
-            var sha = await refVerifier.VerifyRequiredRefAsync(root, @ref, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
+            if (RevPathExpression.IsRevPath(@ref))
+            {
+                throw new RejectedArgumentException(
+                    "ref is a <rev>:<path> expression that names a file or tree, not a commit; use git_file_at_ref with ref and path to read a file",
+                    new Dictionary<string, object> { ["param"] = "ref" });
+            }
+
+            var sha = await refVerifier.VerifyRequiredRefAsync(root, @ref, cancellationToken);
             var pathspecs = ToolCommon.ConfinePaths(root, paths);
 
             var metaIntent = new GitIntent
@@ -38,8 +46,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
                 AttachedOptions = [new AttachedOption("--max-count", "1")],
                 VerifiedRefs = [sha],
             };
-            var metaResult = await common.ExecuteAsync(metaIntent, ctx, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            var metaResult = await common.ExecuteAsync(metaIntent, ctx, cancellationToken: cancellationToken);
             var commits = LogParser.Parse(metaResult.Stdout);
             var commit = commits.Count > 0 ? commits[0] : null;
 
@@ -51,8 +58,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
                 VerifiedRefs = [sha],
                 Pathspecs = pathspecs,
             };
-            var patchResult = await common.ExecuteAsync(patchIntent, ctx, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            var patchResult = await common.ExecuteAsync(patchIntent, ctx, cancellationToken: cancellationToken);
             var files = DiffParser.ParseUnified(patchResult.Stdout);
 
             var payload = new Dictionary<string, object> { ["commit"] = commit, ["files"] = files, };

@@ -36,7 +36,7 @@ public static class RefVerifierExtensions
                 continue;
             }
 
-            verified.Add(await verifier.VerifyAsync(reference, repoRoot, cancellationToken).ConfigureAwait(false));
+            verified.Add(await verifier.VerifyAsync(reference, repoRoot, cancellationToken));
         }
 
         return verified;
@@ -81,13 +81,13 @@ public static class RefVerifierExtensions
     {
         if (RefRange.Parse(reference) is not { } range)
         {
-            return await verifier.VerifyAsync(reference, repoRoot, cancellationToken).ConfigureAwait(false);
+            return await verifier.VerifyAsync(reference, repoRoot, cancellationToken);
         }
 
         var leftRef = range.Left.Length > 0 ? range.Left : "HEAD";
         var rightRef = range.Right.Length > 0 ? range.Right : "HEAD";
-        var leftSha = await verifier.VerifyAsync(leftRef, repoRoot, cancellationToken).ConfigureAwait(false);
-        var rightSha = await verifier.VerifyAsync(rightRef, repoRoot, cancellationToken).ConfigureAwait(false);
+        var leftSha = await verifier.VerifyAsync(leftRef, repoRoot, cancellationToken);
+        var rightSha = await verifier.VerifyAsync(rightRef, repoRoot, cancellationToken);
         return $"{leftSha}{range.Operator}{rightSha}";
     }
 
@@ -123,7 +123,7 @@ public static class RefVerifierExtensions
                 continue;
             }
 
-            verified.Add(await verifier.VerifyRefOrRangeAsync(repoRoot, reference, cancellationToken).ConfigureAwait(false));
+            verified.Add(await verifier.VerifyRefOrRangeAsync(repoRoot, reference, cancellationToken));
         }
 
         return verified;

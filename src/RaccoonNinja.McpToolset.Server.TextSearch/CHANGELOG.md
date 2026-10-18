@@ -1,3 +1,45 @@
+## v1.4.6
+- Fixed: when an ignore file existed but could not be read (locked by another process, or permission
+  denied), the server log line for the failed call carried its absolute path. The line now names the
+  ignore file by its root-relative path. The call still fails with `InternalError`, and an ignore
+  file the server sees but cannot read is never treated as empty.
+
+## v1.4.5
+- Fixed: a `cwd`-scoped or `include_ignored` call could return too few files, or none, with
+  `truncated: true` when files hidden by an ignore file above the `cwd` (or inside a re-included
+  directory) sorted ahead of the wanted ones. The ignore check now runs before the result cap.
+- Changed: the `include_ignored` example is `["build/**"]`; a `node_modules/` that `.gitignore` also
+  lists stays hidden.
+
+## v1.4.4
+- Fixed: a `!` line in a nested `.gitignore` could re-include a path that a shallower agent-ignore file or
+  `.mcpignore` hides, and one in a nested agent-ignore file could re-include a path a shallower `.mcpignore`
+  hides. Ignore tiers now win by specificity regardless of directory depth, as the README's tier list
+  already stated; within one tier a deeper file still overrides a shallower one. The other direction
+  changes too: a `!` line in a `.mcpignore` now re-includes a path a nested `.gitignore` or agent-ignore
+  file hides, so a base-root `.mcpignore` re-include applies to every project under the base root. The
+  secret denylist and content scan are unaffected.
+
+## v1.4.3
+- Internal: removed every `ConfigureAwait(false)` call. The stdio host has no synchronization context, so
+  continuations run on the same threads as before. No wire or behavior change.
+
+## v1.4.2
+- Fixed: an ignore-file line (`.gitignore`, an agent-ignore file, or `.mcpignore`) that translated to an
+  invalid .NET regex took every content tool down with `InternalError` (`detail.type: RegexParseException`),
+  even a literal `search_text` or an `inspect_files` call. The ignore files above a scoped `cwd` are read
+  too, so one bad line anywhere between the base root and the file was enough. Bracket expressions now
+  translate without that failure; a line that still cannot compile is skipped and every other line applies.
+- Fixed: bracket expressions now follow git's reading. A `]` right after the opening `[` (or after `!`/`^`)
+  is a literal member, so `[]ab]` matches `]`, `a`, or `b`, and `[]` or `[!]` with no later `]` no longer
+  produces an invalid regex. A `[` inside a class is literal and never starts .NET class subtraction.
+  A reversed range such as `[z-a]` matches only its first character, as in git, and no bracket expression
+  matches `/`. A backslash inside brackets is a literal character, and POSIX `[:name:]` classes are not
+  supported.
+- Fixed: a glob argument that cannot compile (a reversed range such as `[z-a]`) now returns
+  `PatternInvalid` instead of `InternalError`. The message names the parse error kind
+  (`ReversedCharacterRange`), not the translated regex.
+
 ## v1.4.1
 - Internal: the argument-shape name validator moved to the shared `Common.Mcp` library, shared with the
   other servers that run the same filter. No wire or behavior change.

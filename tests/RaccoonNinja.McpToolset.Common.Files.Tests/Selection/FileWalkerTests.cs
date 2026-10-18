@@ -230,6 +230,22 @@ public sealed class FileWalkerTests : IDisposable
     }
 
     [Fact]
+    public void Walk_DeeperGitignoreReinclude_CannotOverrideShallowerMcpignore()
+    {
+        // Arrange
+        Write(".mcpignore", "*.hidden\n");
+        Write("sub/.gitignore", "!keep.hidden\n");
+        Write("sub/keep.hidden", "k");
+        Write("sub/a.txt", "a");
+
+        // Act
+        var paths = Paths(_walker.Walk(new FileWalkOptions()));
+
+        // Assert
+        Assert.Equal([".mcpignore", "sub/.gitignore", "sub/a.txt"], paths);
+    }
+
+    [Fact]
     public void Walk_SkipsAndCountsSymlinkedDirectory_WithoutDescending()
     {
         // Arrange
@@ -313,6 +329,22 @@ public sealed class FileWalkerTests : IDisposable
 
         // Assert
         Assert.Equal(["sub/x.txt"], paths);
+    }
+
+    [Fact]
+    public void Walk_StartSubdirectory_DeeperGitignoreReinclude_CannotOverrideRootMcpignore()
+    {
+        // Arrange
+        Write(".mcpignore", "*.hidden\n");
+        Write("sub/.gitignore", "!keep.hidden\n");
+        Write("sub/keep.hidden", "k");
+        Write("sub/a.txt", "a");
+
+        // Act
+        var paths = Paths(_walker.Walk(new FileWalkOptions { Start = "sub" }));
+
+        // Assert
+        Assert.Equal(["sub/.gitignore", "sub/a.txt"], paths);
     }
 
     [Fact]

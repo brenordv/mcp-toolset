@@ -30,7 +30,7 @@ public sealed class SessionMetrics
     public void RecordToolCall(string tool, string outcome)
         => _toolCalls.AddOrUpdate($"{tool}:{outcome}", 1, static (_, current) => current + 1);
 
-    /// <summary>Record one refusal, keyed by reason (for example <c>denylisted</c>, <c>out_of_root</c>, <c>ignored</c>).</summary>
+    /// <summary>Record one call-level refusal (a rejected <c>cwd</c>), keyed by reason, for example <c>cwd_outside_base</c> or <c>cwd_denylisted</c>. Per-file refusals are not counted here; each is reported in its file's <c>refusal_reason</c>.</summary>
     /// <param name="reason">The refusal reason.</param>
     public void RecordRefusal(string reason)
         => _refusals.AddOrUpdate(reason, 1, static (_, current) => current + 1);

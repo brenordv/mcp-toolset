@@ -15,11 +15,12 @@ internal sealed class IgnoreRule
 
     private readonly Regex _regex;
 
-    private IgnoreRule(string source, bool negated, bool directoryOnly, Regex regex)
+    private IgnoreRule(string source, bool negated, bool directoryOnly, IgnoreTier tier, Regex regex)
     {
         Source = source;
         Negated = negated;
         DirectoryOnly = directoryOnly;
+        Tier = tier;
         _regex = regex;
     }
 
@@ -32,13 +33,18 @@ internal sealed class IgnoreRule
     /// <summary>Whether the pattern ended in <c>/</c> and so matches directories only.</summary>
     public bool DirectoryOnly { get; }
 
+    /// <summary>The tier of the ignore file the rule came from; <see cref="IgnoreRules.Combine"/> orders rules by it.</summary>
+    public IgnoreTier Tier { get; }
+
     /// <summary>
     /// Compile <paramref name="rawLine"/> into a rule anchored under <paramref name="basePath"/>, or
-    /// return <c>null</c> when the line is blank or a comment and contributes no rule.
+    /// return <c>null</c> when the line is blank, a comment, or a pattern .NET cannot compile, and so
+    /// contributes no rule.
     /// </summary>
     /// <param name="rawLine">A single line from an ignore file.</param>
     /// <param name="basePath">The root-relative POSIX directory the ignore file lives in (<c>""</c> for the root).</param>
-    public static IgnoreRule TryCompile(string rawLine, string basePath)
+    /// <param name="tier">The tier of the ignore file the line came from.</param>
+    public static IgnoreRule TryCompile(string rawLine, string basePath, IgnoreTier tier)
     {
         var line = Preprocess(rawLine, out var negated);
         if (line is null)
@@ -75,7 +81,18 @@ internal sealed class IgnoreRule
             options |= RegexOptions.IgnoreCase;
         }
 
-        return new IgnoreRule(rawLine, negated, directoryOnly, new Regex(pattern, options, MatchTimeout));
+        Regex regex;
+        try
+        {
+            regex = new Regex(pattern, options, MatchTimeout);
+        }
+        catch (RegexParseException)
+        {
+            // Ignore-file content is untrusted: a line the translator cannot express as a .NET regex contributes no rule instead of failing every gated read.
+            return null;
+        }
+
+        return new IgnoreRule(rawLine, negated, directoryOnly, tier, regex);
     }
 
     /// <summary>Whether this rule matches <paramref name="relativePath"/> given whether it is a directory.</summary>
@@ -149,7 +166,7 @@ internal sealed class IgnoreRule
                     i++;
                     break;
                 case '[':
-                    i = AppendCharClass(p, i, sb);
+                    i = BracketExpression.Append(p, i, p.Length, sb, rejectReversedRange: false);
                     break;
                 case '\\':
                     i = AppendEscaped(p, i, sb);
@@ -182,40 +199,6 @@ internal sealed class IgnoreRule
 
         sb.Append(".*");
         return i + 2;
-    }
-
-    /// <summary>Copy a <c>[...]</c> class, turning a leading <c>!</c> or <c>^</c> into negation and escaping metacharacters.</summary>
-    private static int AppendCharClass(string s, int i, StringBuilder sb)
-    {
-        var close = s.IndexOf(']', i + 1);
-        if (close < 0)
-        {
-            sb.Append(Regex.Escape("["));
-            return i + 1;
-        }
-
-        sb.Append('[');
-        var j = i + 1;
-        if (j < close && (s[j] == '!' || s[j] == '^'))
-        {
-            sb.Append('^');
-            j++;
-        }
-
-        while (j < close)
-        {
-            var ch = s[j];
-            if (ch is '\\' or '^' or ']')
-            {
-                sb.Append('\\');
-            }
-
-            sb.Append(ch);
-            j++;
-        }
-
-        sb.Append(']');
-        return close + 1;
     }
 
     /// <summary>Emit the escaped character after a backslash as a regex literal (a trailing backslash is literal).</summary>

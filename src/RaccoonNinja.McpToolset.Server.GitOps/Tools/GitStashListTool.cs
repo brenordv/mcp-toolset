@@ -19,7 +19,7 @@ public sealed class GitStashListTool(ToolCommon common)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
             var intent = new GitIntent
             {
                 Subcommand = "stash",
@@ -27,7 +27,7 @@ public sealed class GitStashListTool(ToolCommon common)
                 RepoRoot = root,
                 Flags = ["--format=%gd%x1f%gs%x1f%at"],
             };
-            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
             var entries = StashListParser.Parse(result.Stdout);
             var items = new List<object>(entries.Count);
             items.AddRange(entries);

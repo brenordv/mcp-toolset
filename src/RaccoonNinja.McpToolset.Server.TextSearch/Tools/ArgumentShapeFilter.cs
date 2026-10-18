@@ -43,7 +43,7 @@ internal static class ArgumentShapeFilter
         {
             if (context.MatchedPrimitive is not McpServerTool tool || !HasPropertiesObject(tool.ProtocolTool.InputSchema))
             {
-                return await next(context, cancellationToken).ConfigureAwait(false);
+                return await next(context, cancellationToken);
             }
 
             var argumentNames = ArgumentNamesOf(context.Params);
@@ -57,7 +57,7 @@ internal static class ArgumentShapeFilter
             CallToolResult result;
             try
             {
-                result = await next(context, cancellationToken).ConfigureAwait(false);
+                result = await next(context, cancellationToken);
             }
             catch (OperationCanceledException)
             {

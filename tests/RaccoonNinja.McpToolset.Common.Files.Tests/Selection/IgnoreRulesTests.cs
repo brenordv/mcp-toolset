@@ -1,9 +1,13 @@
+using System.Globalization;
 using RaccoonNinja.McpToolset.Common.Files.Selection;
 
 namespace RaccoonNinja.McpToolset.Common.Files.Tests.Selection;
 
 public sealed class IgnoreRulesTests
 {
+    private static readonly string[] BracketShapeTemplates =
+        ["[{0}]", "[!{0}]", "[{0}", "[a{0}z]", "a{0}b", "[{0}-x]", "[x-{0}]", "[]{0}]", "{0}"];
+
     [Theory]
     [InlineData("bin", "bin", false)]
     [InlineData("bin", "src/bin", false)]
@@ -123,6 +127,18 @@ public sealed class IgnoreRulesTests
     [InlineData("[!abc].txt", "a.txt", false)]
     [InlineData("file?.txt", "file1.txt", true)]
     [InlineData("file?.txt", "file12.txt", false)]
+    [InlineData("[z-ab]x", "zx", true)]
+    [InlineData("[z-ab]x", "bx", true)]
+    [InlineData("[z-ab]x", "ax", false)]
+    [InlineData("[!z-a]x", "cx", true)]
+    [InlineData("[!z-a]x", "zx", false)]
+    [InlineData("[a-c-e]x", "-x", true)]
+    [InlineData("[a-c-e]x", "dx", false)]
+    [InlineData("[--0]x", ".x", true)]
+    [InlineData("[--0]x", "1x", false)]
+    [InlineData("[--0]x", "/x", false)]
+    [InlineData("d[!a]x", "d/x", false)]
+    [InlineData("d[.-0]x", "d/x", false)]
     public void IsIgnored_CharacterClassAndQuestionMark_MatchAsGlob(string pattern, string path, bool expected)
     {
         // Arrange
@@ -133,6 +149,83 @@ public sealed class IgnoreRulesTests
 
         // Assert
         Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void Parse_LeadingCloseBracketInClass_IsLiteralMember()
+    {
+        // Arrange
+        var rules = IgnoreRules.Parse(["[]ab]x"]);
+
+        // Act & Assert
+        Assert.True(rules.IsIgnored("]x", isDirectory: false));
+        Assert.True(rules.IsIgnored("ax", isDirectory: false));
+        Assert.False(rules.IsIgnored("cx", isDirectory: false));
+    }
+
+    [Fact]
+    public void Parse_NegatedLeadingCloseBracketInClass_ExcludesIt()
+    {
+        // Arrange
+        var rules = IgnoreRules.Parse(["[!]ab]x"]);
+
+        // Act & Assert
+        Assert.True(rules.IsIgnored("cx", isDirectory: false));
+        Assert.False(rules.IsIgnored("]x", isDirectory: false));
+        Assert.False(rules.IsIgnored("ax", isDirectory: false));
+    }
+
+    [Fact]
+    public void Parse_ReversedRange_MatchesItsLowEndOnly()
+    {
+        // Arrange
+        var rules = IgnoreRules.Parse(["[z-a]"]);
+
+        // Act & Assert
+        Assert.Equal(["[z-a]"], rules.Patterns);
+        Assert.True(rules.IsIgnored("z", isDirectory: false));
+        Assert.False(rules.IsIgnored("a", isDirectory: false));
+        Assert.False(rules.IsIgnored("m", isDirectory: false));
+    }
+
+    [Fact]
+    public void Parse_ReincludeWithNegatedClass_DoesNotCrossSlash()
+    {
+        // Arrange
+        var rules = IgnoreRules.Parse(["*.secret", "!public[!_]*.secret"]);
+
+        // Act & Assert
+        Assert.True(rules.IsIgnored("public/x.secret", isDirectory: false));
+        Assert.False(rules.IsIgnored("publicx.secret", isDirectory: false));
+    }
+
+    [Fact]
+    public void Parse_AnyPrintableAsciiInBracketShapes_CompilesEveryLine()
+    {
+        // Arrange
+        var failures = new List<(string Pattern, string Exception)>();
+
+        // Act
+        for (var c = ' '; c <= '~'; c++)
+        {
+            foreach (var template in BracketShapeTemplates)
+            {
+                var pattern = string.Format(CultureInfo.InvariantCulture, template, c);
+                IgnoreRules rules = null;
+                var exception = Record.Exception(() => rules = IgnoreRules.Parse([pattern]));
+                if (exception is not null)
+                {
+                    failures.Add((pattern, exception.GetType().Name));
+                }
+                else if (template != "{0}" && rules.Patterns.Count != 1)
+                {
+                    failures.Add((pattern, "Skipped"));
+                }
+            }
+        }
+
+        // Assert
+        Assert.Empty(failures);
     }
 
     [Fact]
@@ -171,6 +264,18 @@ public sealed class IgnoreRulesTests
     }
 
     [Fact]
+    public void IsIgnored_NullBasePath_AnchorsRulesAtTheRoot()
+    {
+        // Arrange
+        var rules = IgnoreRules.Parse(["logs/*.txt", "*.tmp"], basePath: null);
+
+        // Act & Assert
+        Assert.True(rules.IsIgnored("logs/a.txt", isDirectory: false));
+        Assert.False(rules.IsIgnored("sub/logs/a.txt", isDirectory: false));
+        Assert.True(rules.IsIgnored("nested/x.tmp", isDirectory: false));
+    }
+
+    [Fact]
     public void Combine_LaterSetOverridesEarlier()
     {
         // Arrange
@@ -183,6 +288,29 @@ public sealed class IgnoreRulesTests
         // Assert
         Assert.True(combined.IsIgnored("other.log", isDirectory: false));
         Assert.False(combined.IsIgnored("keep.log", isDirectory: false));
+    }
+
+    [Fact]
+    public void Combine_MoreSpecificTierWins_OverDeeperLessSpecificSet()
+    {
+        // Arrange
+        var dir = Directory.CreateTempSubdirectory("ignorerules-tier-");
+        try
+        {
+            File.WriteAllText(Path.Combine(dir.FullName, IgnoreRules.McpIgnoreFileName), "*.hidden\n");
+            var sub = Directory.CreateDirectory(Path.Combine(dir.FullName, "sub"));
+            File.WriteAllText(Path.Combine(sub.FullName, IgnoreRules.GitIgnoreFileName), "!keep.hidden\n");
+
+            // Act
+            var rules = IgnoreRules.Combine([IgnoreRules.Load(dir.FullName), IgnoreRules.Load(sub.FullName, "sub")]);
+
+            // Assert
+            Assert.True(rules.IsIgnored("sub/keep.hidden", isDirectory: false));
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
     }
 
     [Fact]
@@ -248,6 +376,40 @@ public sealed class IgnoreRulesTests
             // Assert
             Assert.Same(IgnoreRules.Empty, rules);
             Assert.False(rules.IsIgnored("anything", isDirectory: false));
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_LockedIgnoreFile_ThrowsWithRootRelativeNameOnly()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip("exclusive file locking is Windows-specific");
+        }
+
+        // Arrange
+        const string subdirectory = "sub";
+        var dir = Directory.CreateTempSubdirectory("ignorerules-locked-");
+        try
+        {
+            var sub = Directory.CreateDirectory(Path.Combine(dir.FullName, subdirectory));
+            var ignoreFile = Path.Combine(sub.FullName, IgnoreRules.GitIgnoreFileName);
+            File.WriteAllText(ignoreFile, "*.log\n");
+
+            using (File.Open(ignoreFile, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                // Act
+                var act = () => IgnoreRules.Load(sub.FullName, subdirectory);
+
+                // Assert
+                var exception = Assert.Throws<IgnoreFileReadException>(act);
+                Assert.Equal("could not read ignore file 'sub/.gitignore' (IOException)", exception.Message);
+                Assert.DoesNotContain(dir.FullName, exception.Message, StringComparison.Ordinal);
+            }
         }
         finally
         {
@@ -322,5 +484,47 @@ public sealed class IgnoreRulesTests
         {
             dir.Delete(recursive: true);
         }
+    }
+
+    [Theory]
+    [InlineData(".gitignore")]
+    [InlineData("sub/.mcpignore")]
+    [InlineData("a/b/.claudeignore")]
+    [InlineData(".GitIgnore")]
+    [InlineData("x/.GEMINIIGNORE")]
+    public void IsIgnoreFileName_IgnoreFileAtAnyDepthOrCase_ReturnsTrue(string path)
+    {
+        // Act
+        var actual = IgnoreRules.IsIgnoreFileName(path);
+
+        // Assert
+        Assert.True(actual);
+    }
+
+    [Theory]
+    [InlineData("gitignore")]
+    [InlineData(".gitignore.bak")]
+    [InlineData("notes.txt")]
+    [InlineData(".gitignore/x.txt")]
+    [InlineData(".npmignore")]
+    public void IsIgnoreFileName_OtherName_ReturnsFalse(string path)
+    {
+        // Act
+        var actual = IgnoreRules.IsIgnoreFileName(path);
+
+        // Assert
+        Assert.False(actual);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void IsIgnoreFileName_Blank_ThrowsArgumentException(string path)
+    {
+        // Act
+        var act = () => { IgnoreRules.IsIgnoreFileName(path); };
+
+        // Assert
+        Assert.ThrowsAny<ArgumentException>(act);
     }
 }

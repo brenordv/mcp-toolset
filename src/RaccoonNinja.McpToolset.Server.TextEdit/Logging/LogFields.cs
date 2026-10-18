@@ -31,7 +31,7 @@ public static class LogFields
     /// <summary>Whether the result was capped.</summary>
     public const string Truncated = "truncated";
 
-    /// <summary>The reason a write or match was refused (for example <c>denylisted</c>, <c>out_of_root</c>, <c>ignored</c>).</summary>
+    /// <summary>The reason a call was refused, for example <c>cwd_outside_base</c> or <c>cwd_denylisted</c>. Per-file refusal reasons go only to the tool result.</summary>
     public const string RefusalReason = "refusal_reason";
 
     /// <summary>Whether an agent regex fell back from the non-backtracking engine to backtracking.</summary>
@@ -64,9 +64,6 @@ public static class LogFields
     /// <summary>The encoding-detection ladder step that decided a file's encoding.</summary>
     public const string LadderStep = "ladder_step";
 
-    /// <summary>Whether an undo target was skipped because its current hash no longer matched the recorded post-image.</summary>
-    public const string UndoMismatch = "undo_mismatch";
-
     /// <summary>The free-text message.</summary>
     public const string Message = "message";
 
@@ -87,7 +84,7 @@ public static class LogFields
     {
         Ts, Level, Event, Tool, CallId, ErrorCode, DurationMs, Truncated,
         RefusalReason, RegexFallback, FilesScanned, RootHash, BatchId, Attempted,
-        Changed, Refused, DryRun, Encoding, LadderStep, UndoMismatch, Message,
+        Changed, Refused, DryRun, Encoding, LadderStep, Message,
         ExceptionTail, MetricsSummary, Service,
     };
 }

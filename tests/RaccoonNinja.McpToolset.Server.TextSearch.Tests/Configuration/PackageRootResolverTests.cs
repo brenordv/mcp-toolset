@@ -115,9 +115,10 @@ public sealed class PackageRootResolverTests : IDisposable
         // Arrange
         var baseRoot = NewTempDirectory("ctrl-base");
         var pkg = NewTempDirectory("ctrl-pkg");
-        var name = "a" + (char)0x1E + "b"; // a U+001E record separator inside the name
+        const string cursorFieldSeparator = "\u001E";
+        const string name = "a" + cursorFieldSeparator + "b";
 
-        // Act & Assert: a U+001E in the name would collide with the cursor-identity separator.
+        // Act & Assert
         Assert.Throws<SearchStartupException>(() => ScopeResolver.Create(Config, baseRoot, null, null, $"{name}={pkg}"));
     }
 
@@ -249,8 +250,7 @@ public sealed class PackageRootResolverTests : IDisposable
             Assert.Skip("creating a directory link (junction/symlink) is not permitted in this environment");
         }
 
-        // Act & Assert: a lexical check sees link as disjoint from base, but it resolves inside base, so the
-        // canonical, symlink-resolving overlap check must reject it.
+        // Act & Assert
         Assert.Throws<SearchStartupException>(() => ScopeResolver.Create(Config, baseRoot, null, null, $"pkg={link}"));
     }
 

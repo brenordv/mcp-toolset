@@ -1,9 +1,10 @@
 namespace RaccoonNinja.McpToolset.Server.TextEdit.Content;
 
 /// <summary>
-/// Why a single journal row was skipped during undo rather than restored. The first two are the security
-/// skips: a journal path is untrusted input, so a row that no longer confines or is now denylisted is never
-/// written back. The last two are safety skips: the file changed since the batch, or could not be read.
+/// Why a single journal row was skipped during undo rather than restored. The first three are the security
+/// skips: a journal path is untrusted input, so a row that no longer confines, is now denylisted, or names
+/// a project ignore file is never written back. The last two are safety skips: the file changed since the
+/// batch, or could not be read.
 /// </summary>
 public static class UndoSkipReason
 {
@@ -12,6 +13,9 @@ public static class UndoSkipReason
 
     /// <summary>The journal path is now on the secret denylist.</summary>
     public const string Denied = "denied";
+
+    /// <summary>The journal path is a project ignore file, which no text-edit write may change.</summary>
+    public const string IgnoreFile = "ignore_file";
 
     /// <summary>The file's current content hash no longer equals the recorded post-image; it was changed since the batch.</summary>
     public const string HashMismatch = "hash_mismatch";

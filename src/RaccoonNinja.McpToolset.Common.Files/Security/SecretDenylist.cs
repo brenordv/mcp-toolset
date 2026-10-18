@@ -48,8 +48,10 @@ public sealed class SecretDenylist : ISecretDenylist
 
     /// <summary>Create the denylist, optionally adding operator-supplied patterns to the built-in set.</summary>
     /// <param name="extraPatterns">
-    /// Additive patterns: an entry ending <c>/</c> is a bare directory segment denied at any depth;
-    /// otherwise it is a file basename glob. <c>null</c> or empty adds nothing.
+    /// Additive patterns: an entry ending <c>/</c> is a bare directory segment denied at any depth. Any
+    /// other entry is a glob: one with no <c>/</c> matches the file name at any depth, and one containing
+    /// <c>/</c> is matched against the whole relative path it is given, where a leading <c>**/</c> also
+    /// matches zero directories. <c>null</c> or empty adds nothing.
     /// </param>
     /// <exception cref="ArgumentException">Thrown when an entry is an absolute path or a directory entry is not a single bare segment.</exception>
     /// <exception cref="Selection.RegexCompilationException">Thrown when a file-glob entry is malformed.</exception>

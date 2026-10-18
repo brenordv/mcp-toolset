@@ -118,6 +118,71 @@ public sealed class FindFilesToolTests
         Assert.Equal(1, envelope.SkippedSymlinks);
     }
 
+    [Fact]
+    public async Task Find_Glob_LeadingCloseBracketIgnoreLine_StillHonorsTheRule()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("proj/.gitignore", "[]]keep.txt\n");
+        harness.Write("proj/]keep.txt", "1");
+        harness.Write("proj/other.txt", "2");
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(glob: "*.txt", cwd: harness.Dir("proj"));
+
+        // Assert
+        Assert.Equal(["other.txt"], TextSearchHarness.Paths(envelope));
+    }
+
+    [Fact]
+    public async Task Find_Glob_ReversedRangeIgnoreLine_HidesOnlyItsLowEnd()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("proj/.gitignore", "[z-a].txt\n");
+        harness.Write("proj/z.txt", "1");
+        harness.Write("proj/a.txt", "1");
+        harness.Write("proj/m.txt", "1");
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(glob: "*.txt", cwd: harness.Dir("proj"));
+
+        // Assert
+        Assert.Equal(["a.txt", "m.txt"], TextSearchHarness.Paths(envelope));
+    }
+
+    [Fact]
+    public async Task Find_Glob_DeeperGitignoreReinclude_CannotOverrideShallowerMcpignore()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("proj/.mcpignore", "*.hidden\n");
+        harness.Write("proj/sub/.gitignore", "!keep.hidden\n");
+        harness.Write("proj/sub/keep.hidden", "1");
+        harness.Write("proj/sub/a.txt", "1");
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(glob: "sub/*", cwd: harness.Dir("proj"));
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(["sub/.gitignore", "sub/a.txt"], TextSearchHarness.Paths(envelope));
+    }
+
+    [Fact]
+    public async Task Find_Glob_ReversedRange_IsPatternInvalid()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(glob: "[z-a]");
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.PatternInvalid, envelope.Error.Code);
+    }
+
     private static bool TryCreateSymlink(string link, string target)
     {
         try

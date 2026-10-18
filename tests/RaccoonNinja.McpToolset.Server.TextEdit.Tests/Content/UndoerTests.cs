@@ -1,3 +1,4 @@
+using Blake3;
 using RaccoonNinja.McpToolset.Server.TextEdit.Content;
 using RaccoonNinja.McpToolset.Server.TextEdit.Journal;
 using RaccoonNinja.McpToolset.Server.TextEdit.Tests.TestSupport;
@@ -131,6 +132,36 @@ public sealed class UndoerTests : IDisposable
         // Assert
         Assert.Equal(["a.txt"], outcome.Restored);
         Assert.Equal("the original pre-image", _harness.ReadText("a.txt"));
+    }
+
+    [Fact]
+    public void Undo_JournalRowForMissingIgnoreFile_IsSkippedAndNotRecreated()
+    {
+        // Arrange
+        var batchId = _harness.Journal.BeginBatch("replace_text", "root", "t", [Row(".mcpignore", "payload"u8.ToArray())]);
+
+        // Act
+        var outcome = _harness.Undoer.Undo(batchId);
+
+        // Assert
+        Assert.Contains(outcome.Skipped, skip => skip.Path == ".mcpignore" && skip.Reason == UndoSkipReason.IgnoreFile);
+        Assert.False(_harness.Exists(".mcpignore"));
+    }
+
+    [Fact]
+    public void Undo_JournalRowForExistingIgnoreFile_IsSkippedAndNotRestored()
+    {
+        // Arrange
+        _harness.WriteText("sub/.gitignore", "current\n");
+        var postHash = Hasher.Hash(_harness.ReadBytes("sub/.gitignore")).ToString();
+        var batchId = _harness.Journal.BeginBatch("replace_text", "root", "t", [Row("sub/.gitignore", "old\n"u8.ToArray(), postHash)]);
+
+        // Act
+        var outcome = _harness.Undoer.Undo(batchId);
+
+        // Assert
+        Assert.Contains(outcome.Skipped, skip => skip.Path == "sub/.gitignore" && skip.Reason == UndoSkipReason.IgnoreFile);
+        Assert.Equal("current\n", _harness.ReadText("sub/.gitignore"));
     }
 
     private Replacer Replace(string pattern, string replacement)

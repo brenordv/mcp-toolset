@@ -120,8 +120,7 @@ public sealed class ReadGateTests
     [Fact]
     public async Task ReadLines_AncestorGitignore_HidesFileInScopedCwd()
     {
-        // Arrange: the .gitignore sits at the base root, ABOVE the scoped cwd, so a walk rooted at the cwd
-        // would not consult it. The base-anchored boundary must still refuse the read.
+        // Arrange
         using var harness = new TextSearchHarness();
         harness.Write(".gitignore", "appsettings.Production.json\n");
         harness.Write("proj/appsettings.Production.json", "{ \"secret\": true }");

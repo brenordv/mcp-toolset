@@ -10,6 +10,10 @@ public class OtherParsersTests
     // characters when the next char is also a hex digit.
     private const string Us = "";
 
+    private const string ObjectIdA = "1111111111111111111111111111111111111111";
+    private const string ObjectIdB = "2222222222222222222222222222222222222222";
+    private const string ObjectIdC = "3333333333333333333333333333333333333333";
+
     private static readonly string[] LsFilesExpected = ["a.txt", "src/b.cs", "c"];
 
     [Fact]
@@ -23,6 +27,107 @@ public class OtherParsersTests
 
         // Assert
         Assert.Equal(LsFilesExpected, result);
+    }
+
+    [Fact]
+    public void LsFilesStage_ParsesModeObjectStageAndPath()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes($"100644 {ObjectIdA} 0\tsrc/a.cs\0100755 {ObjectIdB} 0\tscripts/run.sh\0");
+
+        // Act
+        var result = LsFilesParser.ParseStage(bytes);
+
+        // Assert
+        Assert.Equal(2, result.Count);
+        Assert.Equal("src/a.cs", result[0].Path);
+        Assert.Equal("100644", result[0].Mode);
+        Assert.Equal(ObjectIdA, result[0].ObjectId);
+        Assert.Equal(0, result[0].Stage);
+        Assert.Equal("scripts/run.sh", result[1].Path);
+        Assert.Equal("100755", result[1].Mode);
+        Assert.Equal(ObjectIdB, result[1].ObjectId);
+    }
+
+    [Fact]
+    public void LsFilesStage_SkipsMalformedRecords()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes("junk\0100644 abc 0\tok.txt\0");
+
+        // Act
+        var result = LsFilesParser.ParseStage(bytes);
+
+        // Assert
+        var entry = Assert.Single(result);
+        Assert.Equal("ok.txt", entry.Path);
+    }
+
+    [Fact]
+    public void LsFilesStage_UnmergedEntries_KeepEveryStage()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes(
+            $"100644 {ObjectIdA} 1\tc.txt\0100644 {ObjectIdB} 2\tc.txt\0100644 {ObjectIdC} 3\tc.txt\0");
+
+        // Act
+        var result = LsFilesParser.ParseStage(bytes);
+
+        // Assert
+        Assert.Equal([1, 2, 3], result.Select(entry => entry.Stage));
+        Assert.All(result, entry => Assert.Equal("c.txt", entry.Path));
+    }
+
+    [Fact]
+    public void LsFilesStage_EmptyInput_ReturnsEmpty()
+    {
+        // Arrange
+        var bytes = Array.Empty<byte>();
+
+        // Act
+        var result = LsFilesParser.ParseStage(bytes);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void IsLikelyBinary_NulInFirst8000Bytes_IsTrue()
+    {
+        // Arrange
+        byte[] bytes = [0x89, 0x50, 0x00, 0x0A];
+
+        // Act
+        var actual = TextDecoding.IsLikelyBinary(bytes);
+
+        // Assert
+        Assert.True(actual);
+    }
+
+    [Fact]
+    public void IsLikelyBinary_NulAfter8000Bytes_IsFalse()
+    {
+        // Arrange
+        var bytes = new byte[8001];
+        Array.Fill(bytes, (byte)'a', 0, 8000);
+
+        // Act
+        var actual = TextDecoding.IsLikelyBinary(bytes);
+
+        // Assert
+        Assert.False(actual);
+    }
+
+    [Fact]
+    public void IsLikelyBinary_EmptyOrText_IsFalse()
+    {
+        // Arrange
+        var text = Encoding.UTF8.GetBytes("plain text\n");
+
+        // Act & Assert
+        Assert.False(TextDecoding.IsLikelyBinary([]));
+        Assert.False(TextDecoding.IsLikelyBinary(null));
+        Assert.False(TextDecoding.IsLikelyBinary(text));
     }
 
     [Fact]

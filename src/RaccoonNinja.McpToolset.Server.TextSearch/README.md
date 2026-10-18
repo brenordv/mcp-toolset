@@ -74,11 +74,12 @@ refused with a path-free error; the same denylist and ignore tiers apply as unde
   match counts as two units.
 - **`search_text` matches per line.** A pattern that spans a newline will not match; `match_start`/
   `match_end` are offsets into the line.
-- **`include_ignored` takes globs, not a boolean.** Pass globs (for example `["node_modules/**"]`) to
-  re-include otherwise-ignored paths for one call; omit or pass an empty list to keep every ignore tier in
-  force. It only ever re-includes the built-in default tier: a `.gitignore`, agent-ignore, or `.mcpignore`
-  match is a hard boundary it can never cross, and it never reaches the secret denylist or content scan, which run first and
-  independently.
+- **`include_ignored` takes globs, not a boolean.** Pass globs (for example `["build/**"]` for a tracked
+  build directory) to re-include otherwise-ignored paths for one call; omit or pass an empty list to keep
+  every ignore tier in force. It only ever re-includes the built-in default tier: a `.gitignore`,
+  agent-ignore, or `.mcpignore` match is a hard boundary it can never cross, and it never reaches the
+  secret denylist or content scan, which run first and independently. A default-tier directory that your
+  `.gitignore` also lists, such as `node_modules/` in most JavaScript projects, stays hidden.
 - **Denylisted files are omitted, not flagged.** Reporting that a credential file exists is itself a useful
   recon, so the tools stay silent about it.
 - **`read_json` paths are dot/bracket syntax with Python-style indexing.** `a.b.c`, `items[0]`,
@@ -201,11 +202,24 @@ Four tiers decide which non-secret files a walk skips, applied least-specific fi
 4. **`.mcpignore`**, the most specific tier, which overrides all above. Use a base-root `.mcpignore` to
    *augment* the defaults rather than replace them.
 
+A more specific tier wins regardless of directory depth, in both directions: a `!` line in a
+nested `.gitignore` cannot re-include a path that a shallower agent-ignore file or `.mcpignore`
+hides, and a `!` line in a `.mcpignore` re-includes a path a nested `.gitignore` or agent-ignore
+file hides. A base-root `.mcpignore` therefore applies to every project under the base root, so
+keep its `!` lines narrow. Within one tier, a deeper file overrides a shallower one, as in git.
+
 The default tier is a convenience filter that `include_ignored` can re-include for one call. The `.gitignore`,
 agent-ignore, and `.mcpignore` tiers, by contrast, are a hard boundary: enforced root-down (ancestor rules included) and
 never re-includable, so a file they ignore is never listed, read, or searched. The secret denylist and the
 content scan are independent of all three and always apply, so re-including an ignored path still cannot
 surface a secret.
+
+Ranges and negation in bracket expressions follow git: a reversed range such as `[z-a]` matches
+only its first character (`z`), and a bracket expression never matches `/`. Three differences
+remain: a backslash inside brackets is a literal character, POSIX classes such as
+`[:alpha:]` are not supported, and a `[` with no closing `]` is a literal `[` (git never matches
+such a line). A line the server cannot compile is skipped; every other line
+applies, and the secret denylist and content scan are unaffected.
 
 ## Package roots
 
@@ -254,7 +268,7 @@ All configurations are environment variables. Only the base root is required; ev
 | `MCP_TEXTSEARCH_BASE_ROOT`            | (required) | The single confinement root: a bare absolute path to the directory that holds your projects. Fatal if unset, not an existing directory, or dangerously broad.                                                                                          |
 | `MCP_TEXTSEARCH_PACKAGE_ROOTS`        | (none)     | `;`-separated `name=path` (or bare path) read-only dependency caches, addressed with a `cwd` of `@name` or `@name/<subpath>`. Each must be an existing directory, pass the broad-root guard, have a valid unique name, and not overlap any other root. Fatal on any bad entry. |
 | `MCP_TEXTSEARCH_DEFAULT_IGNORE`       | (built-in) | `off` disables the built-in default ignore set; a file path replaces it with that file's patterns (a missing path is fatal); unset keeps the built-ins.                                                                                                |
-| `MCP_TEXTSEARCH_EXTRA_DENY`           | (none)     | `;`-separated additive deny patterns. A trailing `/` denies a bare directory segment at any depth; otherwise it is a file-name glob. It can only tighten the built-in denylist, never remove from it; absolute-looking or malformed entries are fatal. |
+| `MCP_TEXTSEARCH_EXTRA_DENY`           | (none)     | `;`-separated additive deny patterns. A trailing `/` denies a bare directory segment at any depth. Any other entry is a glob: without a `/` it matches the file name at any depth; with a `/` it matches the path relative to the call's scope (the base root, or the `cwd` when one is passed), so a call scoped at or inside a directory the pattern names is not covered. Prefer entries without a `/`. It can only tighten the built-in denylist, never remove from it; absolute-looking or malformed entries are fatal. |
 | `MCP_TEXTSEARCH_SECRET_SCAN`          | on         | Content-based secret withholding. `on` (default) withholds a file whose content matches a known secret shape from `read_lines`, `search_text`, and `inspect_files` while still listing it in `find_files`; `off` disables it; `aggressive` adds higher-false-positive detectors (JWTs, generic password assignments). Any other value is fatal. |
 | `MCP_TEXTSEARCH_MAX_FILES`            | 1000       | Default files returned per page.                                                                                                                                                                                                                       |
 | `MCP_TEXTSEARCH_MAX_FILES_CEILING`    | 10000      | Hard ceiling the page size is clamped to.                                                                                                                                                                                                              |

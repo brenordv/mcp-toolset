@@ -85,8 +85,8 @@ public static class Program
         catch (EditStartupException ex)
         {
             ServerEventLog.StartFailed(serverLogger, ex);
-            await Console.Error.WriteLineAsync($"text-edit: fatal error: {ex.Message}").ConfigureAwait(false);
-            await Log.CloseAndFlushAsync().ConfigureAwait(false);
+            await Console.Error.WriteLineAsync($"text-edit: fatal error: {ex.Message}");
+            await Log.CloseAndFlushAsync();
             return 1;
         }
 
@@ -124,7 +124,7 @@ public static class Program
         var exitCode = 0;
         try
         {
-            await builder.Build().RunAsync().ConfigureAwait(false);
+            await builder.Build().RunAsync();
         }
         catch (OperationCanceledException)
         {
@@ -139,7 +139,7 @@ public static class Program
         finally
         {
             ServerEventLog.Stop(serverLogger, metrics.Summary(), reason);
-            await Log.CloseAndFlushAsync().ConfigureAwait(false);
+            await Log.CloseAndFlushAsync();
         }
 
         return exitCode;

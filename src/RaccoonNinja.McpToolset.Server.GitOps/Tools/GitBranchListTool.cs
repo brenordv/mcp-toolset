@@ -23,7 +23,7 @@ public sealed class GitBranchListTool(ToolCommon common)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
 
             var positional = new List<string> { "refs/heads" };
             if (includeRemote) positional.Add("refs/remotes");
@@ -35,7 +35,7 @@ public sealed class GitBranchListTool(ToolCommon common)
                 Flags = [$"--format={Format}"],
                 PositionalServerArgs = positional,
             };
-            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
             var branches = BranchParser.Parse(result.Stdout);
 
             var filtersApplied = FiltersAppliedBuilder.Create()

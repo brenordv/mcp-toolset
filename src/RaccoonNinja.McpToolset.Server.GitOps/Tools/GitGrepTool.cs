@@ -31,7 +31,7 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
         var holder = new RootHolder();
         return common.WrapAsync(ctx, holder, async () =>
         {
-            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken).ConfigureAwait(false);
+            var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
 
             // A grep with no pattern is meaningless, and because the pattern is emitted as a glued
             // "-e<pattern>" token, an empty value would collapse to a bare "-e" that swallows the next
@@ -55,7 +55,7 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
                     new Dictionary<string, object> { ["param"] = "pattern" });
             }
 
-            var verifiedRefs = await refVerifier.VerifyOptionalRefsAsync(root, [@ref], cancellationToken).ConfigureAwait(false);
+            var verifiedRefs = await refVerifier.VerifyOptionalRefsAsync(root, [@ref], cancellationToken);
 
             // VerifiedRefs are RefVerifier-resolved object names, so grep receives them as bare,
             // non-option-like tree positionals (GitCommandBuilder omits --end-of-options for grep).
@@ -77,7 +77,7 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
                 ctx,
                 allowedExitCodes: GrepAllowedExitCodes,
                 stderrClassifier: ClassifyPcreStderr,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+                cancellationToken: cancellationToken);
 
             var matches = GrepParser.Parse(result.Stdout, @ref);
             var filtersApplied = FiltersAppliedBuilder.Create()

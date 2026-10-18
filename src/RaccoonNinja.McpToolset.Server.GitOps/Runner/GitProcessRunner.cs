@@ -89,8 +89,8 @@ public sealed class GitProcessRunner(ILogger<GitProcessRunner> logger) : IGitPro
 
         try
         {
-            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
-            await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
+            await process.WaitForExitAsync(timeoutCts.Token);
+            await Task.WhenAll(stdoutTask, stderrTask);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -135,7 +135,7 @@ public sealed class GitProcessRunner(ILogger<GitProcessRunner> logger) : IGitPro
         {
             while (true)
             {
-                var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
+                var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
                 if (read == 0) break;
                 if (!sink.Append(buffer, read))
                 {
@@ -145,7 +145,7 @@ public sealed class GitProcessRunner(ILogger<GitProcessRunner> logger) : IGitPro
                 // Drain remaining without storing it so the child doesn't block.
                 while (true)
                 {
-                    var drained = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
+                    var drained = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
                     if (drained == 0) break;
                 }
                 break;

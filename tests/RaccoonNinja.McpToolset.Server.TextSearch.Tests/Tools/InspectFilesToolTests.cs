@@ -90,6 +90,22 @@ public sealed class InspectFilesToolTests
         Assert.Equal(0, inspection.LineCount);
     }
 
+    [Fact]
+    public async Task Inspect_Paths_WithReversedRangeIgnoreLineInProject_Succeeds()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("proj/.gitignore", "[z-a]\n");
+        harness.Write("proj/src/a.rs", "fn main() {}\n");
+
+        // Act
+        var envelope = await harness.Inspect.InvokeAsync(paths: ["src/a.rs"], cwd: harness.Dir("proj"));
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.IsType<FileInspection>(Assert.Single(envelope.Results));
+    }
+
     private static async Task<FileInspection> InspectSingle(TextSearchHarness harness, string path)
     {
         var envelope = await harness.Inspect.InvokeAsync(paths: [path]);

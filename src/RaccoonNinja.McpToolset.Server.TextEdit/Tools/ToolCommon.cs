@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using RaccoonNinja.McpToolset.Server.TextEdit.Content;
 using RaccoonNinja.McpToolset.Server.TextEdit.Envelope;
 using RaccoonNinja.McpToolset.Server.TextEdit.Errors;
 using RaccoonNinja.McpToolset.Server.TextEdit.Logging;
@@ -23,7 +24,7 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
 
     /// <summary>Record a refusal, both as a counter and a per-call log line, carrying only the reason.</summary>
     /// <param name="ctx">The call context.</param>
-    /// <param name="reason">The refusal reason (for example <c>denylisted</c>, <c>out_of_root</c>, <c>ignored</c>).</param>
+    /// <param name="reason">The call-level refusal reason, for example <c>cwd_outside_base</c> or <c>cwd_denylisted</c>.</param>
     public void Refusal(CallContext ctx, string reason)
     {
         ArgumentNullException.ThrowIfNull(ctx);
@@ -67,31 +68,30 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
             extras: new Dictionary<string, object>(StringComparer.Ordinal) { [LogFields.RegexFallback] = true });
     }
 
-    /// <summary>Record a completed mutation batch: its counts, whether it was a dry run, and its journal id.</summary>
+    /// <summary>Record a completed mutation batch: its counts, whether its selection stopped at the file cap, whether it was a dry run, and its journal id.</summary>
     /// <param name="ctx">The call context.</param>
-    /// <param name="batchId">The committed batch id, or <c>null</c> for a dry run or a no-op batch.</param>
-    /// <param name="attempted">How many files the batch attempted.</param>
-    /// <param name="changed">How many files the batch changed.</param>
-    /// <param name="refused">How many files the batch refused.</param>
+    /// <param name="outcome">The write gate's batch outcome.</param>
     /// <param name="dryRun">Whether the batch was a dry run.</param>
-    public void BatchCommitted(CallContext ctx, long? batchId, int attempted, int changed, int refused, bool dryRun)
+    public void BatchCommitted(CallContext ctx, BatchOutcome outcome, bool dryRun)
     {
         ArgumentNullException.ThrowIfNull(ctx);
+        ArgumentNullException.ThrowIfNull(outcome);
         if (!dryRun)
         {
-            metrics.RecordBatchCommitted(changed);
+            metrics.RecordBatchCommitted(outcome.Changed);
         }
 
         var extras = new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            [LogFields.Attempted] = attempted,
-            [LogFields.Changed] = changed,
-            [LogFields.Refused] = refused,
+            [LogFields.Attempted] = outcome.Attempted,
+            [LogFields.Changed] = outcome.Changed,
+            [LogFields.Refused] = outcome.Refused,
+            [LogFields.Truncated] = outcome.Truncated,
             [LogFields.DryRun] = dryRun,
         };
-        if (batchId.HasValue)
+        if (outcome.BatchId.HasValue)
         {
-            extras[LogFields.BatchId] = batchId.Value;
+            extras[LogFields.BatchId] = outcome.BatchId.Value;
         }
 
         ctx.Log(LogLevel.Information, "batch", extras: extras);
@@ -132,7 +132,7 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var envelope = await body().ConfigureAwait(false);
+            var envelope = await body();
             metrics.RecordToolCall(ctx.Tool, "ok");
             metrics.RecordDurationMs((int)stopwatch.ElapsedMilliseconds);
             if (envelope.Truncated)
@@ -183,9 +183,15 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
     /// <summary>Wrap a single payload object as a one-element success envelope.</summary>
     /// <param name="payload">The payload.</param>
     /// <param name="filtersApplied">The safe-echo of the shaping arguments.</param>
+    /// <param name="truncated">Whether the selection behind the payload stopped at its file cap.</param>
+    /// <param name="skippedSymlinks">The count of symlinked entries the selection skipped, or <c>null</c> to omit.</param>
     /// <returns>The success envelope.</returns>
-    public static ResultEnvelope SingleSuccess(object payload, IDictionary<string, object> filtersApplied = null)
-        => ResultEnvelope.Success([payload], filtersApplied: filtersApplied);
+    public static ResultEnvelope SingleSuccess(
+        object payload,
+        IDictionary<string, object> filtersApplied = null,
+        bool truncated = false,
+        int? skippedSymlinks = null)
+        => ResultEnvelope.Success([payload], filtersApplied, truncated, skippedSymlinks);
 
     /// <summary>Wrap a list of payload objects as a success envelope with pagination metadata.</summary>
     /// <param name="items">The result items.</param>

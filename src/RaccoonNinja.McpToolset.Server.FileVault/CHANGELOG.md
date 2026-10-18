@@ -1,3 +1,7 @@
+## v3.3.1
+- Internal: removed every `ConfigureAwait(false)` call. The stdio host has no synchronization context, so
+  continuations run on the same threads as before. No wire or behavior change.
+
 ## v3.3.0
 - `vault_list` `query` now degrades gracefully on multi-word input: it matches every term first (unchanged for
   queries that already hit) and, only when that matches nothing, falls back to a ranked any-term match. The result's

@@ -1,3 +1,26 @@
+## v2.2.2
+- `git_show` now says a rejected `<rev>:<path>` ref names "a file or tree, not a commit". `HEAD:` (the
+  root tree) is rejected the same way as `HEAD:README.md`.
+- Internal: the tests share one temp-repository helper that reports a hung git as a timeout, instead of
+  three copies that surfaced a hang as an unrelated `InvalidOperationException`.
+
+## v2.2.1
+- Internal: removed every `ConfigureAwait(false)` call. The stdio host has no synchronization context, so
+  continuations run on the same threads as before. No wire or behavior change.
+
+## v2.2.0
+- `git_ls_files` gained a `stage` flag. With `stage: true` it runs `git ls-files -z --stage` and returns
+  `{path, mode, object_id, stage}` objects instead of path strings, so an agent can tell whether a committed
+  script is `100755` before recommending `./script.sh`. Without the flag the result is unchanged.
+- Added a `git_file_at_ref` tool (`cwd`, `path`, `ref` defaulting to `HEAD`): one tracked file's content as of a
+  ref, the equivalent of `git show <ref>:<path>`, including a file deleted since. It returns
+  `{path, ref_sha, mode, object_id, size, is_binary, content}`; a blob with a NUL byte in its first 8000 bytes
+  comes back with `is_binary: true` and `content: null`. A missing path is `PathNotFound`; a directory, the
+  repository root, or a blob id passed as `ref` is `RejectedArgument`.
+- Behavior change: `git_show` now rejects a `ref` in `<rev>:<path>` form with a `RejectedArgument` naming
+  `git_file_at_ref`. It used to verify the blob, find no diff in it, and return an empty success
+  (`commit: null`, `files: []`) with no hint of why.
+
 ## v2.1.0
 - Argument-shape mistakes now come back as the standard failure envelope with `error.code`
   `InvalidArgument`, not a bare, bodiless SDK message (`An error occurred invoking '<tool>'.`). A call
