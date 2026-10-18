@@ -80,7 +80,7 @@ public sealed class CwdScopeTests
         harness.WriteText("projectB/secret.txt", "hello world");
         var cwd = harness.Dir("projectA");
 
-        // Act: an explicit path aimed at a sibling project, from within projectA's scope.
+        // Act
         var envelope = await harness.Replace.InvokeAsync("world", "text", cwd: cwd, paths: ["../projectB/secret.txt"]);
 
         // Assert
@@ -102,8 +102,7 @@ public sealed class CwdScopeTests
         var envelope = await harness.Replace.InvokeAsync("world", "text", cwd: cwd);
         var result = Assert.IsType<MutationResult>(Assert.Single(envelope.Results));
 
-        // Assert: the single internal frame keeps FinalizeChanged matching, so no row is left pending
-        // (a pending row would be restored by undo with no hash gate).
+        // Assert
         Assert.NotNull(result.BatchId);
         var rows = harness.Journal.GetBatchFiles(result.BatchId.Value);
         Assert.Equal("proj/a.txt", Assert.Single(rows).Path);
@@ -120,7 +119,7 @@ public sealed class CwdScopeTests
         // Act
         var envelope = await harness.Replace.InvokeAsync("world", "text", paths: ["token.secret"]);
 
-        // Assert: the extended denylist prunes the file during selection, so it is never changed.
+        // Assert
         var result = Assert.IsType<MutationResult>(Assert.Single(envelope.Results));
         Assert.Equal(0, result.Changed);
         Assert.DoesNotContain(result.Files, file => file.Path == "token.secret" && file.Outcome == "changed");
@@ -161,7 +160,7 @@ public sealed class CwdScopeTests
         var undoA = harness.Undoer.Undo(batchA.BatchId.Value);
         var undoB = harness.Undoer.Undo(batchB.BatchId.Value);
 
-        // Assert: each batch's journaled path is base-relative and restores across projects from one journal.
+        // Assert
         Assert.Equal(["projectA/a.txt"], undoA.Restored);
         Assert.Equal(["projectB/b.txt"], undoB.Restored);
         Assert.Equal("hello world", harness.ReadText("projectA/a.txt"));

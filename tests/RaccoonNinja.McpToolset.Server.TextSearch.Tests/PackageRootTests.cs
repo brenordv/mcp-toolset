@@ -67,9 +67,7 @@ public sealed class PackageRootTests
     [Fact]
     public async Task Search_PackageSubpathBelowRegistryHashLevel_ReturnsSubpathRelativePaths()
     {
-        // Arrange: the real cargo registry nests packages under an index.crates.io-<hash> directory, so a
-        // scoped cwd carries two subpath levels (the hash dir and the package-version dir) before the
-        // package's own tree.
+        // Arrange
         using var harness = new TextSearchHarness(packageRoots: ["cargo"]);
         harness.WritePackage("cargo", "index.crates.io-1949cf8c6b5b557f/egui-0.34.3/src/style.rs", "fn text_edit_bg_color() {}");
         harness.WritePackage("cargo", "index.crates.io-1949cf8c6b5b557f/serde-1.0.0/src/lib.rs", "fn text_edit_bg_color() {}");
@@ -127,7 +125,7 @@ public sealed class PackageRootTests
             harness.WritePackage("nuget", $"pkg/f{i}.cs", "x");
         }
 
-        // Act: page one addresses @nuget, page two resumes with the @nuget/ spelling.
+        // Act
         var page1 = await harness.Find.InvokeAsync(glob: "**/*.cs", cwd: "@nuget", max_files: 2);
         Assert.NotNull(page1.Cursor);
         var page2 = await harness.Find.InvokeAsync(glob: "**/*.cs", cwd: "@nuget/", max_files: 2, cursor: page1.Cursor);
@@ -211,7 +209,7 @@ public sealed class PackageRootTests
         var baseScope = harness.Resolver.Resolve(baseAt);
         var packageScope = harness.Resolver.Resolve("@nuget");
 
-        // Assert: same readable key, different kind, so distinct cursor identities.
+        // Assert
         Assert.Equal("@nuget", baseScope.ScopeKey);
         Assert.Equal("@nuget", packageScope.ScopeKey);
         Assert.Equal(ScopeKind.Base, baseScope.Kind);
@@ -233,7 +231,7 @@ public sealed class PackageRootTests
         var page1 = await harness.Find.InvokeAsync(glob: "*.cs", cwd: baseAt, max_files: 2);
         Assert.NotNull(page1.Cursor);
 
-        // Act: present the base-scope cursor to the package @nuget scope.
+        // Act
         var envelope = await harness.Find.InvokeAsync(glob: "*.cs", cwd: "@nuget", cursor: page1.Cursor);
 
         // Assert

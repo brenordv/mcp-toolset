@@ -91,8 +91,7 @@ public sealed class SecretContentScanTests
     [Fact]
     public async Task ReadLines_IgnoredSecretFile_IsNotFoundNotWithheldSecret()
     {
-        // Arrange: the ignore check runs before the content scan, so an ignored file is disguised as
-        // NotFound and never reveals, via a distinct WithheldSecret code, that it exists and looks secret.
+        // Arrange
         using var harness = new TextSearchHarness();
         harness.Write(".gitignore", "config.cs\n");
         harness.Write("config.cs", SecretLine);
