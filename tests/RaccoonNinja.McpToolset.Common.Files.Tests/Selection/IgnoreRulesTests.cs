@@ -384,6 +384,40 @@ public sealed class IgnoreRulesTests
     }
 
     [Fact]
+    public void Load_LockedIgnoreFile_ThrowsWithRootRelativeNameOnly()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip("exclusive file locking is Windows-specific");
+        }
+
+        // Arrange
+        const string subdirectory = "sub";
+        var dir = Directory.CreateTempSubdirectory("ignorerules-locked-");
+        try
+        {
+            var sub = Directory.CreateDirectory(Path.Combine(dir.FullName, subdirectory));
+            var ignoreFile = Path.Combine(sub.FullName, IgnoreRules.GitIgnoreFileName);
+            File.WriteAllText(ignoreFile, "*.log\n");
+
+            using (File.Open(ignoreFile, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                // Act
+                var act = () => IgnoreRules.Load(sub.FullName, subdirectory);
+
+                // Assert
+                var exception = Assert.Throws<IgnoreFileReadException>(act);
+                Assert.Equal("could not read ignore file 'sub/.gitignore' (IOException)", exception.Message);
+                Assert.DoesNotContain(dir.FullName, exception.Message, StringComparison.Ordinal);
+            }
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public void IgnoreFileNames_OrdersGitignoreFirstMcpignoreLast()
     {
         // Arrange

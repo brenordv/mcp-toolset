@@ -106,6 +106,7 @@ public sealed class IgnoreRules
     /// <param name="basePath">The root-relative POSIX path of that directory (<c>""</c> for the root).</param>
     /// <returns>The combined rule set, or <see cref="Empty"/> when no ignore file is present.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="directory"/> is null or blank.</exception>
+    /// <exception cref="IgnoreFileReadException">Thrown when an ignore file exists but cannot be read; the message carries only its root-relative path.</exception>
     public static IgnoreRules Load(string directory, string basePath = "")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
@@ -119,7 +120,7 @@ public sealed class IgnoreRules
                 McpIgnoreFileName => IgnoreTier.McpIgnore,
                 _ => IgnoreTier.AgentIgnore,
             };
-            AddFileIfPresent(sets, Path.Combine(directory, fileName), basePath, tier);
+            AddFileIfPresent(sets, directory, fileName, basePath, tier);
         }
 
         return sets.Count == 0 ? Empty : Combine(sets);
@@ -169,11 +170,23 @@ public sealed class IgnoreRules
         return ignored;
     }
 
-    private static void AddFileIfPresent(List<IgnoreRules> sets, string path, string basePath, IgnoreTier tier)
+    private static void AddFileIfPresent(List<IgnoreRules> sets, string directory, string fileName, string basePath, IgnoreTier tier)
     {
-        if (File.Exists(path))
+        var path = Path.Combine(directory, fileName);
+        if (!File.Exists(path))
         {
+            return;
+        }
+
+        try
+        {
+            // Parse enumerates the lines, so a read that fails partway through also lands in the catch.
             sets.Add(Parse(File.ReadLines(path), basePath, tier));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var relativePath = string.IsNullOrWhiteSpace(basePath) ? fileName : string.Concat(basePath, "/", fileName);
+            throw new IgnoreFileReadException(relativePath, ex.GetType().Name);
         }
     }
 }

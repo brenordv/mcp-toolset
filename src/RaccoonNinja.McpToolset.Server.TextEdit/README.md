@@ -73,8 +73,9 @@ as a security measure.
 - **A rewrite requires a confidently-detected encoding.** A file whose encoding is detected below the
   confidence threshold is refused unless you pass an explicit `source_encoding`. This is safe by design: a
   low-confidence guess could corrupt the file on write.
-- **Denylisted files are omitted from a selector walk, not flagged.** When you name one explicitly it is
-  reported as refused.
+- **Denylisted files are dropped from the selection, walked or named in `paths`, and are not
+  reported:** they appear neither as changed nor as refused. The write gate still refuses, as
+  `denied`, any denylisted file that reaches it.
 - **A batch that changes nothing writes no journal row** and returns a `null` `batch_id`.
 
 ## The result envelope
@@ -93,12 +94,14 @@ single element carrying the batch id, the counts, and the per-file entries.
       "refused": 1,
       "files": [
         { "path": "src/app.cs", "outcome": "changed" },
-        { "path": ".env", "outcome": "refused", "refusal_reason": "denied" }
+        { "path": ".gitignore", "outcome": "refused", "refusal_reason": "ignore_file" }
       ]
     }
   ],
   "count": 1,
   "filters_applied": { "cwd": ".", "glob": "<provided>", "case_sensitive": false, "dry_run": false },
+  "truncated": false,                 // true when the selection stopped at max_files
+  "skipped_symlinks": 0,              // symbolic links the selector walk passed over
   "error": null                       // set instead of results on failure
 }
 ```
@@ -107,6 +110,11 @@ A per-file `outcome` is `changed`, `refused`, or `unchanged`; a refused file car
 (`denied`, `ignore_file`, `out_of_root`, `ignored`, `not_found`, `is_directory`, `binary`, `too_large`,
 `low_confidence_encoding`, `regex_timeout`, `io_error`, `write_failed`). An `undo` result carries `restored`, `recreated`, and `skipped` (each with
 a `reason`).
+
+On `normalize_files` and `replace_text`, `truncated: true` means the selection stopped at
+`max_files` (default 1000, clamped to the ceiling) and every file past the cap was left untouched;
+narrow the selector or raise `max_files` and run again. A dry run reports it too, before anything
+is written.
 
 ### Error codes
 
@@ -141,6 +149,16 @@ Only argument names are echoed back, never values.
   rules through text-edit cannot widen what text-search or text-edit may reach. One gap remains: an
   ignore file that is a symbolic link to a file whose own name is not an ignore-file name takes its
   rules from that file, which text-edit may write.
+- It can write client and agent configuration files kept inside the base root, such as `.mcp.json`,
+  `.claude/settings.json`, `.claude/settings.local.json`, and a user's `.claude.json`. Those files
+  can register MCP servers, set their environment, and add hooks. That is deliberate: installing a
+  server or a hook means editing them, and approving each write call is the control. To make them
+  unwritable, set `MCP_TEXTEDIT_EXTRA_DENY=.mcp.json;.claude.json;**/.claude/settings*.json`:
+  text-edit then never writes them. A selection drops them, the write gate refuses as `denied` any
+  that a `cwd`-scoped selection lets through, and undo never restores them. The patterns match
+  paths relative to the base root, so if the base root is itself a `.claude` directory, add
+  `settings*.json` too. The opt-out covers only the files it names; a script a hook runs, or another
+  client's configuration file, stays writable unless you add it as well.
 - Symlinks that point outside the base, or at a secret, are refused by their real target, not their name.
 - Every write is journaled with a pre-image, so a batch can be undone even after a crash mid-batch.
 - Undo is a second write path, so it re-runs confinement, the denylist, and the ignore-file check on
@@ -171,7 +189,7 @@ All configuration is environment variables. The base root is required; everythin
 | Variable                                | Default    | Meaning                                                                                   |
 |-----------------------------------------|------------|-------------------------------------------------------------------------------------------|
 | `MCP_TEXTEDIT_BASE_ROOT`                | (required) | The single confinement root: a bare absolute path to the directory holding your projects. Fatal if unset, not an existing directory, or dangerously broad. |
-| `MCP_TEXTEDIT_EXTRA_DENY`               | (none)     | `;`-separated additive deny patterns. A trailing `/` denies a bare directory segment at any depth; otherwise a file-name glob. Tightens the built-in denylist only; absolute-looking or malformed entries are fatal. |
+| `MCP_TEXTEDIT_EXTRA_DENY`               | (none)     | `;`-separated additive deny patterns. A trailing `/` denies a bare directory segment at any depth. Any other entry is a glob: without a `/` it matches the file name at any depth; with a `/` it matches the path relative to the base root, so start it with `**/` to match at any depth (`**/.claude/settings*.json`). Tightens the built-in denylist only; absolute-looking or malformed entries are fatal. |
 | `MCP_TEXTEDIT_DEFAULT_IGNORE`           | (built-in) | `off` disables the built-in default ignore set; a file path replaces it with that file's patterns (a missing path is fatal); unset keeps the built-ins. |
 | `MCP_TEXTEDIT_MAX_FILES`                | 1000       | Default number of files a selector call acts on.                                          |
 | `MCP_TEXTEDIT_MAX_FILES_CEILING`        | 10000      | Hard ceiling the per-call file count is clamped to.                                       |

@@ -142,6 +142,24 @@ public sealed class SecretDenylistTests
         Assert.True(actual);
     }
 
+    [Theory]
+    [InlineData(".claude/settings.json", true)]
+    [InlineData("proj/.claude/settings.local.json", true)]
+    [InlineData("proj/.mcp.json", true)]
+    [InlineData("proj/settings.json", false)]
+    [InlineData("proj/.claude/agents/a.md", false)]
+    public void IsDeniedFile_PathShapedExtraGlob_MatchesItsPathAtAnyDepth(string path, bool expected)
+    {
+        // Arrange
+        var denylist = new SecretDenylist(["**/.claude/settings*.json", ".mcp.json"]);
+
+        // Act
+        var actual = denylist.IsDeniedFile(path);
+
+        // Assert
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     public void IsDeniedDirectory_ExtraDirectorySegment_ReturnsTrue()
     {

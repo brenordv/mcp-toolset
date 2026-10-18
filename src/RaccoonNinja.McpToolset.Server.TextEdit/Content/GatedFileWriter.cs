@@ -213,8 +213,8 @@ public sealed class GatedFileWriter
         catch (PathConfinementException)
         {
             // confined.RealPath was already verified inside the effective root (itself under base), so this
-            // cannot fail short of a sub-millisecond TOCTOU symlink swap. Report a clean, counted refusal
-            // rather than letting it surface as a generic internal error.
+            // cannot fail short of a sub-millisecond TOCTOU symlink swap. Report a clean refusal rather than
+            // letting it surface as a generic internal error.
             return Refusal(relativePath, RefusalReason.OutOfRoot);
         }
 

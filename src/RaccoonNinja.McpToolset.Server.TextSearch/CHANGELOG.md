@@ -1,3 +1,9 @@
+## v1.4.6
+- Fixed: when an ignore file existed but could not be read (locked by another process, or permission
+  denied), the server log line for the failed call carried its absolute path. The line now names the
+  ignore file by its root-relative path. The call still fails with `InternalError`, and an ignore
+  file the server sees but cannot read is never treated as empty.
+
 ## v1.4.5
 - Fixed: a `cwd`-scoped or `include_ignored` call could return too few files, or none, with
   `truncated: true` when files hidden by an ignore file above the `cwd` (or inside a re-included

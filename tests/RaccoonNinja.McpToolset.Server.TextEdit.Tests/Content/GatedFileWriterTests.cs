@@ -48,6 +48,31 @@ public sealed class GatedFileWriterTests : IDisposable
     }
 
     [Fact]
+    public void Apply_ClientConfigOptOutValue_RefusesEachFileAsDenied()
+    {
+        // Arrange
+        const string original = "{}";
+        const string mcpConfig = ".mcp.json";
+        const string userConfig = "user/.claude.json";
+        const string projectSettings = "proj/.claude/settings.json";
+        const string localSettings = "proj/.claude/settings.local.json";
+        using var harness = new TextEditHarness(extraDeny: ".mcp.json;.claude.json;**/.claude/settings*.json");
+        harness.WriteText(mcpConfig, original);
+        harness.WriteText(userConfig, original);
+        harness.WriteText(projectSettings, original);
+        harness.WriteText(localSettings, original);
+        var replacer = new Replacer(original, "{ }", false, false, harness.Config);
+
+        // Act
+        var outcome = harness.Apply("replace_text", replacer, mcpConfig, userConfig, projectSettings, localSettings);
+
+        // Assert
+        Assert.Equal(4, outcome.Refused);
+        Assert.All(outcome.Files, file => Assert.Equal(RefusalReason.Denied, file.Reason));
+        Assert.Equal(original, harness.ReadText(projectSettings));
+    }
+
+    [Fact]
     public void Apply_PathEscapingRoot_IsRefusedOutOfRoot()
     {
         // Arrange

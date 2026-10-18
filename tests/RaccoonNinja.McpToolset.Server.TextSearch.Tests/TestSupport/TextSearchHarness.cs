@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using RaccoonNinja.McpToolset.Common.Files.Text;
 using RaccoonNinja.McpToolset.Server.TextSearch.Configuration;
@@ -28,7 +29,8 @@ internal sealed class TextSearchHarness : IDisposable
         string defaultIgnore = null,
         IReadOnlyList<string> packageRoots = null,
         bool secretScan = true,
-        long? maxJsonValueBytes = null)
+        long? maxJsonValueBytes = null,
+        ILoggerFactory loggerFactory = null)
     {
         Root = NewTempDirectory("base");
         Config = DefaultConfig(regexTimeoutMs, operationBudgetMs, secretScan, maxJsonValueBytes);
@@ -52,7 +54,7 @@ internal sealed class TextSearchHarness : IDisposable
 
         Resolver = ScopeResolver.Create(Config, Root, defaultIgnore, extraDeny, packageRootsValue);
         Metrics = new SessionMetrics();
-        var common = new ToolCommon(Metrics, NullLoggerFactory.Instance);
+        var common = new ToolCommon(Metrics, loggerFactory ?? NullLoggerFactory.Instance);
 
         Describe = new DescribeScopeTool(common, Config, Resolver);
         Find = new FindFilesTool(common, Config, Resolver);

@@ -95,12 +95,16 @@ public sealed class ReplaceTextTool(ToolCommon common, EditConfig config, ScopeR
                 scope.Effective,
                 budget.Token);
 
-            common.BatchCommitted(ctx, outcome.BatchId, outcome.Attempted, outcome.Changed, outcome.Refused, dry_run);
+            common.BatchCommitted(ctx, outcome, dry_run);
 
             var filters = SelectorSupport
                 .Filters(scope.ScopeKey, glob, regex, paths, extensions, case_sensitive, dry_run)
                 .Build();
-            return Task.FromResult(ToolCommon.SingleSuccess(ResultMapping.ToMutationResult(outcome, dry_run), filters));
+            return Task.FromResult(ToolCommon.SingleSuccess(
+                ResultMapping.ToMutationResult(outcome, dry_run),
+                filters,
+                truncated: outcome.Truncated,
+                skippedSymlinks: outcome.SkippedSymlinks));
         });
     }
 
