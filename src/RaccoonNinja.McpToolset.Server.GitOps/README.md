@@ -79,7 +79,7 @@ A few rules apply to every call regardless of tool:
 | [`git_diff`](#git_diff)               | Unified diff (staged / ref-to-ref / worktree / stat-only) | `cwd`, `staged`, `fromRef`, `toRef`, `paths`, `contextLines`, `statOnly`                           |
 | [`git_log`](#git_log)                 | Commit history with filters                               | `cwd`, `paths`, `author`, `since`, `until`, `grep`, `pickaxe`, `maxCount`, `ref`, `follow`, `perlRegex`, `allRefs` |
 | [`git_show`](#git_show)               | Inspect one commit/tag/tree + its diffs                   | `cwd`, `ref`, `paths`                                                                              |
-| [`git_file_at_ref`](#git_file_at_ref) | One file's content, mode, and blob id at a ref            | `cwd`, `path`, `ref`                                                                               |
+| [`git_file_at_ref`](#git_file_at_ref) | One file's content, mode, and blob id at a ref            | `cwd`, `path`, `ref`, `lineStart`, `lineEnd`, `byteOffset`, `maxBytes`                             |
 | [`git_blame`](#git_blame)             | Per-line author/commit/time for a file                    | `cwd`, `path`, `lineStart`, `lineEnd`, `ref`                                                       |
 | [`git_grep`](#git_grep)               | Search tracked content (optionally at a ref)              | `cwd`, `pattern`, `paths`, `globs`, `excludePaths`, `ref`, `ignoreCase`, `fixedString`, `maxCount` |
 | [`git_ls_files`](#git_ls_files)       | List tracked paths (optionally with mode and blob id)     | `cwd`, `paths`, `globs`, `excludePaths`, `stage`                                                   |
@@ -208,28 +208,58 @@ Returns one tracked file's content as of a ref, the equivalent of `git show <ref
 and takes any commit-ish; the file goes in `path`, never inside `ref`. A file deleted since is still readable at an
 earlier ref.
 
-The payload is `{path, ref_sha, mode, object_id, size, is_binary, content}`. `size` is the blob's byte count. A blob
-with a NUL byte in its first 8000 bytes (git's own binary heuristic) comes back with `is_binary: true` and
-`content: null`. A `120000` entry is a symlink, and its content is the link target text.
+The payload is `{path, ref_sha, mode, object_id, size, total_lines, next_byte_offset, is_binary, content}`. `size` is
+the blob's byte count and `total_lines` its line count: the number of `\n` bytes, plus one when the blob is not empty
+and does not end in `\n`. A blob with a NUL byte in its first 8000 bytes (git's own binary heuristic) comes back with
+`is_binary: true` and `content`, `total_lines`, and `next_byte_offset` all `null`. A `120000` entry is a symlink, and
+its content is the link target text.
+
+Three optional parameters cut a large text blob down to what the client can take. They apply in this order, on the
+raw bytes git returned, before decoding:
+
+- `lineStart` and `lineEnd` (1-based, inclusive, both or neither, the same contract as `git_blame`) keep only those
+  lines, each with its `\n`. An end past the last line is clamped to it. A start past the last line is
+  `RejectedArgument` with `param: line_range` and `total_lines` in the detail, so the caller can retry; an empty blob
+  has no lines, so any range on it is rejected.
+- `byteOffset` (0-based) skips that many bytes of what the range kept, or of the whole blob without a range. An
+  offset that lands inside a multi-byte UTF-8 character moves forward to the next character. An offset at or past
+  the end is `RejectedArgument` with `param: byte_offset` and `content_bytes` (the length it was checked against) in
+  the detail. An offset of 0 on empty content returns empty content.
+- `maxBytes` caps the returned content in UTF-8 bytes. A cut that lands inside a character backs off to the start of
+  that character, so a cap of 4 or more never splits one; a smaller cap always keeps at least one byte, so paging
+  with it still advances. A cut sets the envelope's `truncated` to `true` and `next_byte_offset` to the offset of the
+  first byte left out, in the frame `byteOffset` uses: pass it back as `byteOffset`, with the same range and cap, to
+  read the next page. Without a cut, `next_byte_offset` is `null`.
+
+There is no default cap: without these parameters the whole blob comes back, and a file of tens of kilobytes on one
+line can exceed an MCP client's per-result limit. Pass `maxBytes` for a large or single-line file. `\r` stays in the
+content. `total_lines` and the past-the-end checks see only the bytes git returned, so for a blob over the 8 MB output
+cap `total_lines` is a lower bound. A binary blob ignores a valid range, offset, and cap. A half-specified or reversed
+range, a start below 1, a negative offset, or a cap below 1 is `RejectedArgument` before git runs, whatever the blob
+turns out to be.
 
 Committed content is returned as-is: git-ops has no secret denylist or content scan, the same trust class as the
 hunks `git_show` returns and the lines `git_grep` returns.
 
 Errors: `PathNotFound` when the path does not exist at that ref, `RejectedArgument` (with `param`) when `path` is
-empty, names a directory or the repository root, or when `ref` is a `<rev>:<path>` expression or a blob id.
+empty, names a directory or the repository root, when `ref` is a `<rev>:<path>` expression or a blob id, or for the
+range, offset, and cap cases above (`line_range`, `byte_offset`, `max_bytes`).
 
 ```mermaid
 flowchart TD
-    A[git_file_at_ref: cwd, path, ref] --> B[Resolve root]
+    A[git_file_at_ref: cwd, path, ref,<br/>lineStart, lineEnd, byteOffset, maxBytes] --> B[Resolve root]
     B --> C[Guards: non-empty file path,<br/>no rev:path in ref, confine path]
-    C --> D[Verify ref → SHA<br/>default HEAD]
+    C --> V[Validate range, offset, and cap]
+    V --> D[Verify ref → SHA<br/>default HEAD]
     D --> E["git ls-tree -z -l SHA -- path"]
     E --> F{exact path is a blob?}
     F -- no entry --> G[PathNotFound]
     F -- tree / submodule --> H[RejectedArgument]
     F -- blob --> I["git show --format= BLOB"]
-    I --> J[Binary check: NUL in first 8000 bytes]
-    J --> K["payload { path, ref_sha, mode, object_id, size, is_binary, content }"]
+    I --> J{Binary check:<br/>NUL in first 8000 bytes}
+    J -- binary --> K
+    J -- text --> S[Slice by line range, byte offset,<br/>and byte cap on raw bytes]
+    S --> K["payload { path, ref_sha, mode, object_id, size,<br/>total_lines, next_byte_offset, is_binary, content }"]
     K --> L[ResultEnvelope]
 ```
 
@@ -404,7 +434,7 @@ Every collection-returning tool wraps its payload in this structure:
     "author": "<redacted>",    // user-controlled values are redacted, not echoed
     "max_count": 50
   },
-  "truncated": false,          // true if git output hit the 8 MB cap
+  "truncated": false,          // true if git output hit the 8 MB cap, or a tool-level cap cut the payload (git_file_at_ref maxBytes)
   "repo_root": "/abs/path/to/repo",
   "error": null                // populated only on failure (see below)
 }

@@ -1,3 +1,18 @@
+## v2.5.0
+- `git_file_at_ref` gained `lineStart`/`lineEnd`, `byteOffset`, and `maxBytes`, so a large or single-line file can be
+  read in pieces instead of overflowing the client's per-result limit. `lineStart` and `lineEnd` are 1-based and
+  inclusive, both or neither, as in `git_blame`; an end past the last line is clamped, and a start past it is
+  `RejectedArgument` (`param: line_range`) with `total_lines` in the detail. `byteOffset` skips bytes of what the
+  range kept, moving forward out of a multi-byte character; at or past the end it is `RejectedArgument`
+  (`param: byte_offset`) with `content_bytes` in the detail. `maxBytes` caps the content in UTF-8 bytes, backs off to
+  a character boundary (a cap below 4 keeps at least one byte), sets the envelope's `truncated`, and reports where to
+  continue in `next_byte_offset`. A malformed range, a negative offset, or a cap below 1 is rejected before git runs.
+  A binary blob ignores the three. There is no default cap; without them the result is the whole blob, as before.
+- The `git_file_at_ref` payload gained `total_lines` and `next_byte_offset` (both `null` for a binary blob).
+  `filters_applied` reports `line_range`, `byte_offset`, and `max_bytes` when set.
+- No log change. `truncations_total` still counts only the runner's 8 MB output cap; a `maxBytes` cut sets the
+  envelope's `truncated` without counting there.
+
 ## v2.4.0
 - `git_log` gained `perlRegex` and `allRefs`. `perlRegex: true` adds git's `--perl-regexp`, so `grep` matches
   Perl-compatible regular expressions, the dialect `git_grep` uses for `fixedString: false`: `A|B` alternation,
