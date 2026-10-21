@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Server.GitOps.Envelope;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
@@ -27,6 +28,7 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
         [Description("Cap matches per file (git grep -m).")] int? maxCount = null,
         [Description("Wildcard pathspecs, git's default matching: '*' and '?' also match '/', so '*.cs' matches at any depth and 'crates/*/*/Cargo.toml' works. Repo-relative, forward slashes, no leading ':' or '-', no '..'.")] string[] globs = null,
         [Description("Paths or wildcard patterns to exclude from the search (git ':(exclude)'). A directory excludes its subtree. Works alone, or together with paths and globs.")] string[] excludePaths = null,
+        [Description("Return one {path, match_count} entry per file with matching lines instead of every line (git grep -c). match_count counts lines, not occurrences, and is never capped: cannot be combined with maxCount.")] bool countOnly = false,
         CancellationToken cancellationToken = default)
     {
         var ctx = common.MakeContext("git_grep");
@@ -57,6 +59,14 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
                     new Dictionary<string, object> { ["param"] = "pattern" });
             }
 
+            // git applies -m before counting, so -c -m N reports at most N per file: a wrong count.
+            if (countOnly && maxCount.HasValue)
+            {
+                throw new RejectedArgumentException(
+                    "maxCount cannot be combined with countOnly",
+                    new Dictionary<string, object> { ["param"] = "max_count" });
+            }
+
             var verifiedRefs = await refVerifier.VerifyOptionalRefsAsync(root, [@ref], cancellationToken);
 
             // VerifiedRefs are RefVerifier-resolved object names, so grep receives them as bare,
@@ -65,7 +75,7 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
             {
                 Subcommand = "grep",
                 RepoRoot = root,
-                Flags = BuildFlags(ignoreCase, fixedString),
+                Flags = BuildFlags(ignoreCase, fixedString, countOnly),
                 AttachedOptions = BuildAttachedOptions(pattern, maxCount),
                 VerifiedRefs = verifiedRefs,
                 Pathspecs =
@@ -86,7 +96,17 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
                 stderrClassifier: ClassifyPcreStderr,
                 cancellationToken: cancellationToken);
 
-            var matches = GrepParser.Parse(result.Stdout, @ref);
+            IReadOnlyList<object> entries = countOnly
+                ? GrepParser.ParseCounts(result.Stdout, @ref)
+                : GrepParser.Parse(result.Stdout, @ref);
+
+            // In count mode exit 0 means git printed at least one record, so nothing parsed means the
+            // output shape was not understood; an empty success would hide that.
+            if (countOnly && result.ExitCode == 0 && entries.Count == 0)
+            {
+                ctx.Log(LogLevel.Warning, "count_parse_empty");
+            }
+
             var filtersApplied = FiltersAppliedBuilder.Create()
                 .Redact("pattern", pattern)
                 .Redact("ref", @ref)
@@ -96,8 +116,9 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
                 .Number("paths_count", paths?.Length ?? 0)
                 .Number("globs_count", globs?.Length ?? 0)
                 .Number("exclude_paths_count", excludePaths?.Length ?? 0)
+                .Flag("count_only", countOnly)
                 .Build();
-            return ToolCommon.ListSuccess(matches, root, preFilterCount: matches.Count, filtersApplied: filtersApplied, truncated: result.Truncated);
+            return ToolCommon.ListSuccess(entries, root, preFilterCount: entries.Count, filtersApplied: filtersApplied, truncated: result.Truncated);
         });
     }
 
@@ -111,17 +132,21 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
     }
 
     /// <summary>
-    /// Server-built grep flags: always <c>-n -z</c>, an optional <c>-i</c>, and exactly one matcher
-    /// <c>-F</c> (fixed string) or <c>-P</c> (Perl-compatible regex). <c>-P</c> is used for regex search
-    /// because callers expect <c>\s</c>, <c>\w</c>, <c>\d</c> and bare quantifiers; git's default BRE
-    /// silently ignores them. The two matchers are mutually exclusive, so only one is ever emitted.
+    /// Server-built grep flags: <c>-n -z</c> (or <c>-c -z</c> in count mode), <c>--no-color</c>, an optional
+    /// <c>-i</c>, and exactly one matcher <c>-F</c> (fixed string) or <c>-P</c> (Perl-compatible regex).
+    /// <c>--no-color</c> is always emitted because a <c>color.ui</c> or <c>color.grep</c> setting of
+    /// <c>always</c> in the user's or the repository's config would wrap paths and line numbers in escape
+    /// codes the parsers cannot read. <c>-P</c> is used for regex search because callers expect <c>\s</c>,
+    /// <c>\w</c>, <c>\d</c> and bare quantifiers; git's default BRE silently ignores them. The two matchers
+    /// are mutually exclusive, so only one is ever emitted.
     /// </summary>
     /// <param name="ignoreCase">Whether to add <c>-i</c> for case-insensitive matching.</param>
     /// <param name="fixedString">When true, emit <c>-F</c>; otherwise emit <c>-P</c>.</param>
+    /// <param name="countOnly">When true, emit <c>-c</c> (per-file matching-line counts) in place of <c>-n</c>.</param>
     /// <returns>The server-controlled flag list.</returns>
-    private static List<string> BuildFlags(bool ignoreCase, bool fixedString)
+    private static List<string> BuildFlags(bool ignoreCase, bool fixedString, bool countOnly)
     {
-        var flags = new List<string> { "-n", "-z" };
+        var flags = new List<string> { countOnly ? "-c" : "-n", "-z", "--no-color" };
         if (ignoreCase)
         {
             flags.Add("-i");

@@ -226,6 +226,7 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
     /// <param name="preFilterCount">The count before filtering, if applicable.</param>
     /// <param name="filtersApplied">The safe-echo of the shaping arguments.</param>
     /// <param name="skippedSymlinks">The count of skipped symlinked entries, or <c>null</c> to omit.</param>
+    /// <param name="totalMatchCount">The matching-line total across every page, or <c>null</c> to omit.</param>
     /// <returns>The success envelope.</returns>
     public static ResultEnvelope ListSuccess(
         IEnumerable<object> items,
@@ -233,6 +234,7 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
         string cursor = null,
         int? preFilterCount = null,
         IDictionary<string, object> filtersApplied = null,
-        int? skippedSymlinks = null)
-        => ResultEnvelope.Success([.. items], preFilterCount, filtersApplied, truncated, cursor, skippedSymlinks);
+        int? skippedSymlinks = null,
+        int? totalMatchCount = null)
+        => ResultEnvelope.Success([.. items], preFilterCount, filtersApplied, truncated, cursor, skippedSymlinks, totalMatchCount);
 }

@@ -64,7 +64,7 @@ refused with a path-free error; the same denylist and ignore tiers apply as unde
 | `describe_scope` | Report the base root, scope model, package roots, ignore tiers, denylist, content-scan status, and caps. | (none)                                                                                                           |
 | `find_files`     | List scope-relative files with size and last-modified.                                                   | `glob` / `regex` / `paths`, `cwd`, `extensions`, `include_ignored`, `case_sensitive`, `max_files`, `cursor`      |
 | `inspect_files`  | Report encoding, BOM, line endings, final newline, and counts per file.                                  | same selector                                                                                                    |
-| `search_text`    | Grep file contents line by line (literal or regex).                                                      | selector + `pattern`, `is_regex`, `context_lines`, `max_matches_per_file`, `max_results`, `files_only`, `cursor` |
+| `search_text`    | Grep file contents line by line (literal or regex).                                                      | selector + `pattern`, `is_regex`, `context_lines`, `max_matches_per_file`, `max_results`, `files_only`, `count_only`, `cursor` |
 | `read_lines`     | Return a numbered, span-capped slice of one file.                                                        | `path`, `cwd`, `start_line`, `end_line`                                                                          |
 | `read_json`      | Parse one JSON file and return the whole document or the value at a property path.                       | `path`, `cwd`, `json_path`                                                                                       |
 
@@ -74,6 +74,11 @@ refused with a path-free error; the same denylist and ignore tiers apply as unde
   match counts as two units.
 - **`search_text` matches per line.** A pattern that spans a newline will not match; `match_start`/
   `match_end` are offsets into the line.
+- **`count_only` returns per-file counts.** Each entry is `{path, match_count}`, where `match_count` counts
+  matching lines (a line with two matches counts once) and is exact: `max_matches_per_file` does not apply.
+  The envelope carries `total_match_count`, the sum over every matching file, the same on every page. When
+  the selection hits its ceiling (`truncated` with no `cursor`), the total covers only the files walked. It
+  pages like `files_only`, every page re-scans the selection, and the two cannot be combined.
 - **`include_ignored` takes globs, not a boolean.** Pass globs (for example `["build/**"]` for a tracked
   build directory) to re-include otherwise-ignored paths for one call; omit or pass an empty list to keep
   every ignore tier in force. It only ever re-includes the built-in default tier: a `.gitignore`,
@@ -105,6 +110,7 @@ base root when `cwd` is omitted).
   "truncated": false,
   "cursor": null,               // opaque; pass back to fetch the next page
   "skipped_symlinks": 0,        // on list tools: symlinked entries that were pruned
+  "total_match_count": 6,       // search_text count_only only: matching lines across every file, before paging
   "filters_applied": { "cwd": ".", "glob": "<provided>", "case_sensitive": false },
   "error": null                 // set instead of results on failure
 }

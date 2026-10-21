@@ -18,7 +18,11 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Tools;
 [McpServerToolType]
 public sealed class SearchTextTool(ToolCommon common, SearchConfig config, ScopeResolver resolver, IEncodingDetector detector)
 {
-    /// <summary>Search file contents for a literal or regex pattern, line by line, across the call's scope.</summary>
+    /// <summary>
+    /// Search file contents for a literal or regex pattern, line by line, across the call's scope. In count mode
+    /// the result is one matching-line count per file, with the total across every page on the envelope's
+    /// <c>total_match_count</c>; <c>count_only</c> must stay the same across pages.
+    /// </summary>
     /// <param name="pattern">The content pattern to find.</param>
     /// <param name="is_regex">Whether <paramref name="pattern"/> is a regex.</param>
     /// <param name="glob">A glob selecting which files to search.</param>
@@ -30,11 +34,12 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
     /// <param name="case_sensitive">Whether both file matching and content matching are case-sensitive.</param>
     /// <param name="context_lines">Lines of context around each match; clamped to the ceiling.</param>
     /// <param name="max_matches_per_file">The per-file match cap; clamped to the ceiling.</param>
-    /// <param name="max_results">The page size (matches, or files when files_only); clamped to the ceiling.</param>
+    /// <param name="max_results">The page size (matches, or files when files_only or count_only); clamped to the ceiling.</param>
     /// <param name="files_only">Return one entry per matching file instead of each match.</param>
+    /// <param name="count_only">Return one matching-line count per matching file instead of each match.</param>
     /// <param name="cursor">A pagination cursor from a previous call.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>An envelope of matches (or matching files) with pagination metadata.</returns>
+    /// <returns>An envelope of matches (or matching files, or per-file counts) with pagination metadata.</returns>
     [McpServerTool(Name = "search_text", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description(
         "Search file contents for a pattern, line by line (grep-style), across the call's scope. Choose the "
@@ -44,8 +49,9 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
         + "@name/<subpath>) to search a dependency cache. Give `pattern` and set `is_regex` for a regex. Matching is per "
         + "line, so a pattern that spans a newline will not match. Returns {path, line, column (1-based), "
         + "text, match_start, match_end}; the path is relative to cwd (or the base root when omitted), and "
-        + "column and offsets are UTF-16 code units. Set files_only to list matching files. Page with the "
-        + "returned cursor (keep files_only and cwd stable across pages).")]
+        + "column and offsets are UTF-16 code units. Set files_only to list matching files, or count_only for "
+        + "{path, match_count} per file (matching lines, exact) with total_match_count, the sum over every page, "
+        + "on the envelope. Page with the returned cursor (keep files_only, count_only, and cwd stable across pages).")]
     public Task<ResultEnvelope> InvokeAsync(
         [Description("The content pattern to find. Required, non-empty.")]
         string pattern,
@@ -69,11 +75,13 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
         int context_lines = 0,
         [Description("Maximum matches returned per file. Default and ceiling from describe_scope.")]
         int max_matches_per_file = 0,
-        [Description("Page size: max matches (or files when files_only). Default and ceiling from describe_scope.")]
+        [Description("Page size: max matches (or files when files_only or count_only). Default and ceiling from describe_scope.")]
         int max_results = 0,
         [Description("Return one entry per matching file instead of each match. Default false.")]
         bool files_only = false,
-        [Description("Opaque pagination cursor from a previous response; keep files_only and cwd stable across pages.")]
+        [Description("Return one {path, match_count} entry per file with matching lines instead of each match. match_count counts lines, not occurrences, and is exact (max_matches_per_file does not apply); the envelope's total_match_count sums it over every matching file before paging. Pages like files_only, and each page re-walks the selection and re-counts every selected file, so narrow the selector. Cannot be combined with files_only. Default false.")]
+        bool count_only = false,
+        [Description("Opaque pagination cursor from a previous response; keep files_only, count_only, and cwd stable across pages.")]
         string cursor = null,
         CancellationToken cancellationToken = default)
     {
@@ -83,6 +91,11 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
             if (string.IsNullOrEmpty(pattern))
             {
                 throw TextSearchException.InvalidArgument("pattern must not be empty");
+            }
+
+            if (files_only && count_only)
+            {
+                throw TextSearchException.InvalidArgument("files_only and count_only are mutually exclusive");
             }
 
             var scope = resolver.Resolve(cwd);
@@ -106,11 +119,24 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
                 .Flag("is_regex", is_regex)
                 .Number("context_lines", contextLines)
                 .Flag("files_only", files_only)
+                .Flag("count_only", count_only)
                 .Build();
 
-            var (page, filesScanned) = files_only
-                ? SearchFilesOnly(ctx, scope, selector, matcher, cursor, pageSize, budget.Token)
-                : SearchMatches(ctx, scope, selector, matcher, contextLines, perFileCap, cursor, pageSize, budget.Token);
+            Page<object> page;
+            int filesScanned;
+            int? totalMatchCount = null;
+            if (count_only)
+            {
+                (page, filesScanned, totalMatchCount) = SearchCounts(ctx, scope, selector, matcher, cursor, pageSize, budget.Token);
+            }
+            else if (files_only)
+            {
+                (page, filesScanned) = SearchFilesOnly(ctx, scope, selector, matcher, cursor, pageSize, budget.Token);
+            }
+            else
+            {
+                (page, filesScanned) = SearchMatches(ctx, scope, selector, matcher, contextLines, perFileCap, cursor, pageSize, budget.Token);
+            }
 
             ctx.Log(
                 LogLevel.Debug,
@@ -121,7 +147,8 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
                 page.Items,
                 truncated: page.Truncated,
                 cursor: page.Cursor,
-                filtersApplied: filters));
+                filtersApplied: filters,
+                totalMatchCount: totalMatchCount));
         });
     }
 
@@ -223,7 +250,89 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
         return (new Page<object>(items, page.Truncated, page.Cursor), filesScanned);
     }
 
+    private (Page<object> Page, int FilesScanned, int TotalMatchCount) SearchCounts(
+        CallContext ctx,
+        CallScope scope,
+        FileSelector selector,
+        LineMatcher matcher,
+        string cursor,
+        int pageSize,
+        CancellationToken budgetToken)
+    {
+        SelectorSupport.CheckBudget(config, budgetToken);
+        var walk = SelectorSupport.Run(scope.Selection, selector, config, budgetToken);
+        var matched = new List<FlatFile>();
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var total = 0;
+        var filesScanned = 0;
+        foreach (var entry in walk.Entries)
+        {
+            SelectorSupport.CheckBudget(config, budgetToken);
+            var document = TryLoadDocument(ctx, scope.Reader, entry);
+            filesScanned++;
+            if (document is null)
+            {
+                continue;
+            }
+
+            int matchingLines;
+            bool timedOut;
+            try
+            {
+                (matchingLines, timedOut) = ContentSearch.CountMatchingLines(document, matcher, budgetToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw TextSearchException.OperationBudgetExceeded((int)config.OperationBudget.TotalMilliseconds);
+            }
+
+            if (timedOut)
+            {
+                common.RegexTimeout(ctx);
+            }
+
+            if (matchingLines > 0)
+            {
+                matched.Add(new FlatFile(entry));
+                counts[entry.RelativePath] = matchingLines;
+                total += matchingLines;
+            }
+        }
+
+        var page = FileListing.Paginate(matched, walk.Truncated, skippedSymlinks: 0, config, scope.CursorScope, cursor, pageSize);
+        var items = page.Items
+            .Select(file => (object)new FileMatchCount
+            {
+                Path = file.Entry.RelativePath,
+                MatchCount = counts[file.Entry.RelativePath],
+            })
+            .ToList();
+        return (new Page<object>(items, page.Truncated, page.Cursor), filesScanned, total);
+    }
+
     private FileSearchOutcome SearchOne(CallContext ctx, GatedFileReader reader, WalkEntry entry, LineMatcher matcher, int contextLines, int perFileCap)
+    {
+        var document = TryLoadDocument(ctx, reader, entry);
+        if (document is null)
+        {
+            return null;
+        }
+
+        var outcome = ContentSearch.SearchFile(document, matcher, contextLines, perFileCap);
+        if (outcome.TimedOut)
+        {
+            common.RegexTimeout(ctx);
+        }
+
+        return outcome;
+    }
+
+    /// <summary>Read and decode one walked file through the gate, recording a refusal when it cannot be searched.</summary>
+    /// <param name="ctx">The call context the refusal is recorded against.</param>
+    /// <param name="reader">The scope's gated reader.</param>
+    /// <param name="entry">The walked file.</param>
+    /// <returns>The decoded text document, or <c>null</c> when the gate refused the read or the file is binary.</returns>
+    private TextDocument TryLoadDocument(CallContext ctx, GatedFileReader reader, WalkEntry entry)
     {
         var read = reader.Read(entry.RelativePath);
         if (!read.IsOk)
@@ -239,13 +348,7 @@ public sealed class SearchTextTool(ToolCommon common, SearchConfig config, Scope
             return null;
         }
 
-        var outcome = ContentSearch.SearchFile(document, matcher, contextLines, perFileCap);
-        if (outcome.TimedOut)
-        {
-            common.RegexTimeout(ctx);
-        }
-
-        return outcome;
+        return document;
     }
 
     private LineMatcher BuildMatcher(CallContext ctx, string pattern, bool isRegex, bool caseSensitive)

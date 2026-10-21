@@ -81,7 +81,7 @@ A few rules apply to every call regardless of tool:
 | [`git_show`](#git_show)               | Inspect one commit/tag/tree + its diffs                   | `cwd`, `ref`, `paths`                                                                              |
 | [`git_file_at_ref`](#git_file_at_ref) | One file's content, mode, and blob id at a ref            | `cwd`, `path`, `ref`, `lineStart`, `lineEnd`, `byteOffset`, `maxBytes`                             |
 | [`git_blame`](#git_blame)             | Per-line author/commit/time for a file                    | `cwd`, `path`, `lineStart`, `lineEnd`, `ref`                                                       |
-| [`git_grep`](#git_grep)               | Search tracked content (optionally at a ref)              | `cwd`, `pattern`, `paths`, `globs`, `excludePaths`, `ref`, `ignoreCase`, `fixedString`, `maxCount` |
+| [`git_grep`](#git_grep)               | Search tracked content (optionally at a ref)              | `cwd`, `pattern`, `paths`, `globs`, `excludePaths`, `ref`, `ignoreCase`, `fixedString`, `maxCount`, `countOnly` |
 | [`git_ls_files`](#git_ls_files)       | List tracked paths (optionally with mode and blob id)     | `cwd`, `paths`, `globs`, `excludePaths`, `stage`                                                   |
 | [`git_branch_list`](#git_branch_list) | List local (and optionally remote) branches               | `cwd`, `includeRemote`                                                                             |
 | [`git_reflog`](#git_reflog)           | Recent reflog entries                                     | `cwd`, `maxCount`                                                                                  |
@@ -290,7 +290,8 @@ flowchart LR
 ### `git_grep`
 
 Searches tracked content, optionally at a historical `ref`, so you can grep a past revision without checking it out.
-Always uses `-n -z` (line numbers, NUL-delimited).
+Uses `-n -z` (line numbers, NUL-delimited), or `-c -z` in count mode, plus `--no-color`, so a `color.ui` or
+`color.grep` setting of `always` in your git config cannot put escape codes in paths and line numbers.
 
 - `fixedString` (default `true`) → literal search (`-F`).
 - `fixedString: false` → Perl-compatible regex (`-P`), so `\s`, `\w`, `\d`, and bare quantifiers work the way callers
@@ -299,6 +300,12 @@ Always uses `-n -z` (line numbers, NUL-delimited).
 
 Exit code 1 ("no matches") is treated as success. If git was built without PCRE2, asking for regex returns a
 `PcreUnavailable` error rather than silently looking like "no results".
+
+`countOnly: true` (git's `-c`) returns one `{path, match_count}` entry per file instead of every matching line, so a
+broad pattern comes back as a short list. `match_count` counts matching lines, not occurrences: a line with the
+pattern twice counts once. Files with no matching line are left out, so `count` on the envelope is the number of
+files that matched. git applies `-m` before it counts, so `maxCount` together with `countOnly` is `RejectedArgument`
+(`param: max_count`) rather than a capped count.
 
 Three parameters choose which files are searched, and they combine:
 
@@ -318,14 +325,14 @@ flowchart TD
     A[git_grep: cwd, pattern, opts] --> B[Resolve root]
     B --> C[Verify ref → SHA if provided]
     C --> D[Confine paths]
-    D --> E["git grep -n -z [-i] (-F | -P)<br/>-e pattern [-m N] [ref] -- pathspecs"]
+    D --> E["git grep (-n | -c) -z --no-color [-i] (-F | -P)<br/>-e pattern [-m N] [ref] -- pathspecs"]
     E --> F{exit code}
     F -- 0 --> G[matches]
     F -- 1 --> H[no matches = success]
     F -- other --> I{stderr says no PCRE2?}
     I -- yes --> J[PcreUnavailable error]
     I -- no --> K[GitCommandError]
-    G --> L[GrepParser → GrepMatch list]
+    G --> L[GrepParser → GrepMatch or GrepFileCount list]
     H --> L
     L --> M[ResultEnvelope]
 ```

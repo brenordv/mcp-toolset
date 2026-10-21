@@ -1,3 +1,17 @@
+## v2.6.0
+- `git_grep` gained `countOnly`. `countOnly: true` adds git's `-c` in place of `-n` and returns one
+  `{path, match_count}` entry per file with at least one matching line, instead of one entry per line. `match_count`
+  counts matching lines, as `git grep -c` does, so a line with two occurrences counts once. Files with no match are
+  left out. `maxCount` together with `countOnly` is `RejectedArgument` (`param: max_count`), rejected before git runs:
+  git applies `-m` before counting, so the count would be capped at `maxCount`. `filters_applied` reports
+  `count_only`. Without `countOnly` the result is unchanged.
+- Fixed: `git_grep` returned an empty success when the user's or the repository's git config set `color.ui` or
+  `color.grep` to `always`, because git colored the line numbers and no record parsed; count mode would have
+  returned paths wrapped in escape codes. `git_grep` now always passes `--no-color`.
+- Log change: a new Warning event, `count_parse_empty`, when a count-mode grep exits 0 (git found a match) but no
+  record parsed. The `argv_built` debug line for `git_grep` shows `--no-color`, and `-c` instead of `-n` in count
+  mode.
+
 ## v2.5.0
 - `git_file_at_ref` gained `lineStart`/`lineEnd`, `byteOffset`, and `maxBytes`, so a large or single-line file can be
   read in pieces instead of overflowing the client's per-result limit. `lineStart` and `lineEnd` are 1-based and

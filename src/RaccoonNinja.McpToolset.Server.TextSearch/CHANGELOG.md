@@ -1,3 +1,13 @@
+## v1.5.0
+- Added: `search_text` `count_only`. It returns one `{path, match_count}` entry per file with at least one
+  matching line instead of every match. `match_count` counts matching lines, so a line with two matches
+  counts once, and it is exact: `max_matches_per_file` and `context_lines` do not apply. Count results page
+  by path like `files_only`, and each page re-reads every selected file to the end. `count_only` together
+  with `files_only` is `InvalidArgument`. `filters_applied` reports `count_only`.
+- Added: the result envelope's `total_match_count`, the sum of `match_count` over every matching file before
+  paging, the same value on every page. It is present only in count mode; every other result omits it.
+- No log change.
+
 ## v1.4.6
 - Fixed: when an ignore file existed but could not be read (locked by another process, or permission
   denied), the server log line for the failed call carried its absolute path. The line now names the
