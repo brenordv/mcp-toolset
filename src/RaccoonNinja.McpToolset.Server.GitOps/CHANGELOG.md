@@ -1,3 +1,20 @@
+## v2.4.0
+- `git_log` gained `perlRegex` and `allRefs`. `perlRegex: true` adds git's `--perl-regexp`, so `grep` matches
+  Perl-compatible regular expressions, the dialect `git_grep` uses for `fixedString: false`: `A|B` alternation,
+  `\d`, `\s`, `+`, `?`, and grouping work. It applies to `author` as well, since git treats both as limiting
+  patterns. Without it, `grep` stays git's default basic regular expression, where `|` is a literal character,
+  so an alternation returns no commits; the `grep` description now says so. A git built without PCRE2 returns
+  `PcreUnavailable` for `perlRegex: true`, as `git_grep` does, instead of a generic command error.
+- `allRefs: true` adds git's `--all` and walks every ref under `refs/` plus `HEAD`: local branches,
+  remote-tracking branches, tags, and the stash. Combined with a non-empty `ref` it is `RejectedArgument`
+  (`param: all_refs`). `filters_applied` reports `perl_regex` and `all_refs`.
+- Behavior change: `git_log` always passes a dialect, `--basic-regexp` unless `perlRegex` is set. A
+  `grep.patternType` in the user's or the repository's git config used to change how `grep` and `author`
+  matched (`extended` made `A|B` an alternation, `fixed` made `.` a literal); it no longer does. Without that
+  config, and without either new flag, the result is unchanged.
+- Log change: the `argv_built` debug line for `git_log` shows `--basic-regexp` or `--perl-regexp`, plus `--all`
+  when `allRefs` is set.
+
 ## v2.3.0
 - `git_grep` and `git_ls_files` gained `globs` and `excludePaths`. `globs` takes wildcard pathspecs with git's
   default matching, where `*` and `?` also match `/`, so `*.cs` matches at any depth and `crates/*/*/Cargo.toml`

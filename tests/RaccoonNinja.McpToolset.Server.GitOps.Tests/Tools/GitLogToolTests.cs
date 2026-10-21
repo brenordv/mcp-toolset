@@ -1,0 +1,171 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using RaccoonNinja.McpToolset.Server.GitOps.Envelope;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors;
+using RaccoonNinja.McpToolset.Server.GitOps.Metrics;
+using RaccoonNinja.McpToolset.Server.GitOps.Models;
+using RaccoonNinja.McpToolset.Server.GitOps.Repo;
+using RaccoonNinja.McpToolset.Server.GitOps.Runner;
+using RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
+using RaccoonNinja.McpToolset.Server.GitOps.Tools;
+
+namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Tools;
+
+public sealed class GitLogToolTests : IDisposable
+{
+    private const string AlphaSubject = "GMS-1 alpha";
+    private const string BetaSubject = "DEVOPS-2 beta";
+    private const string FeatureSubject = "GMS-9 feature work";
+    private const string AlternationPattern = "GMS-1|DEVOPS-2";
+
+    private readonly TempGitRepo _repo;
+    private readonly GitLogTool _tool;
+
+    public GitLogToolTests()
+    {
+        _repo = new TempGitRepo();
+        CommitFile("alpha.txt", AlphaSubject);
+        CommitFile("beta.txt", BetaSubject);
+        CommitFile("gamma.txt", "plain gamma");
+        _repo.Run("checkout", "-b", "feature");
+        CommitFile("feature.txt", FeatureSubject);
+        _repo.Run("checkout", "main");
+
+        var common = new ToolCommon(
+            new RepoRootResolver(),
+            new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
+            new SessionMetrics(),
+            NullLoggerFactory.Instance);
+        _tool = new GitLogTool(common, new RefVerifier());
+    }
+
+    public void Dispose() => _repo.Dispose();
+
+    [Fact]
+    public async Task Log_WithPerlRegexAlternation_ReturnsMatchingCommits()
+    {
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, grep: AlternationPattern, perlRegex: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(2, envelope.Count);
+        Assert.Equal([BetaSubject, AlphaSubject], Subjects(envelope));
+        Assert.True((bool)envelope.FiltersApplied["perl_regex"]);
+    }
+
+    [Fact]
+    public async Task Log_WithPerlRegexCharacterClass_ReturnsMatchingCommit()
+    {
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, grep: "DEVOPS-\\d", perlRegex: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(1, envelope.Count);
+        Assert.Equal([BetaSubject], Subjects(envelope));
+    }
+
+    [Fact]
+    public async Task Log_WithoutPerlRegex_TreatsPipeAsLiteral()
+    {
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, grep: AlternationPattern, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(0, envelope.Count);
+    }
+
+    [Fact]
+    public async Task Log_WithExtendedPatternTypeInRepoConfig_StillTreatsPipeAsLiteral()
+    {
+        // Arrange
+        _repo.Run("config", "grep.patternType", "extended");
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, grep: AlternationPattern, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(0, envelope.Count);
+    }
+
+    [Fact]
+    public async Task Log_Default_ListsOnlyTheCurrentBranch()
+    {
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(3, envelope.Count);
+        Assert.DoesNotContain(FeatureSubject, Subjects(envelope));
+    }
+
+    [Fact]
+    public async Task Log_WithAllRefs_IncludesCommitsOnOtherBranches()
+    {
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, allRefs: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(4, envelope.Count);
+        Assert.Contains(FeatureSubject, Subjects(envelope));
+        Assert.True((bool)envelope.FiltersApplied["all_refs"]);
+    }
+
+    [Fact]
+    public async Task Log_WithAllRefsAndGrep_FindsCommitOnAnotherBranch()
+    {
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, grep: "GMS-9", allRefs: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(1, envelope.Count);
+        Assert.Equal([FeatureSubject], Subjects(envelope));
+    }
+
+    [Fact]
+    public async Task Log_WithAllRefsAndPerlRegex_FindsAcrossBranchesByPattern()
+    {
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, grep: "GMS-\\d", perlRegex: true, allRefs: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(2, envelope.Count);
+        Assert.Equal([AlphaSubject, FeatureSubject], Subjects(envelope));
+    }
+
+    [Fact]
+    public async Task Log_WithAllRefsAndRef_IsRejected()
+    {
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "main", allRefs: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal("all_refs", envelope.Error.Detail["param"]);
+    }
+
+    #region Test Helpers
+
+    private void CommitFile(string path, string message)
+    {
+        _repo.WriteFile(path, $"{path}\n");
+        _repo.Run("add", path);
+        _repo.Run("commit", "-m", message);
+    }
+
+    private static List<string> Subjects(ResultEnvelope envelope)
+        => envelope.Results
+            .Cast<Commit>()
+            .Select(commit => commit.Subject)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+    #endregion
+}

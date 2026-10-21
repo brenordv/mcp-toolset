@@ -77,7 +77,7 @@ A few rules apply to every call regardless of tool:
 |---------------------------------------|-----------------------------------------------------------|----------------------------------------------------------------------------------------------------|
 | [`git_status`](#git_status)           | Working-tree status snapshot                              | `cwd`                                                                                              |
 | [`git_diff`](#git_diff)               | Unified diff (staged / ref-to-ref / worktree / stat-only) | `cwd`, `staged`, `fromRef`, `toRef`, `paths`, `contextLines`, `statOnly`                           |
-| [`git_log`](#git_log)                 | Commit history with filters                               | `cwd`, `paths`, `author`, `since`, `until`, `grep`, `pickaxe`, `maxCount`, `ref`, `follow`         |
+| [`git_log`](#git_log)                 | Commit history with filters                               | `cwd`, `paths`, `author`, `since`, `until`, `grep`, `pickaxe`, `maxCount`, `ref`, `follow`, `perlRegex`, `allRefs` |
 | [`git_show`](#git_show)               | Inspect one commit/tag/tree + its diffs                   | `cwd`, `ref`, `paths`                                                                              |
 | [`git_file_at_ref`](#git_file_at_ref) | One file's content, mode, and blob id at a ref            | `cwd`, `path`, `ref`                                                                               |
 | [`git_blame`](#git_blame)             | Per-line author/commit/time for a file                    | `cwd`, `path`, `lineStart`, `lineEnd`, `ref`                                                       |
@@ -151,16 +151,21 @@ flowchart TD
 Returns commits matching the given filters, parsed from a fixed `--pretty=format` directive into `Commit` records
 (hash, short hash, author, authored/committed timestamps, relative time, subject, body, parents).
 
-Filters: `author`, `since`, `until`, `grep` (message match), `pickaxe` (`-S`, find when a string was added or
-removed), `paths`, `ref` (start point, or a range `A..B` / `A...B` to list the commits one ref adds over
-another), `follow` (track renames, only when scoped to a single path), and `maxCount` (default 50).
+Filters: `author`, `since`, `until`, `grep` (message match; a basic regular expression by default, passed as
+`--basic-regexp` so a `grep.patternType` in the user's or the repository's git config does not change it;
+`perlRegex: true` switches `grep` and `author` to Perl-compatible regular expressions, the dialect `git_grep`
+uses, so `A|B` alternation and `\d` work; a git without PCRE2 returns `PcreUnavailable`, as for `git_grep`),
+`pickaxe` (`-S`, find when a string was added or removed), `paths`, `ref` (start point, or a range `A..B` /
+`A...B` to list the commits one ref adds over another), `allRefs` (walk every ref under `refs/` plus `HEAD`;
+cannot be combined with `ref`), `follow` (track renames, only when scoped to a single path), and `maxCount`
+(default 50).
 
 ```mermaid
 flowchart LR
     A[git_log: cwd + filters] --> B[Resolve root]
     B --> C[Verify ref → SHA if provided]
     C --> D[Confine paths]
-    D --> E["git log --pretty=format:… <br/>--author --since --until --grep -S<br/>--max-count [--follow] ref -- pathspecs"]
+    D --> E["git log --pretty=format:… <br/>--author --since --until --grep -S<br/>--basic-regexp or -P [--all]<br/>--max-count [--follow] ref -- pathspecs"]
     E --> F[LogParser → Commit records]
     F --> G[ResultEnvelope · filters_applied]
 ```
