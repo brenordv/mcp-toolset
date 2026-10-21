@@ -73,20 +73,20 @@ A few rules apply to every call regardless of tool:
 
 ## Tool catalog
 
-| Tool                                  | Purpose                                                   | Key parameters                                                                             |
-|---------------------------------------|-----------------------------------------------------------|--------------------------------------------------------------------------------------------|
-| [`git_status`](#git_status)           | Working-tree status snapshot                              | `cwd`                                                                                      |
-| [`git_diff`](#git_diff)               | Unified diff (staged / ref-to-ref / worktree / stat-only) | `cwd`, `staged`, `fromRef`, `toRef`, `paths`, `contextLines`, `statOnly`                   |
-| [`git_log`](#git_log)                 | Commit history with filters                               | `cwd`, `paths`, `author`, `since`, `until`, `grep`, `pickaxe`, `maxCount`, `ref`, `follow` |
-| [`git_show`](#git_show)               | Inspect one commit/tag/tree + its diffs                   | `cwd`, `ref`, `paths`                                                                      |
-| [`git_file_at_ref`](#git_file_at_ref) | One file's content, mode, and blob id at a ref            | `cwd`, `path`, `ref`                                                                       |
-| [`git_blame`](#git_blame)             | Per-line author/commit/time for a file                    | `cwd`, `path`, `lineStart`, `lineEnd`, `ref`                                               |
-| [`git_grep`](#git_grep)               | Search tracked content (optionally at a ref)              | `cwd`, `pattern`, `paths`, `ref`, `ignoreCase`, `fixedString`, `maxCount`                  |
-| [`git_ls_files`](#git_ls_files)       | List tracked paths (optionally with mode and blob id)     | `cwd`, `paths`, `stage`                                                                    |
-| [`git_branch_list`](#git_branch_list) | List local (and optionally remote) branches               | `cwd`, `includeRemote`                                                                     |
-| [`git_reflog`](#git_reflog)           | Recent reflog entries                                     | `cwd`, `maxCount`                                                                          |
-| [`git_stash_list`](#git_stash_list)   | List stash entries                                        | `cwd`                                                                                      |
-| [`git_stash_show`](#git_stash_show)   | Diff for a single stash entry                             | `cwd`, `index`                                                                             |
+| Tool                                  | Purpose                                                   | Key parameters                                                                                     |
+|---------------------------------------|-----------------------------------------------------------|----------------------------------------------------------------------------------------------------|
+| [`git_status`](#git_status)           | Working-tree status snapshot                              | `cwd`                                                                                              |
+| [`git_diff`](#git_diff)               | Unified diff (staged / ref-to-ref / worktree / stat-only) | `cwd`, `staged`, `fromRef`, `toRef`, `paths`, `contextLines`, `statOnly`                           |
+| [`git_log`](#git_log)                 | Commit history with filters                               | `cwd`, `paths`, `author`, `since`, `until`, `grep`, `pickaxe`, `maxCount`, `ref`, `follow`         |
+| [`git_show`](#git_show)               | Inspect one commit/tag/tree + its diffs                   | `cwd`, `ref`, `paths`                                                                              |
+| [`git_file_at_ref`](#git_file_at_ref) | One file's content, mode, and blob id at a ref            | `cwd`, `path`, `ref`                                                                               |
+| [`git_blame`](#git_blame)             | Per-line author/commit/time for a file                    | `cwd`, `path`, `lineStart`, `lineEnd`, `ref`                                                       |
+| [`git_grep`](#git_grep)               | Search tracked content (optionally at a ref)              | `cwd`, `pattern`, `paths`, `globs`, `excludePaths`, `ref`, `ignoreCase`, `fixedString`, `maxCount` |
+| [`git_ls_files`](#git_ls_files)       | List tracked paths (optionally with mode and blob id)     | `cwd`, `paths`, `globs`, `excludePaths`, `stage`                                                   |
+| [`git_branch_list`](#git_branch_list) | List local (and optionally remote) branches               | `cwd`, `includeRemote`                                                                             |
+| [`git_reflog`](#git_reflog)           | Recent reflog entries                                     | `cwd`, `maxCount`                                                                                  |
+| [`git_stash_list`](#git_stash_list)   | List stash entries                                        | `cwd`                                                                                              |
+| [`git_stash_show`](#git_stash_show)   | Diff for a single stash entry                             | `cwd`, `index`                                                                                     |
 
 ---
 
@@ -137,7 +137,7 @@ flowchart TD
     C --> D[Confine paths]
     D --> E{statOnly?}
     E -- yes --> F["diff --numstat -z<br/>(+ diff --name-status -z)"]
-    E -- no --> G["diff [--cached] [-U n] refs -- paths<br/>(+ diff --numstat -z)"]
+    E -- no --> G["diff [--cached] [-U n] refs -- pathspecs<br/>(+ diff --numstat -z)"]
     F --> H[DiffParser: merge counts + change kinds]
     G --> H
     H --> I[DiffResult: per-file hunks + additions/deletions + mode]
@@ -160,7 +160,7 @@ flowchart LR
     A[git_log: cwd + filters] --> B[Resolve root]
     B --> C[Verify ref → SHA if provided]
     C --> D[Confine paths]
-    D --> E["git log --pretty=format:… <br/>--author --since --until --grep -S<br/>--max-count [--follow] ref -- paths"]
+    D --> E["git log --pretty=format:… <br/>--author --since --until --grep -S<br/>--max-count [--follow] ref -- pathspecs"]
     E --> F[LogParser → Commit records]
     F --> G[ResultEnvelope · filters_applied]
 ```
@@ -187,7 +187,7 @@ flowchart TD
     R -- yes --> X[RejectedArgument → use git_file_at_ref]
     R -- no --> C[Verify ref → SHA<br/>required]
     C --> D["git log -1 --pretty=format:… SHA<br/>(metadata)"]
-    C --> E["git show --format= SHA -- paths<br/>(patch)"]
+    C --> E["git show --format= SHA -- pathspecs<br/>(patch)"]
     D --> F[Commit record]
     E --> G[FileDiff list]
     F --> H["payload { commit, files }"]
@@ -265,12 +265,25 @@ Always uses `-n -z` (line numbers, NUL-delimited).
 Exit code 1 ("no matches") is treated as success. If git was built without PCRE2, asking for regex returns a
 `PcreUnavailable` error rather than silently looking like "no results".
 
+Three parameters choose which files are searched, and they combine:
+
+- `paths` → literal repo-relative paths. A file matches itself; a directory matches its whole subtree.
+- `globs` → wildcard patterns. Wildcards follow git's default pathspec matching: `*` and `?` also match `/`, so
+  `*.cs` matches at any depth and `crates/*/*/Cargo.toml` works.
+- `excludePaths` → paths or wildcard patterns to drop (git's `:(exclude)` magic). A directory drops its subtree. With
+  no `paths` and no `globs`, the search covers every tracked file except the excluded ones.
+
+A file is searched when it matches some `paths` or `globs` entry (or both lists are empty) and no `excludePaths`
+entry. A `paths` entry with `*`, `?`, or a leading `:` is rejected with `RejectedArgument` (`param: paths`); put the
+pattern in `globs` or `excludePaths`. A `globs` or `excludePaths` entry must be repo-relative with `/` separators and
+must not start with `:` or `-` or contain a `..` segment.
+
 ```mermaid
 flowchart TD
     A[git_grep: cwd, pattern, opts] --> B[Resolve root]
     B --> C[Verify ref → SHA if provided]
     C --> D[Confine paths]
-    D --> E["git grep -n -z [-i] (-F | -P)<br/>-e pattern [-m N] [ref] -- paths"]
+    D --> E["git grep -n -z [-i] (-F | -P)<br/>-e pattern [-m N] [ref] -- pathspecs"]
     E --> F{exit code}
     F -- 0 --> G[matches]
     F -- 1 --> H[no matches = success]
@@ -295,11 +308,16 @@ regular file, `100755` for an executable one, `120000` for a symlink, `160000` f
 staged blob, and `stage` is 0 for a normal entry or 1 to 3 for the sides of an unmerged one. That is how to check
 whether a committed script carries the executable bit.
 
+`paths`, `globs`, and `excludePaths` select entries the same way as in [`git_grep`](#git_grep). Wildcards follow
+git's default pathspec matching: `*` and `?` also match `/`, so `globs: ["*.json"]` lists every tracked `.json` file
+at any depth, and `excludePaths: ["docs"]` drops everything under `docs/`. A `paths` entry with `*`, `?`, or a
+leading `:` is rejected with `RejectedArgument`.
+
 ```mermaid
 flowchart LR
     A[git_ls_files: cwd, paths, stage] --> B[Resolve root]
     B --> C[Confine paths]
-    C --> D["git ls-files -z [--stage] -- paths"]
+    C --> D["git ls-files -z [--stage] -- pathspecs"]
     D --> E[LsFilesParser → paths or entries]
     E --> F[ResultEnvelope · pre_filter_count]
 ```
@@ -459,11 +477,14 @@ flowchart TD
     A[Untrusted tool input] --> B[Shape validation<br/>reject NUL, control chars, leading '-']
     B --> C[Ref verification<br/>git rev-parse --verify → SHA<br/>before use as a positional arg]
     B --> D[Path confinement<br/>resolve under repo root<br/>reject UNC / device / drive-relative / ADS / escapes]
+    B --> P["Pattern shape checks<br/>globs / excludePaths: repo-relative,<br/>no leading ':', no '..'"]
     C --> E[Single argv builder]
     D --> E
-    E --> F[Fixed hardening prefix<br/>-c core.hooksPath=… -c credential.helper=…<br/>--no-pager --literal-pathspecs]
+    P --> E
+    E --> F[Fixed hardening prefix<br/>-c core.hooksPath=… -c credential.helper=…<br/>--no-pager]
     F --> G[--end-of-options before positional refs<br/>omitted for git grep]
-    G --> H[ArgumentList execution<br/>no shell, no string join]
+    G --> S["Pathspecs after --<br/>paths as :(literal)…, excludes as :(exclude)…,<br/>globs bare"]
+    S --> H[ArgumentList execution<br/>no shell, no string join]
     H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1]
 ```
 
@@ -475,7 +496,15 @@ flowchart TD
   before it's used.
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or
   drive-relative prefix, an NTFS alternate data stream, or otherwise escapes the root. The result is a repo-relative
-  POSIX pathspec placed after `--`.
+  POSIX path placed after `--` as a `:(literal)` pathspec, so wildcards in it are plain characters.
+- **The server chooses all pathspec magic.** Every pathspec carries a prefix the server chose:
+  `:(literal)` for `paths`, `:(exclude)` for `excludePaths`, and none for `globs` (git's default wildcard matching).
+  Git reads magic only up to the server's closing `)`, so a value such as `:(top)../x` inside a literal or exclude
+  item is pattern text. A bare value (a glob, or `git_blame`'s file argument) may not start with `:`, the only place
+  git looks for magic. `globs` and `excludePaths` are shape-checked rather than confined: they must be repo-relative
+  with `/` separators and must not contain a `..` segment. Grep and ls-files match pathspecs only against tracked
+  entries, so a wildcard or exclude changes which tracked files match and nothing else.
+  Pattern matching cost is bounded by the 30 s timeout, the same bound that applies to user regexes.
 - **No shell.** The subprocess is started with an explicit argument list, not a joined string, so shell
   meta-characters can't leak.
 - **Scrubbed environment.** The child env is built from a small allowlist (`PATH`, locale vars, `HOME`, plus a few

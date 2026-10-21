@@ -212,7 +212,23 @@ public class ToolCommonTests
         var result = ToolCommon.ConfinePaths(Path.GetTempPath(), ["sub/file.txt"]);
 
         // Assert
-        Assert.Equal(["sub/file.txt"], result);
+        Assert.Equal([Pathspec.Literal("sub/file.txt")], result);
+    }
+
+    [Fact]
+    public void ConfinePaths_WildcardEntry_IsRejected()
+    {
+        // Act & Assert
+        var exception = Assert.Throws<RejectedArgumentException>(() => ToolCommon.ConfinePaths(Path.GetTempPath(), ["*.cs"]));
+        Assert.Equal("paths", exception.Detail["param"]);
+    }
+
+    [Fact]
+    public void ConfinePaths_EmptyEntry_IsRejected()
+    {
+        // Act & Assert
+        var exception = Assert.Throws<RejectedArgumentException>(() => ToolCommon.ConfinePaths(Path.GetTempPath(), [""]));
+        Assert.Equal("paths", exception.Detail["param"]);
     }
 
     [Fact]

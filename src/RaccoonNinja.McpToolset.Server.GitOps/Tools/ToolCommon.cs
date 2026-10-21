@@ -128,12 +128,31 @@ public sealed class ToolCommon(
 
     private static readonly HashSet<int> OkOnly = [0];
 
-    /// <summary>Confine each user-supplied path under <paramref name="root"/>, yielding safe repo-relative pathspecs.</summary>
+    /// <summary>Confine each user-supplied path under the root as a literal pathspec; an entry with wildcard characters or pathspec magic is rejected.</summary>
     /// <param name="root">The resolved repository root.</param>
     /// <param name="paths">The user-supplied paths; a null array yields an empty list.</param>
-    /// <returns>The confined pathspecs, in input order.</returns>
-    public static List<string> ConfinePaths(string root, string[] paths)
-        => paths is null ? [] : [.. paths.Select(path => PathConfinement.Confine(root, path))];
+    /// <returns>The confined literal pathspecs, in input order.</returns>
+    /// <exception cref="RejectedArgumentException">An entry is empty, contains '*' or '?', or starts with ':'.</exception>
+    public static List<Pathspec> ConfinePaths(string root, string[] paths)
+        => paths is null
+            ? []
+            : [.. paths.Select(path => Pathspec.Literal(PathConfinement.Confine(root, PathspecValidation.EnsureLiteral(path))))];
+
+    /// <summary>Validate each wildcard pattern as a bare pathspec (git's default matching).</summary>
+    /// <param name="globs">The user-supplied patterns; a null array yields an empty list.</param>
+    /// <returns>The glob pathspecs, in input order.</returns>
+    /// <exception cref="RejectedArgumentException">An entry fails <see cref="PathspecValidation.ValidatePattern"/>.</exception>
+    public static IReadOnlyList<Pathspec> GlobPathspecs(string[] globs)
+        => globs is null ? [] : [.. globs.Select(glob => Pathspec.Glob(PathspecValidation.ValidatePattern(nameof(globs), glob)))];
+
+    /// <summary>Validate each exclusion as an <c>:(exclude)</c> pathspec.</summary>
+    /// <param name="excludePaths">The user-supplied paths or patterns to exclude; a null array yields an empty list.</param>
+    /// <returns>The exclude pathspecs, in input order.</returns>
+    /// <exception cref="RejectedArgumentException">An entry fails <see cref="PathspecValidation.ValidatePattern"/>.</exception>
+    public static IReadOnlyList<Pathspec> ExcludePathspecs(string[] excludePaths)
+        => excludePaths is null
+            ? []
+            : [.. excludePaths.Select(value => Pathspec.Exclude(PathspecValidation.ValidatePattern("exclude_paths", value)))];
 
     /// <summary>
     /// Run <paramref name="body"/> and translate any <see cref="GitCheckException"/>

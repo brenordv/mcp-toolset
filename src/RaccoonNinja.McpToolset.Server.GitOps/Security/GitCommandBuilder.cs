@@ -4,14 +4,17 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Security;
 
 /// <summary>
 /// Sole producer of git argv. Tools declare typed <see cref="GitIntent"/> instances;
-/// this class is the only code that turns them into a process argv list.
+/// this class is the only code that turns them into a process argv list. Each pathspec
+/// is rendered with a per-item magic prefix chosen by the server (<see cref="PathspecMagic"/>).
 /// </summary>
 public static class GitCommandBuilder
 {
+    private const string LiteralMagic = ":(literal)";
+    private const string ExcludeMagic = ":(exclude)";
+
     private static readonly IReadOnlyList<string> GlobalFlags =
     [
-        "--no-pager",
-        "--literal-pathspecs"
+        "--no-pager"
     ];
 
     /// <summary><c>--no-textconv</c> is accepted by every diff-bearing subcommand (incl. grep). <c>--no-ext-diff</c> is NOT a grep flag.</summary>
@@ -145,9 +148,16 @@ public static class GitCommandBuilder
             argv.Add("--");
             foreach (var spec in intent.Pathspecs)
             {
-                ArgumentValidation.RejectIfUnsafeValue("path", spec);
-                argv.Add(spec);
-                provenance[argv.Count - 1] = "path";
+                if (string.IsNullOrWhiteSpace(spec.Value))
+                {
+                    throw new RejectedArgumentException(
+                        "pathspec must not be empty",
+                        new Dictionary<string, object> { ["param"] = spec.Param });
+                }
+
+                ArgumentValidation.RejectIfUnsafeValue(spec.Param, spec.Value);
+                argv.Add(Render(spec));
+                provenance[argv.Count - 1] = spec.Param;
             }
         }
 
@@ -160,6 +170,24 @@ public static class GitCommandBuilder
         var env = EnvironmentBuilder.Build();
         return (argv, env);
     }
+
+    /// <summary>Render one pathspec token. A bare value must not start with ':' because git reads pathspec magic only from a leading colon.</summary>
+    /// <param name="spec">A pathspec whose value is already known to be non-empty.</param>
+    /// <returns>The argv token: the server's magic prefix followed by the value, or the bare value.</returns>
+    /// <exception cref="RejectedArgumentException">A bare value starts with ':', or the magic was never assigned.</exception>
+    private static string Render(Pathspec spec)
+        => spec.Magic switch
+        {
+            PathspecMagic.Literal => LiteralMagic + spec.Value,
+            PathspecMagic.Exclude => ExcludeMagic + spec.Value,
+            PathspecMagic.None when spec.Value[0] == ':' => throw new RejectedArgumentException(
+                "pathspec must not begin with ':'",
+                new Dictionary<string, object> { ["param"] = spec.Param }),
+            PathspecMagic.None => spec.Value,
+            _ => throw new RejectedArgumentException(
+                "pathspec magic is not set",
+                new Dictionary<string, object> { ["param"] = spec.Param }),
+        };
 
     /// <summary>Return a copy of <paramref name="argv"/> with user-originating tokens replaced by their parameter name.</summary>
     public static IList<string> MaskedForLog(IList<string> argv, GitIntent intent)

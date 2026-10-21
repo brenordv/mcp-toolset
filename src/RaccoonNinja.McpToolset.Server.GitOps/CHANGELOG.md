@@ -1,3 +1,22 @@
+## v2.3.0
+- `git_grep` and `git_ls_files` gained `globs` and `excludePaths`. `globs` takes wildcard pathspecs with git's
+  default matching, where `*` and `?` also match `/`, so `*.cs` matches at any depth and `crates/*/*/Cargo.toml`
+  works. `excludePaths` drops paths or patterns through git's `:(exclude)` magic: a directory drops its subtree, and
+  with no `paths` and no `globs` the call covers every tracked file except the excluded ones. `filters_applied`
+  reports `globs_count` and `exclude_paths_count`.
+- Behavior change: a `paths` entry containing `*` or `?`, or starting with `:`, is now `RejectedArgument`
+  (`param: paths`) on every tool that takes `paths` (`git_grep`, `git_ls_files`, `git_log`, `git_diff`,
+  `git_show`). A wildcard entry used to match nothing and return an empty success, and an `:(exclude)` entry was
+  ignored. An empty `paths` entry, which used to mean the repository root, is also `RejectedArgument` now.
+- The server no longer runs git in literal-pathspec mode: the `--literal-pathspecs` flag and the
+  `GIT_LITERAL_PATHSPECS` environment variable are gone, and every pathspec carries a prefix the server chooses,
+  `:(literal)` for `paths`, `:(exclude)` for `excludePaths`, and none for `globs`. `paths` matching is unchanged.
+- Behavior change, Linux and macOS only (Windows cannot create such names): a tracked file whose name starts with
+  `:` can no longer be addressed through `paths` or blamed, and one whose name contains `*` or `?` can no longer be
+  addressed through `paths` on any tool.
+- Log change: the `argv_built` debug line no longer shows `--literal-pathspecs`, and it masks wildcard and exclude
+  pathspecs as `<glob>` and `<exclude>` (literal paths stay `<path>`).
+
 ## v2.2.2
 - `git_show` now says a rejected `<rev>:<path>` ref names "a file or tree, not a commit". `HEAD:` (the
   root tree) is rejected the same way as `HEAD:README.md`.

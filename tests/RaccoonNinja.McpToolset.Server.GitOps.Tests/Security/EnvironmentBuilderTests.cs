@@ -38,6 +38,18 @@ public class EnvironmentBuilderTests
         Assert.Equal("0", env["GIT_TERMINAL_PROMPT"]);
         Assert.Equal("1", env["GIT_CONFIG_NOSYSTEM"]);
         Assert.Equal("0", env["GIT_OPTIONAL_LOCKS"]);
-        Assert.Equal("1", env["GIT_LITERAL_PATHSPECS"]);
+    }
+
+    [Fact]
+    public void Build_DoesNotSetLiteralPathspecs()
+    {
+        // Arrange
+        var parent = new Dictionary<string, string> { ["GIT_LITERAL_PATHSPECS"] = "1" };
+
+        // Act
+        var env = EnvironmentBuilder.Build(parent);
+
+        // Assert
+        Assert.False(env.ContainsKey("GIT_LITERAL_PATHSPECS"));
     }
 }

@@ -39,7 +39,6 @@ public static class EnvironmentBuilder
         ["GIT_TERMINAL_PROMPT"] = "0",
         ["GIT_CONFIG_NOSYSTEM"] = "1",
         ["GIT_OPTIONAL_LOCKS"] = "0",
-        ["GIT_LITERAL_PATHSPECS"] = "1",
     };
 
     /// <summary>Construct the hardened child env from <paramref name="parent"/> (defaults to current process env).</summary>

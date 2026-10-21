@@ -69,6 +69,21 @@ public class GitToolsIntegrationTests
     }
 
     [Fact]
+    public async Task GitLogTool_WithWildcardPath_IsRejected()
+    {
+        // Arrange
+        var tool = new GitLogTool(_common, _refVerifier);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, paths: ["*.txt"]);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal("paths", envelope.Error.Detail["param"]);
+    }
+
+    [Fact]
     public async Task GitDiffTool_StatOnlyReturnsNumstat()
     {
         // Arrange

@@ -24,7 +24,7 @@ public class GitCommandBuilderTests
         Assert.Contains("core.fsmonitor=", argv);
         Assert.Contains("core.hooksPath=/nonexistent/git-check-hooks-disabled", argv);
         Assert.Contains("--no-pager", argv);
-        Assert.Contains("--literal-pathspecs", argv);
+        Assert.DoesNotContain("--literal-pathspecs", argv);
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public class GitCommandBuilderTests
             RepoRoot = Path.GetTempPath(),
             Flags = ["-z", "-l"],
             VerifiedRefs = [sha],
-            Pathspecs = ["dir/file.txt"],
+            Pathspecs = [Pathspec.Literal("dir/file.txt")],
         };
 
         // Act
@@ -177,7 +177,7 @@ public class GitCommandBuilderTests
 
         // Assert
         var refIdx = argv.IndexOf(sha);
-        var pathIdx = argv.IndexOf("dir/file.txt");
+        var pathIdx = argv.IndexOf(":(literal)dir/file.txt");
         Assert.Equal("--end-of-options", argv[refIdx - 1]);
         Assert.Equal("--", argv[pathIdx - 1]);
         Assert.True(refIdx < pathIdx);
@@ -188,14 +188,14 @@ public class GitCommandBuilderTests
     {
         // Arrange
         var intent = BasicIntent();
-        intent.Pathspecs.Add("src/foo.cs");
+        intent.Pathspecs.Add(Pathspec.Literal("src/foo.cs"));
 
         // Act
         var (argv, _) = GitCommandBuilder.Build(intent);
 
         // Assert
         var dashIdx = argv.IndexOf("--");
-        var pathIdx = argv.IndexOf("src/foo.cs");
+        var pathIdx = argv.IndexOf(":(literal)src/foo.cs");
         Assert.True(dashIdx > 0 && pathIdx > dashIdx);
     }
 
@@ -204,10 +204,91 @@ public class GitCommandBuilderTests
     {
         // Arrange
         var intent = BasicIntent();
-        intent.Pathspecs.Add("-rm-rf");
+        intent.Pathspecs.Add(Pathspec.Literal("-rm-rf"));
 
         // Act & Assert
         Assert.Throws<RejectedArgumentException>(() => GitCommandBuilder.Build(intent));
+    }
+
+    [Fact]
+    public void Build_LiteralPathspec_IsPrefixedWithLiteralMagic()
+    {
+        // Arrange
+        var intent = BasicIntent();
+        intent.Pathspecs.Add(Pathspec.Literal("src/foo.cs"));
+
+        // Act
+        var (argv, _) = GitCommandBuilder.Build(intent);
+
+        // Assert
+        var dashIdx = argv.IndexOf("--");
+        Assert.Equal(":(literal)src/foo.cs", argv[dashIdx + 1]);
+    }
+
+    [Fact]
+    public void Build_ExcludePathspec_IsPrefixedWithExcludeMagic()
+    {
+        // Arrange
+        var intent = BasicIntent("grep");
+        intent.Pathspecs.Add(Pathspec.Exclude("env"));
+
+        // Act
+        var (argv, _) = GitCommandBuilder.Build(intent);
+
+        // Assert
+        Assert.Equal(":(exclude)env", argv.Last());
+    }
+
+    [Fact]
+    public void Build_GlobPathspec_IsEmittedVerbatim()
+    {
+        // Arrange
+        var intent = BasicIntent("grep");
+        intent.Pathspecs.Add(Pathspec.Glob("*.cs"));
+
+        // Act
+        var (argv, _) = GitCommandBuilder.Build(intent);
+
+        // Assert
+        Assert.Equal("*.cs", argv.Last());
+    }
+
+    [Fact]
+    public void Build_GlobPathspecStartingWithColon_IsRejected()
+    {
+        // Arrange
+        var intent = BasicIntent("grep");
+        intent.Pathspecs.Add(Pathspec.Glob(":(top)x"));
+
+        // Act & Assert
+        var exception = Assert.Throws<RejectedArgumentException>(() => GitCommandBuilder.Build(intent));
+        Assert.Equal("glob", exception.Detail["param"]);
+    }
+
+    [Fact]
+    public void Build_LiteralPathspecStartingWithColon_IsEmittedAsPatternText()
+    {
+        // Arrange
+        var intent = BasicIntent();
+        intent.Pathspecs.Add(Pathspec.Literal(":(top)x"));
+
+        // Act
+        var (argv, _) = GitCommandBuilder.Build(intent);
+
+        // Assert
+        Assert.Equal(":(literal):(top)x", argv.Last());
+    }
+
+    [Fact]
+    public void Build_EmptyPathspecValue_IsRejected()
+    {
+        // Arrange
+        var intent = BasicIntent("grep");
+        intent.Pathspecs.Add(Pathspec.Exclude(""));
+
+        // Act & Assert
+        var exception = Assert.Throws<RejectedArgumentException>(() => GitCommandBuilder.Build(intent));
+        Assert.Equal("exclude", exception.Detail["param"]);
     }
 
     [Fact]
@@ -220,7 +301,7 @@ public class GitCommandBuilderTests
         Assert.Equal("0", env["GIT_TERMINAL_PROMPT"]);
         Assert.Equal("1", env["GIT_CONFIG_NOSYSTEM"]);
         Assert.Equal("0", env["GIT_OPTIONAL_LOCKS"]);
-        Assert.Equal("1", env["GIT_LITERAL_PATHSPECS"]);
+        Assert.False(env.ContainsKey("GIT_LITERAL_PATHSPECS"));
         Assert.True(env.ContainsKey("PATH"));
     }
 
@@ -242,7 +323,7 @@ public class GitCommandBuilderTests
         // Arrange
         var intent = BasicIntent();
         intent.AttachedOptions.Add(new AttachedOption("--author", "alice"));
-        intent.Pathspecs.Add("src/foo.cs");
+        intent.Pathspecs.Add(Pathspec.Literal("src/foo.cs"));
         var (argv, _) = GitCommandBuilder.Build(intent);
 
         // Act
@@ -253,6 +334,26 @@ public class GitCommandBuilderTests
         Assert.DoesNotContain("src/foo.cs", string.Join(' ', masked));
         Assert.Contains("--author=<author>", masked);
         Assert.Contains("<path>", masked);
+    }
+
+    [Fact]
+    public void MaskedForLog_MasksGlobAndExcludePathspecsByParameter()
+    {
+        // Arrange
+        var intent = BasicIntent("grep");
+        intent.Pathspecs.Add(Pathspec.Glob("globbed/*.cs"));
+        intent.Pathspecs.Add(Pathspec.Exclude("excluded-dir"));
+        var (argv, _) = GitCommandBuilder.Build(intent);
+
+        // Act
+        var masked = GitCommandBuilder.MaskedForLog(argv, intent);
+
+        // Assert
+        var joined = string.Join(' ', masked);
+        Assert.DoesNotContain("globbed", joined);
+        Assert.DoesNotContain("excluded-dir", joined);
+        Assert.Contains("<glob>", masked);
+        Assert.Contains("<exclude>", masked);
     }
 
     [Fact]

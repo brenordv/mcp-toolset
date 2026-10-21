@@ -128,7 +128,7 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
     /// assemble a counts-only result (no patch text) with the change types overlaid by path.
     /// </summary>
     private async Task<(DiffResult Model, bool Truncated)> ExecuteStatOnlyAsync(
-        string root, List<string> flags, List<string> verifiedRefs, List<string> pathspecs,
+        string root, List<string> flags, List<string> verifiedRefs, List<Pathspec> pathspecs,
         CallContext ctx, CancellationToken cancellationToken)
     {
         var numstatResult = await common.ExecuteAsync(
@@ -147,7 +147,7 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
     /// <summary>Run the patch and <c>--numstat</c> passes, then merge them into a unified diff result.</summary>
     private async Task<(DiffResult Model, bool Truncated)> ExecuteUnifiedAsync(
         string root, List<string> flags, List<AttachedOption> attached,
-        List<string> verifiedRefs, List<string> pathspecs, string mode,
+        List<string> verifiedRefs, List<Pathspec> pathspecs, string mode,
         CallContext ctx, CancellationToken cancellationToken)
     {
         var unifiedIntent = new GitIntent
@@ -171,7 +171,7 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
     }
 
     /// <summary>Build the companion <c>git diff --numstat -z</c> intent that backs every diff mode.</summary>
-    private static GitIntent NumstatIntent(string root, List<string> flags, List<string> verifiedRefs, List<string> pathspecs)
+    private static GitIntent NumstatIntent(string root, List<string> flags, List<string> verifiedRefs, List<Pathspec> pathspecs)
         => new()
         {
             Subcommand = "diff",
@@ -182,7 +182,7 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
         };
 
     /// <summary>Build the companion <c>git diff --name-status -z</c> intent that supplies change kinds for stat-only mode.</summary>
-    private static GitIntent NameStatusIntent(string root, List<string> flags, List<string> verifiedRefs, List<string> pathspecs)
+    private static GitIntent NameStatusIntent(string root, List<string> flags, List<string> verifiedRefs, List<Pathspec> pathspecs)
         => new()
         {
             Subcommand = "diff",

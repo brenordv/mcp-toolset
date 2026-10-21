@@ -45,7 +45,7 @@ public sealed class GitFileAtRefTool(ToolCommon common, IRefVerifier refVerifier
                 RepoRoot = root,
                 Flags = ["-z", "-l"],
                 VerifiedRefs = [sha],
-                Pathspecs = [confined],
+                Pathspecs = [Pathspec.Literal(confined)],
             };
             var treeResult = await common.ExecuteAsync(
                 treeIntent,

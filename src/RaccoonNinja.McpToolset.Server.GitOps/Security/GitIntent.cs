@@ -24,8 +24,8 @@ public sealed class GitIntent
     /// <summary>Positional non-ref args (server data: pretty format strings, refname patterns, etc.).</summary>
     public IList<string> PositionalServerArgs { get; init; } = [];
 
-    /// <summary>Pathspecs supplied by the user; confined by the tool before populating this list.</summary>
-    public IList<string> Pathspecs { get; init; } = [];
+    /// <summary>Pathspecs supplied by the user, each tagged with the magic the builder prefixes. The tool confines or validates every value before adding it here.</summary>
+    public IList<Pathspec> Pathspecs { get; init; } = [];
 
     /// <summary>Map <c>argv_index → param_name</c> populated during build for masked DEBUG logging.</summary>
     public IDictionary<int, string> Provenance { get; set; } = new Dictionary<int, string>();

@@ -20,11 +20,13 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
     public Task<ResultEnvelope> InvokeAsync(
         [Description("Absolute working directory.")] string cwd,
         [Description("Pattern to search for (required, non-empty; must not begin with '-').")] string pattern = null,
-        [Description("Restrict to these repo-relative paths.")] string[] paths = null,
+        [Description("Literal repo-relative paths (a file, or a directory and its subtree). Wildcards (* ?) and pathspec magic are rejected here; use globs and excludePaths.")] string[] paths = null,
         [Description("Optional ref to grep at, instead of HEAD/working tree.")] string @ref = null,
         [Description("Case-insensitive search.")] bool ignoreCase = false,
         [Description("Treat pattern as a fixed string (default). Set false to use regex.")] bool fixedString = true,
         [Description("Cap matches per file (git grep -m).")] int? maxCount = null,
+        [Description("Wildcard pathspecs, git's default matching: '*' and '?' also match '/', so '*.cs' matches at any depth and 'crates/*/*/Cargo.toml' works. Repo-relative, forward slashes, no leading ':' or '-', no '..'.")] string[] globs = null,
+        [Description("Paths or wildcard patterns to exclude from the search (git ':(exclude)'). A directory excludes its subtree. Works alone, or together with paths and globs.")] string[] excludePaths = null,
         CancellationToken cancellationToken = default)
     {
         var ctx = common.MakeContext("git_grep");
@@ -66,7 +68,12 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
                 Flags = BuildFlags(ignoreCase, fixedString),
                 AttachedOptions = BuildAttachedOptions(pattern, maxCount),
                 VerifiedRefs = verifiedRefs,
-                Pathspecs = ToolCommon.ConfinePaths(root, paths),
+                Pathspecs =
+                [
+                    .. ToolCommon.ConfinePaths(root, paths),
+                    .. ToolCommon.GlobPathspecs(globs),
+                    .. ToolCommon.ExcludePathspecs(excludePaths),
+                ],
             };
             // Exit 1 means "no matches", a success for grep, so it is allowed; any other
             // non-zero exit is surfaced as a command error by ExecuteAsync. A git built without
@@ -87,6 +94,8 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
                 .Flag("fixed_string", fixedString)
                 .Optional("regex_engine", fixedString ? "fixed" : "perl")
                 .Number("paths_count", paths?.Length ?? 0)
+                .Number("globs_count", globs?.Length ?? 0)
+                .Number("exclude_paths_count", excludePaths?.Length ?? 0)
                 .Build();
             return ToolCommon.ListSuccess(matches, root, preFilterCount: matches.Count, filtersApplied: filtersApplied, truncated: result.Truncated);
         });
