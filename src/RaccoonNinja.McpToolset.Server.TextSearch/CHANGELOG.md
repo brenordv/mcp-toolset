@@ -1,3 +1,12 @@
+## v1.7.0
+- Fixed: an extra deny entry containing a `/` (`MCP_TEXTSEARCH_EXTRA_DENY=**/.claude/settings*.json`) did
+  not cover a call whose `cwd` was at or inside the directory it names, because the denylist was tested
+  against the scope-relative path only. The path relative to the base root (or the package root) is now
+  tested too, in the walk, in explicit `paths`, and in the read gate. Scoped calls only; an unscoped call
+  is unchanged. No log shape change: a scoped `read_lines` or `read_json` of such a file now emits the
+  existing `refusal` line (`refusal_reason=denylisted`) and counts in `refusals_total.denylisted`, where it
+  used to succeed.
+
 ## v1.6.0
 - Fixed: the `exception_tail` log field, written when startup fails or when the host or the MCP SDK logs an
   exception, carried the exception's message and stack trace, which can name a file by its absolute path. It

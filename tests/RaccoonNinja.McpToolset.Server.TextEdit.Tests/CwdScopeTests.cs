@@ -12,6 +12,9 @@ namespace RaccoonNinja.McpToolset.Server.TextEdit.Tests;
 /// </summary>
 public sealed class CwdScopeTests
 {
+    private const string ClaudeSettingsFile = "proj/.claude/settings.json";
+    private const string EmptyJsonObject = "{}";
+
     [Fact]
     public async Task Replace_ScopedCwd_ReportsBaseRelativePaths_AndNoWholeBaseMetric()
     {
@@ -181,5 +184,23 @@ public sealed class CwdScopeTests
         // Assert
         Assert.Equal("proj", envelope.FiltersApplied["cwd"]);
         Assert.DoesNotContain(harness.Root, (string)envelope.FiltersApplied["cwd"], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Replace_PathShapedExtraDeny_CwdInsideItsDirectory_DropsFileFromSelection()
+    {
+        // Arrange
+        using var harness = new TextEditHarness(extraDeny: "**/.claude/settings*.json");
+        harness.WriteText(ClaudeSettingsFile, EmptyJsonObject);
+        var cwd = harness.Dir("proj/.claude");
+
+        // Act
+        var envelope = await harness.Replace.InvokeAsync(EmptyJsonObject, "{ }", cwd: cwd, glob: "*.json", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var result = Assert.IsType<MutationResult>(Assert.Single(envelope.Results));
+        Assert.Equal(0, result.Attempted);
+        Assert.Equal(EmptyJsonObject, harness.ReadText(ClaudeSettingsFile));
     }
 }

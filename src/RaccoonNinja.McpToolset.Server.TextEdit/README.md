@@ -154,8 +154,8 @@ Only argument names are echoed back, never values.
   can register MCP servers, set their environment, and add hooks. That is deliberate: installing a
   server or a hook means editing them, and approving each write call is the control. To make them
   unwritable, set `MCP_TEXTEDIT_EXTRA_DENY=.mcp.json;.claude.json;**/.claude/settings*.json`:
-  text-edit then never writes them. A selection drops them, the write gate refuses as `denied` any
-  that a `cwd`-scoped selection lets through, and undo never restores them. The patterns match
+  text-edit then never writes them. A selection drops them whatever `cwd` the call passes, the write
+  gate refuses as `denied` any that still reaches it, and undo never restores them. The patterns match
   paths relative to the base root, so if the base root is itself a `.claude` directory, add
   `settings*.json` too. The opt-out covers only the files it names; a script a hook runs, or another
   client's configuration file, stays writable unless you add it as well.
