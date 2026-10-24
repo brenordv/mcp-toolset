@@ -53,11 +53,9 @@ public sealed class AllowlistJsonFormatter : ITextFormatter
 
             if (logEvent.Exception != null)
             {
-                // Exception text is server-emitted; control-strip and cap it so a path-bearing message
-                // cannot ride into the sink unbounded. It is the only field allowed to carry raw text.
-                writer.WriteString(
-                    LogFields.ExceptionTail,
-                    LogScrubbing.ScrubTail(System.Text.Encoding.UTF8.GetBytes(logEvent.Exception.ToString())));
+                // Only the type chain is written. The message and stack trace of an exception the host or the SDK
+                // attached can carry an absolute path, and nothing here can tell which ones do.
+                writer.WriteString(LogFields.ExceptionTail, LogScrubbing.ExceptionTypeChain(logEvent.Exception));
             }
 
             writer.WriteEndObject();

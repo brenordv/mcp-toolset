@@ -1,3 +1,10 @@
+## v1.2.0
+- Fixed: the `exception_tail` log field, written when startup fails or when the host or the MCP SDK logs an
+  exception, carried the exception's message and stack trace, which can name a file by its absolute path. It
+  now carries the exception's type chain only, outer to inner, at most eight entries. Log change: the
+  content of `exception_tail`; the `server_start_failed` line no longer carries the reason text, which stays
+  on stderr.
+
 ## v1.1.2
 - The `StoreUnavailable` message for a missing store now reads "install the skill-stats-cli hook first"; it
   named only the `PostToolUse` event, which misses skills you type. The README gains a "Recording usage"

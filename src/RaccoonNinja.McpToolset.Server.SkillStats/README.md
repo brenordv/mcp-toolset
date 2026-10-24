@@ -61,7 +61,9 @@ unknown argument (with a `did you mean` when a schema name is close) and lists t
 
 The store defaults to `~/.skill-stats/skill-stats.db`; set `SKILL_STATS_HOME` to relocate it, and
 point the hook and this server at the same home. `MCP_SKILLSTATS_LOG_FILE` and
-`MCP_SKILLSTATS_LOG_LEVEL` control the server's own log; it never writes to stdout.
+`MCP_SKILLSTATS_LOG_LEVEL` control the server's own log; it never writes to stdout. A logged exception is
+recorded only as its type chain, never its message or stack trace; a startup failure's reason is printed to
+stderr as `skill-stats: fatal error: ...`.
 
 ## Adding it to Claude Code
 

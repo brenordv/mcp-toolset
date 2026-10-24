@@ -1,3 +1,10 @@
+## v1.6.0
+- Fixed: the `exception_tail` log field, written when startup fails or when the host or the MCP SDK logs an
+  exception, carried the exception's message and stack trace, which can name a file by its absolute path. It
+  now carries the exception's type chain only, outer to inner, at most eight entries. Log change: the
+  content of `exception_tail`; the `server_start_failed` line no longer carries the reason text, which stays
+  on stderr.
+
 ## v1.5.0
 - Added: `search_text` `count_only`. It returns one `{path, match_count}` entry per file with at least one
   matching line instead of every match. `match_count` counts matching lines, so a line with two matches

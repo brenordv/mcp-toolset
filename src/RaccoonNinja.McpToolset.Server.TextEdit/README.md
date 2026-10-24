@@ -213,7 +213,9 @@ the executable), or stderr if the file cannot be opened. Set the level with `MCP
 (`TRACE`..`FATAL`, default `INFO`). Never to stdout, which the stdio transport owns. Fields pass through a
 fixed allowlist; the root is logged only as an 8-character hash, and a replacement or pattern is logged only
 as a length and a hash, never verbatim. A regex that hits its per-match timeout on a file is a counted
-Warning event (`regex_timeout`) as well as that file's `refusal_reason`.
+Warning event (`regex_timeout`) as well as that file's `refusal_reason`. A logged exception is recorded only
+as its type chain, never its message or stack trace; a startup failure's reason is printed to stderr as
+`text-edit: fatal error: ...`.
 
 ## Requirements
 

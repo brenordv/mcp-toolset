@@ -298,8 +298,10 @@ Structured single-line JSON to a rolling file (`MCP_TEXTSEARCH_LOG_FILE`, defaul
 next to the executable), or stderr if the file cannot be opened. Set the level with
 `MCP_TEXTSEARCH_LOG_LEVEL` (`TRACE`..`FATAL`, default `INFO`). Never to stdout, which the stdio transport
 owns. Log fields pass through a fixed allowlist, so a value can never leak through an unexpected key; the
-base root is logged only as an 8-character hash, never as a path. A refusal (denylist hit, out-of-base
-`cwd`, regex timeout) is a first-class, counted event, and a shutdown line carries the session metrics.
+base root is logged only as an 8-character hash, never as a path. A logged exception is recorded only as its
+type chain, never its message or stack trace; a startup failure's reason is printed to stderr as
+`text-search: fatal error: ...`. A refusal (denylist hit, out-of-base `cwd`, regex timeout) is a
+first-class, counted event, and a shutdown line carries the session metrics.
 
 ## Requirements
 
