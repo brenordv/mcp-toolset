@@ -1,3 +1,9 @@
+## v1.1.2
+- The `StoreUnavailable` message for a missing store now reads "install the skill-stats-cli hook first"; it
+  named only the `PostToolUse` event, which misses skills you type. The README gains a "Recording usage"
+  section with the two-event wiring (`UserPromptExpansion` plus `PostToolUse`), the upgrade from a
+  `PostToolUse`-only setup, and a check that recording works. No log change.
+
 ## v1.1.1
 - Internal: removed every `ConfigureAwait(false)` call. The stdio host has no synchronization context, so
   continuations run on the same threads as before. No wire or behavior change.

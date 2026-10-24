@@ -23,6 +23,20 @@ public sealed class StoreGuardTests
     }
 
     [Fact]
+    public async Task TopSkills_MissingStore_MessageNamesTheCliHook()
+    {
+        // Arrange
+        using var harness = new SkillStatsHarness();
+
+        // Act
+        var envelope = await harness.TopSkills.InvokeAsync();
+
+        // Assert
+        Assert.Equal(ErrorCodes.StoreUnavailable, envelope.Error.Code);
+        Assert.Equal("skill usage database not found; install the skill-stats-cli hook first", envelope.Error.Message);
+    }
+
+    [Fact]
     public async Task Tools_MissingStore_NeverCreateTheDatabase()
     {
         // Arrange
