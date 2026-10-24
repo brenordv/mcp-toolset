@@ -212,7 +212,8 @@ Structured single-line JSON to a rolling file (`MCP_TEXTEDIT_LOG_FILE`, default 
 the executable), or stderr if the file cannot be opened. Set the level with `MCP_TEXTEDIT_LOG_LEVEL`
 (`TRACE`..`FATAL`, default `INFO`). Never to stdout, which the stdio transport owns. Fields pass through a
 fixed allowlist; the root is logged only as an 8-character hash, and a replacement or pattern is logged only
-as a length and a hash, never verbatim.
+as a length and a hash, never verbatim. A regex that hits its per-match timeout on a file is a counted
+Warning event (`regex_timeout`) as well as that file's `refusal_reason`.
 
 ## Requirements
 

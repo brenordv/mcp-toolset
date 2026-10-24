@@ -95,6 +95,14 @@ public sealed class ReplaceTextTool(ToolCommon common, EditConfig config, ScopeR
                 scope.Effective,
                 budget.Token);
 
+            foreach (var file in outcome.Files)
+            {
+                if (file.Reason == RefusalReason.RegexTimeout)
+                {
+                    common.RegexTimeout(ctx);
+                }
+            }
+
             common.BatchCommitted(ctx, outcome, dry_run);
 
             var filters = SelectorSupport
