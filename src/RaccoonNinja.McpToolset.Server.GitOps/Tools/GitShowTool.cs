@@ -54,7 +54,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
             {
                 Subcommand = "show",
                 RepoRoot = root,
-                Flags = ["--format="],
+                Flags = ["--format=", "--no-color"],
                 VerifiedRefs = [sha],
                 Pathspecs = pathspecs,
             };

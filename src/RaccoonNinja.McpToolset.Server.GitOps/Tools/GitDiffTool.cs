@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Server.GitOps.Envelope;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
@@ -96,11 +97,19 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
         }
     }
 
-    /// <summary>Server-built diff flags: <c>--cached</c> when diffing the staged index.</summary>
+    /// <summary>
+    /// Server-built diff flags: <c>--no-color</c> always, because a <c>color.ui</c> or <c>color.diff</c> setting of
+    /// <c>always</c> in the user's or the repository's config would wrap the patch in escape codes the parser cannot
+    /// read, plus <c>--cached</c> when diffing the staged index.
+    /// </summary>
     private static List<string> BuildFlags(bool staged)
     {
-        var flags = new List<string>();
-        if (staged) flags.Add("--cached");
+        var flags = new List<string> { "--no-color" };
+        if (staged)
+        {
+            flags.Add("--cached");
+        }
+
         return flags;
     }
 
@@ -165,6 +174,13 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
 
         var files = DiffParser.ParseUnified(unifiedResult.Stdout);
         var numstat = DiffParser.ParseNumstatZ(numstatResult.Stdout);
+        // The numstat pass is never colored or reformatted, so files there and none from the patch means the
+        // patch was in a shape the reader does not recognize; an empty success would hide that.
+        if (numstat.Count > 0 && files.Count == 0)
+        {
+            ctx.Log(LogLevel.Warning, "patch_parse_empty");
+        }
+
         var truncated = unifiedResult.Truncated || numstatResult.Truncated;
         var model = DiffParser.AssembleDiffResult(files, mode, truncated, numstat);
         return (model, truncated);

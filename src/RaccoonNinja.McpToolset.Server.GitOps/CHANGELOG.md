@@ -1,3 +1,12 @@
+## v2.7.0
+- Fixed: `git_diff`, `git_show`, and `git_stash_show` returned an empty file list, with no error, when the user's or
+  the repository's git config set `color.ui` or `color.diff` to `always`, because git colored the patch and no
+  `diff --git` header parsed. The three now always pass `--no-color`, as `git_grep` has since 2.6.0. `statOnly` was not
+  affected.
+- Log change: a new Warning event, `patch_parse_empty`, when the `--numstat` pass of `git_diff` or `git_stash_show`
+  lists files but no `diff --git` header parsed from the patch. The `argv_built` debug line for the three tools shows
+  `--no-color` on every pass, the `--numstat` and `--name-status` passes included.
+
 ## v2.6.0
 - `git_grep` gained `countOnly`. `countOnly: true` adds git's `-c` in place of `-n` and returns one
   `{path, match_count}` entry per file with at least one matching line, instead of one entry per line. `match_count`

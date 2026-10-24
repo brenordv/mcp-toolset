@@ -128,7 +128,8 @@ SHA before use, exactly like a plain ref.
 
 Each diff runs two passes: the patch itself (or `--name-status` for stat-only) and a companion `--numstat -z` pass.
 The two are merged into one `DiffResult` so every file carries both its hunks and its line counts. `contextLines`
-maps to git's `-U<n>`.
+maps to git's `-U<n>`. Every pass runs with `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your
+git config cannot put escape codes in the patch.
 
 ```mermaid
 flowchart TD
@@ -136,8 +137,8 @@ flowchart TD
     B --> C[Verify fromRef / toRef → SHAs]
     C --> D[Confine paths]
     D --> E{statOnly?}
-    E -- yes --> F["diff --numstat -z<br/>(+ diff --name-status -z)"]
-    E -- no --> G["diff [--cached] [-U n] refs -- pathspecs<br/>(+ diff --numstat -z)"]
+    E -- yes --> F["diff --no-color --numstat -z<br/>(+ diff --no-color --name-status -z)"]
+    E -- no --> G["diff --no-color [--cached] [-U n] refs -- pathspecs<br/>(+ diff --no-color --numstat -z)"]
     F --> H[DiffParser: merge counts + change kinds]
     G --> H
     H --> I[DiffResult: per-file hunks + additions/deletions + mode]
@@ -178,7 +179,9 @@ Inspects a single ref (commit, tag, or tree) and returns its metadata along with
 and is verified to a SHA before use.
 
 Runs two passes: a one-commit `git log` for metadata (same format as `git_log`), and `git show --format=` for the
-patch, parsed into the same `FileDiff` shape as `git_diff`. `paths` restricts the diff section.
+patch, parsed into the same `FileDiff` shape as `git_diff`. `paths` restricts the diff section. Every pass runs with
+`--no-color`, so a `color.ui` or `color.diff` setting of `always` in your git config cannot put escape codes in the
+patch.
 
 A `ref` in `<rev>:<path>` form (`HEAD:README.md`, `:README.md`, or `HEAD:` for the root tree) names a file or tree,
 not a commit, and is rejected with a
@@ -192,7 +195,7 @@ flowchart TD
     R -- yes --> X[RejectedArgument → use git_file_at_ref]
     R -- no --> C[Verify ref → SHA<br/>required]
     C --> D["git log -1 --pretty=format:… SHA<br/>(metadata)"]
-    C --> E["git show --format= SHA -- pathspecs<br/>(patch)"]
+    C --> E["git show --format= --no-color SHA -- pathspecs<br/>(patch)"]
     D --> F[Commit record]
     E --> G[FileDiff list]
     F --> H["payload { commit, files }"]
@@ -413,14 +416,16 @@ flowchart LR
 ### `git_stash_show`
 
 Returns the diff for a single stash (`index`, 0 = most recent) as a `DiffResult`, using the same two-pass
-patch + `--numstat -z` assembly as `git_diff`. A negative index returns a `RejectedArgument` error.
+patch + `--numstat -z` assembly as `git_diff`. A negative index returns a `RejectedArgument` error. Every pass runs
+with `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your git config cannot put escape codes in
+the patch.
 
 ```mermaid
 flowchart TD
     A["git_stash_show: cwd, index"] --> B[Resolve root]
     B --> C{index >= 0?}
     C -- no --> D[RejectedArgument error]
-    C -- yes --> E["stash show -p stash@{index}<br/>(+ stash show --numstat -z)"]
+    C -- yes --> E["stash show -p --no-color stash@{index}<br/>(+ stash show --numstat -z --no-color)"]
     E --> F[DiffParser: merge patch + counts]
     F --> G[DiffResult]
     G --> H[ResultEnvelope]
