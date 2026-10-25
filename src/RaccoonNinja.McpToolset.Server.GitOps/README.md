@@ -537,8 +537,11 @@ flowchart TD
 
 - **One argv producer.** Tools declare a typed `GitIntent`; a single `GitCommandBuilder` is the only code that
   serializes it to argv. It prepends fixed `-c` neutralizers (disable hooks, pager, fsmonitor, credential helpers,
-  askpass, auto-gc) and, before any positional ref, inserts `--end-of-options` so no user value can be read
-  as an option (git grep excepted: its pattern is a glued `-e` token and its refs are pre-resolved SHAs).
+  askpass, auto-gc, signature verification) and, before any positional ref, inserts `--end-of-options` so no user
+  value can be read as an option (git grep excepted: its pattern is a glued `-e` token and its refs are pre-resolved
+  SHAs). `log.showSignature=false` is there because verifying a signed commit runs the program `gpg.program`,
+  `gpg.ssh.program`, or `gpg.x509.program` names, and a repository's own config can set both keys; a forged signature
+  is enough.
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or
@@ -556,6 +559,12 @@ flowchart TD
   meta-characters can't leak.
 - **Scrubbed environment.** The child env is built from a small allowlist (`PATH`, locale vars, `HOME`, plus a few
   Windows essentials) with fixed git neutralizers added. Everything else is dropped.
+
+Two paths are still open. A filter driver that a repository's config names (`filter.<driver>.clean` or
+`filter.<driver>.process`, matched through a `filter` attribute) can run when git reads a worktree file for
+`git_status`, a worktree `git_diff`, or `git_blame` without `ref`; the `suspicious_filter_invocation` Warning reports
+one that fails. In a partial clone, reading a missing object makes git start a fetch from the promisor remote, which
+can run a program the repository's config names (`remote.<name>.uploadpack`, `core.sshCommand`).
 
 ---
 

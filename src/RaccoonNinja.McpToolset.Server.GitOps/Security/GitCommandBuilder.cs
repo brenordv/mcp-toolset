@@ -26,7 +26,13 @@ public static class GitCommandBuilder
 
     private static readonly IReadOnlyList<string> GrepDiffFlags = ["--no-textconv"];
 
-    /// <summary>Fixed <c>-c</c> neutralizers: constant values, server-emitted, never user input.</summary>
+    /// <summary>
+    /// Fixed <c>-c</c> neutralizers: constant values, server-emitted, never user input. git reads <c>-c</c> values after
+    /// every config file, so these beat the user's and the repository's config. <c>log.showSignature=false</c> keeps a
+    /// repository's config from making <c>git log</c>, <c>git show</c>, <c>git reflog</c>, or the <c>git log</c> that
+    /// <c>git stash list</c> starts verify signed commits, which runs the program <c>gpg.program</c>,
+    /// <c>gpg.ssh.program</c>, or <c>gpg.x509.program</c> names.
+    /// </summary>
     private static readonly IReadOnlyList<(string Key, string Value)> FixedConfig =
     [
         ("core.fsmonitor", string.Empty),
@@ -35,7 +41,8 @@ public static class GitCommandBuilder
         ("gc.auto", "0"),
         ("credential.helper", string.Empty),
         ("core.askpass", string.Empty),
-        ("core.quotePath", "false")
+        ("core.quotePath", "false"),
+        ("log.showSignature", "false")
     ];
 
     private static readonly HashSet<string> DiffBearingSubcommands = new(StringComparer.Ordinal)

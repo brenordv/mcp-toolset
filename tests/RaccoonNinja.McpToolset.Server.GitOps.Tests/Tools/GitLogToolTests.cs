@@ -16,6 +16,7 @@ public sealed class GitLogToolTests : IDisposable
     private const string BetaSubject = "DEVOPS-2 beta";
     private const string FeatureSubject = "GMS-9 feature work";
     private const string AlternationPattern = "GMS-1|DEVOPS-2";
+    private const string SignedSubject = "GMS-4 signed";
 
     private readonly TempGitRepo _repo;
     private readonly GitLogTool _tool;
@@ -149,6 +150,23 @@ public sealed class GitLogToolTests : IDisposable
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
         Assert.Equal("all_refs", envelope.Error.Detail["param"]);
+    }
+
+    [Fact]
+    public async Task Log_WithShowSignatureConfigAndSignedCommit_DoesNotRunSignatureProgram()
+    {
+        // Arrange
+        var signedHash = _repo.CommitWithForgedSignature(SignedSubject);
+        var marker = _repo.ConfigureSignatureProgramTrap();
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, maxCount: 1, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var commit = Assert.IsType<Commit>(Assert.Single(envelope.Results));
+        Assert.Equal(signedHash, commit.Hash);
+        Assert.False(File.Exists(marker));
     }
 
     #region Test Helpers

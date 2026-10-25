@@ -25,6 +25,7 @@ public class GitCommandBuilderTests
         Assert.Contains("core.hooksPath=/nonexistent/git-check-hooks-disabled", argv);
         Assert.Contains("--no-pager", argv);
         Assert.DoesNotContain("--literal-pathspecs", argv);
+        Assert.Contains("log.showSignature=false", argv);
     }
 
     [Fact]
@@ -315,6 +316,7 @@ public class GitCommandBuilderTests
         Assert.Contains("-c", prefix);
         Assert.Contains("core.pager=cat", prefix);
         Assert.Contains("--no-pager", prefix);
+        Assert.Contains("log.showSignature=false", prefix);
     }
 
     [Fact]
@@ -334,6 +336,7 @@ public class GitCommandBuilderTests
         Assert.DoesNotContain("src/foo.cs", string.Join(' ', masked));
         Assert.Contains("--author=<author>", masked);
         Assert.Contains("<path>", masked);
+        Assert.Contains("log.showSignature=false", masked);
     }
 
     [Fact]

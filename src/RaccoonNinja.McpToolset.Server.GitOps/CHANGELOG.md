@@ -1,3 +1,14 @@
+## v2.8.0
+- Fixed: a repository's own config could make `git_log`, `git_show`, `git_reflog`, and `git_stash_list` run a program
+  it names. With `log.showSignature=true`, git verifies each signed commit it shows by running the program
+  `gpg.program`, `gpg.ssh.program`, or `gpg.x509.program` names, and a forged `gpgsig` header is enough. Every git
+  call now passes `-c log.showSignature=false`, next to the `core.fsmonitor` and `core.hooksPath` neutralizers. With
+  `log.showSignature=true` in the user's own config, `git_log` and the `git_show` metadata pass also put gpg's output
+  in front of each signed commit's `hash`, and `git_log`, both `git_show` passes, and `git_reflog` ran gpg once per
+  signed commit shown; the same change fixes both.
+- Log change: every `argv_built` debug line shows `-c log.showSignature=false`, and its `argv_len` is 2 higher. The
+  bootstrap `rev-parse` calls carry the same pin but log no argv line.
+
 ## v2.7.0
 - Fixed: `git_diff`, `git_show`, and `git_stash_show` returned an empty file list, with no error, when the user's or
   the repository's git config set `color.ui` or `color.diff` to `always`, because git colored the patch and no

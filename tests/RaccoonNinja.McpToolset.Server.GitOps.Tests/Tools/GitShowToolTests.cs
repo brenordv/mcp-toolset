@@ -11,6 +11,7 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Tools;
 public sealed class GitShowToolTests : IDisposable
 {
     private const string ChangedFile = "a.txt";
+    private const string SignedSubject = "signed";
 
     private readonly TempGitRepo _repo;
     private readonly GitShowTool _tool;
@@ -51,5 +52,23 @@ public sealed class GitShowToolTests : IDisposable
         var file = Assert.Single(files);
         Assert.Equal(ChangedFile, file.Path);
         Assert.NotEmpty(file.Hunks);
+    }
+
+    [Fact]
+    public async Task Show_WithShowSignatureConfigAndSignedCommit_DoesNotRunSignatureProgram()
+    {
+        // Arrange
+        var signedHash = _repo.CommitWithForgedSignature(SignedSubject);
+        var marker = _repo.ConfigureSignatureProgramTrap();
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        var commit = Assert.IsType<Commit>(payload["commit"]);
+        Assert.Equal(signedHash, commit.Hash);
+        Assert.False(File.Exists(marker));
     }
 }
