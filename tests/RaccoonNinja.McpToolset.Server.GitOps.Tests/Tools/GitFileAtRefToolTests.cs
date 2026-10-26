@@ -230,4 +230,19 @@ public sealed class GitFileAtRefToolTests : IDisposable
         Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
         Assert.Equal("line_range", envelope.Error.Detail["param"]);
     }
+
+    [Fact]
+    public async Task MissingBlobWithPromisorRemote_FailsWithoutRunningUploadPack()
+    {
+        // Arrange
+        var marker = _repo.ConfigureLazyFetchTrap(BigFile);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, BigFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
+        Assert.False(File.Exists(marker));
+    }
 }

@@ -28,15 +28,17 @@ internal sealed class TempGitRepo : IDisposable
     /// <summary>Where <see cref="ConfigureSignatureProgramTrap"/> writes the script <c>gpg.program</c> names.</summary>
     private const string TrapScriptFile = ".git/fake-gpg";
 
+    /// <summary>Where <see cref="ConfigureLazyFetchTrap"/> writes the script <c>remote.origin.uploadpack</c> names.</summary>
+    private const string UploadPackTrapFile = ".git/fake-upload-pack";
+
     /// <summary>Appended to the script's path to name the marker file the script creates when it runs.</summary>
     private const string TrapMarkerSuffix = ".ran";
 
     /// <summary>
-    /// The script <c>gpg.program</c> names: it creates its own path plus <see cref="TrapMarkerSuffix"/> and writes one line
-    /// to stderr, which git prints into its output in front of the signed commit. LF endings, so the shebang line reads
-    /// <c>/bin/sh</c>.
+    /// The script a trap points git at: it creates its own path plus <see cref="TrapMarkerSuffix"/>, writes one line to
+    /// stderr, and exits 1. LF endings, so the shebang line reads <c>/bin/sh</c>.
     /// </summary>
-    private const string TrapScript = $"#!/bin/sh\n: > \"$0{TrapMarkerSuffix}\"\necho \"signature program ran\" >&2\nexit 1\n";
+    private const string TrapScript = $"#!/bin/sh\n: > \"$0{TrapMarkerSuffix}\"\necho \"trap program ran\" >&2\nexit 1\n";
 
     public TempGitRepo()
     {
@@ -135,28 +137,42 @@ internal sealed class TempGitRepo : IDisposable
     /// <returns>The marker file's path, with the file deleted again. It exists afterwards only if git ran the script.</returns>
     public string ConfigureSignatureProgramTrap()
     {
-        var script = PrepareTarget(TrapScriptFile);
+        var script = WriteTrapScript(TrapScriptFile);
         var marker = script + TrapMarkerSuffix;
-        File.WriteAllText(script, TrapScript);
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        }
-
         Run("config", "gpg.program", script);
         Run("config", "log.showSignature", "true");
         Run("log", "--max-count=1", "--format=%H");
-        if (!File.Exists(marker))
-        {
-            const string reason = "git did not run the gpg.program script on this machine, so the signature trap cannot fire";
-            if (OperatingSystem.IsWindows())
-            {
-                Assert.Skip(reason);
-            }
+        RequireTrapFired(marker, "git did not run the gpg.program script on this machine, so the signature trap cannot fire");
+        File.Delete(marker);
+        return marker;
+    }
 
-            Assert.Fail(reason);
-        }
+    /// <summary>
+    /// Configure the repository as a hostile partial clone could: <c>origin</c> is a promisor remote at a local path whose
+    /// <c>uploadpack</c> is a script that creates a marker file whenever anything runs it, and the blob
+    /// <paramref name="trackedPath"/> has at <c>HEAD</c> is deleted from the object store, so the next read of that blob
+    /// makes git start a lazy fetch from <c>origin</c>. Then check that the trap fires by listing <c>HEAD</c> with sizes
+    /// once, without the server's environment, so a trap test never passes on a machine where git cannot start the script:
+    /// the calling test is skipped on Windows, where git needs <c>sh</c> on its <c>PATH</c> to start it, and fails anywhere
+    /// else.
+    /// </summary>
+    /// <param name="trackedPath">A <c>/</c>-separated path committed at <c>HEAD</c> whose blob is still a loose object.</param>
+    /// <returns>The marker file's path, with the file deleted again. It exists afterwards only if git ran the script.</returns>
+    public string ConfigureLazyFetchTrap(string trackedPath)
+    {
+        var blob = Run("rev-parse", $"HEAD:{trackedPath}");
+        var script = WriteTrapScript(UploadPackTrapFile);
+        var marker = script + TrapMarkerSuffix;
+        Run("config", "remote.origin.url", RepoPath);
+        Run("config", "remote.origin.promisor", "true");
+        Run("config", "remote.origin.uploadpack", $"'{script.Replace('\\', '/')}'");
 
+        var looseObject = Path.Combine(RepoPath, ".git", "objects", blob[..2], blob[2..]);
+        File.SetAttributes(looseObject, FileAttributes.Normal);
+        File.Delete(looseObject);
+
+        Run("ls-tree", "-r", "-l", "HEAD");
+        RequireTrapFired(marker, "git did not run the remote.origin.uploadpack script on this machine, so the lazy-fetch trap cannot fire");
         File.Delete(marker);
         return marker;
     }
@@ -202,6 +218,39 @@ internal sealed class TempGitRepo : IDisposable
         {
             // A descendant could not be terminated; the caller still reports the timeout.
         }
+    }
+
+    /// <summary>Write <see cref="TrapScript"/> at the <c>/</c>-separated <paramref name="relativePath"/>, executable by its owner off Windows.</summary>
+    /// <param name="relativePath">The script's <c>/</c>-separated path under the repository root.</param>
+    /// <returns>The script's absolute path.</returns>
+    private string WriteTrapScript(string relativePath)
+    {
+        var script = PrepareTarget(relativePath);
+        File.WriteAllText(script, TrapScript);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        return script;
+    }
+
+    /// <summary>Return when <paramref name="marker"/> exists; otherwise skip the calling test on Windows and fail it anywhere else.</summary>
+    /// <param name="marker">The marker file the trap script creates when git runs it.</param>
+    /// <param name="reason">The skip or failure message.</param>
+    private static void RequireTrapFired(string marker, string reason)
+    {
+        if (File.Exists(marker))
+        {
+            return;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip(reason);
+        }
+
+        Assert.Fail(reason);
     }
 
     private string PrepareTarget(string relativePath)

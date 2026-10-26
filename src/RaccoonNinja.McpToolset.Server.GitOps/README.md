@@ -532,7 +532,7 @@ flowchart TD
     F --> G[--end-of-options before positional refs<br/>omitted for git grep]
     G --> S["Pathspecs after --<br/>paths as :(literal)…, excludes as :(exclude)…,<br/>globs bare"]
     S --> H[ArgumentList execution<br/>no shell, no string join]
-    H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1]
+    H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1<br/>GIT_NO_LAZY_FETCH=1]
 ```
 
 - **One argv producer.** Tools declare a typed `GitIntent`; a single `GitCommandBuilder` is the only code that
@@ -558,13 +558,19 @@ flowchart TD
 - **No shell.** The subprocess is started with an explicit argument list, not a joined string, so shell
   meta-characters can't leak.
 - **Scrubbed environment.** The child env is built from a small allowlist (`PATH`, locale vars, `HOME`, plus a few
-  Windows essentials) with fixed git neutralizers added. Everything else is dropped.
+  Windows essentials) with fixed git neutralizers added. Everything else is dropped. `GIT_NO_LAZY_FETCH=1` is one of
+  them. In a partial clone, or any repository whose config names a promisor remote, reading an object git does not have
+  would otherwise start a fetch from that remote, and the fetch runs the program the repository's config names for the
+  transport (for example `remote.<name>.uploadpack` for a remote at a local path, `core.sshCommand` for ssh, or a
+  remote helper). A missing object fails the call with `GitCommandError` instead (message
+  `git <subcommand> failed (exit 128)`), and the server log's `subprocess_exit` Warning for that call shows git's
+  reason in `stderr_tail` (`lazy fetching disabled` under an English or C locale). In a partial clone you trust, run
+  the same git command in your own shell once to fetch what it needs.
 
-Two paths are still open. A filter driver that a repository's config names (`filter.<driver>.clean` or
+One path is still open. A filter driver that a repository's config names (`filter.<driver>.clean` or
 `filter.<driver>.process`, matched through a `filter` attribute) can run when git reads a worktree file for
 `git_status`, a worktree `git_diff`, or `git_blame` without `ref`; the `suspicious_filter_invocation` Warning reports
-one that fails. In a partial clone, reading a missing object makes git start a fetch from the promisor remote, which
-can run a program the repository's config names (`remote.<name>.uploadpack`, `core.sshCommand`).
+one that fails.
 
 ---
 
@@ -592,7 +598,10 @@ TODO: Add instructions to build on Windows, macOS, and Linux.
 ## Requirements
 
 - **`git` on `PATH`**: required. This server runs your system `git` for every call; without it, tools fail with a
-  `GitNotInstalled` error. Any reasonably recent `git` works.
+  `GitNotInstalled` error. Any reasonably recent `git` works. The lazy-fetch block in the security model needs git
+  2.45.1 or later, or 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1, or a later release in the same series. git 2.45.0
+  honors `GIT_NO_LAZY_FETCH` only in part and an older git ignores it, so in a repository with a promisor remote a tool
+  call can still start a fetch there.
 - **.NET runtime**: *not* needed for the released binaries. Each release ships a self-contained, single-file
   executable per platform ([Releases and verification](../../README.md#releases-and-verification)), so there's nothing
   extra to install to run it.

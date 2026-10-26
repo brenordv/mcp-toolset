@@ -38,6 +38,20 @@ public class EnvironmentBuilderTests
         Assert.Equal("0", env["GIT_TERMINAL_PROMPT"]);
         Assert.Equal("1", env["GIT_CONFIG_NOSYSTEM"]);
         Assert.Equal("0", env["GIT_OPTIONAL_LOCKS"]);
+        Assert.Equal("1", env["GIT_NO_LAZY_FETCH"]);
+    }
+
+    [Fact]
+    public void Build_ParentDisablesLazyFetch_KeepsLazyFetchDisabled()
+    {
+        // Arrange
+        var parent = new Dictionary<string, string> { ["GIT_NO_LAZY_FETCH"] = "0" };
+
+        // Act
+        var env = EnvironmentBuilder.Build(parent);
+
+        // Assert
+        Assert.Equal("1", env["GIT_NO_LAZY_FETCH"]);
     }
 
     [Fact]

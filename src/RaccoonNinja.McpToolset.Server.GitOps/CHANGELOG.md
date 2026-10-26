@@ -1,3 +1,15 @@
+## v2.9.0
+- Fixed: in a repository whose config names a promisor remote (`remote.<name>.promisor=true`,
+  `remote.<name>.partialCloneFilter`, or `extensions.partialClone`), a tool call that read an object git did not have
+  made git fetch it from that remote, and the fetch ran the program the repository's config names for the transport,
+  for example `remote.<name>.uploadpack` for a remote at a local path or `core.sshCommand` for ssh. Every git process
+  the server starts now gets `GIT_NO_LAZY_FETCH=1`, next to `GIT_TERMINAL_PROMPT=0`. git 2.45.1 and later and the May
+  2024 security releases for 2.39 to 2.44 have the full check (the README's Requirements lists them); 2.45.0 honors
+  the variable only in part, and an older git ignores it.
+- Behavior change: in an ordinary partial clone, a call that needs an object the clone has not fetched (an old blob for
+  `git_show`, `git_diff`, `git_blame`, `git_file_at_ref`, or `git_grep` with `ref`) fails with `GitCommandError`
+  instead of fetching it.
+
 ## v2.8.0
 - Fixed: a repository's own config could make `git_log`, `git_show`, `git_reflog`, and `git_stash_list` run a program
   it names. With `log.showSignature=true`, git verifies each signed commit it shows by running the program

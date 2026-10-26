@@ -302,6 +302,7 @@ public class GitCommandBuilderTests
         Assert.Equal("0", env["GIT_TERMINAL_PROMPT"]);
         Assert.Equal("1", env["GIT_CONFIG_NOSYSTEM"]);
         Assert.Equal("0", env["GIT_OPTIONAL_LOCKS"]);
+        Assert.Equal("1", env["GIT_NO_LAZY_FETCH"]);
         Assert.False(env.ContainsKey("GIT_LITERAL_PATHSPECS"));
         Assert.True(env.ContainsKey("PATH"));
     }
