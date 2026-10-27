@@ -633,6 +633,11 @@ can't be opened. stdout is reserved for the MCP protocol.
 Files rotate at 10 MB, keeping 5 backups. On shutdown the server writes a `server_stop` summary with session metrics
 (call counts, cache hit rate, truncations, timeouts).
 
+Right after `server_start`, the server logs which git it found: a `git_version` line at Info whose `git_version` field
+holds the text after `git version ` (for example `2.55.0`), or a `git_version_unavailable` Warning with `error_code`
+`GitNotInstalled`, `GitTimeout`, or `GitCommandError` when git is missing, takes more than 5 seconds, exits non-zero, or
+prints something else; `git_exit_code` is set whenever git exited.
+
 ---
 
 ## Building from source
@@ -647,7 +652,7 @@ TODO: Add instructions to build on Windows, macOS, and Linux.
   `GitNotInstalled` error. Any reasonably recent `git` works. The lazy-fetch block in the security model needs git
   2.45.1 or later, or 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1, or a later release in the same series. git 2.45.0
   honors `GIT_NO_LAZY_FETCH` only in part and an older git ignores it, so in a repository with a promisor remote a tool
-  call can still start a fetch there.
+  call can still start a fetch there. The server log's `git_version` line shows the version of the git the server runs.
 - **.NET runtime**: *not* needed for the released binaries. Each release ships a self-contained, single-file
   executable per platform ([Releases and verification](../../README.md#releases-and-verification)), so there's nothing
   extra to install to run it.

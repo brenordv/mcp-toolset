@@ -1,3 +1,10 @@
+## v2.12.0
+- Log change: at startup the server runs `git version` once and logs, right after `server_start`, a `git_version` Info
+  line with a new `git_version` field, or a `git_version_unavailable` Warning with `error_code` (`GitNotInstalled`,
+  `GitTimeout`, or `GitCommandError`, with `git_exit_code` whenever git exited) when git is missing, takes more than
+  5 seconds, exits non-zero, or prints an unexpected line. The server starts in every one of those cases. The process
+  is not counted in the session metrics.
+
 ## v2.11.0
 - Fixed: `git_diff`, `git_show`, and `git_stash_show` reported a changed file under the whole `diff --git` header
   line instead of its path when the user's or the repository's git config set `diff.noprefix`,

@@ -16,8 +16,9 @@ namespace RaccoonNinja.McpToolset.Server.GitOps;
 /// 1. Configure logging (stderr or rotating file) before anything touches stdout.
 /// 2. Build the host with MCP server registration.
 /// 3. Install the stdout sentinel AFTER the host has captured Console.OpenStandardOutput().
-/// 4. Run the host.
-/// 5. On shutdown, emit a server_stop summary with metrics.
+/// 4. Log the git version (first statement in the try).
+/// 5. Run the host.
+/// 6. On shutdown, emit a server_stop summary with metrics.
 /// </summary>
 public static class Program
 {
@@ -51,6 +52,7 @@ public static class Program
         var reason = "graceful";
         try
         {
+            await GitVersionReader.LogAsync(bootstrapLogger, "git", CancellationToken.None);
             await builder.Build().RunAsync();
         }
         catch (OperationCanceledException)
