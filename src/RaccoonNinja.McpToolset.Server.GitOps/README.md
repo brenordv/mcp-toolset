@@ -65,7 +65,9 @@ A few rules apply to every call regardless of tool:
 - **Timeout**: 30 s wall-clock. If the subprocess runs longer, the process tree is killed and a `GitTimeout` error is
   returned.
 - **Output cap**: 8 MB per stream, truncate-then-flag. Oversized output sets `truncated: true` on the envelope instead
-  of blowing up memory.
+  of blowing up memory. The one exception is the filter-driver listing that runs before `git status`, `git diff`, and
+  `git blame` (see [Security model (long version)](#security-model-long-version)): a listing that hits the cap fails
+  the call with `GitCommandError`, since a driver past the cap would go unpinned.
 - **stdout protection**: a sentinel guards the stdio transport so stray writes can't corrupt the MCP protocol stream.
   All logging goes to a file or stderr.
 
@@ -100,10 +102,13 @@ information. The result is parsed from a known format rather than scraped from h
 The payload groups changes into `staged`, `unstaged`, and `untracked` lists and includes `branch`, `upstream`, `ahead`,
 `behind`, and an `is_clean` flag.
 
+A submodule with only uncommitted changes inside it is not listed, and a file under git-lfs or another filter driver
+is compared as its raw worktree bytes; see [Security model (long version)](#security-model-long-version).
+
 ```mermaid
 flowchart LR
     A[git_status: cwd] --> B[Resolve repo root]
-    B --> C["git status --porcelain=v2 -z --branch --ahead-behind"]
+    B --> C["git status --porcelain=v2 -z --branch --ahead-behind<br/>--ignore-submodules=dirty"]
     C --> D[StatusParser: split NUL records]
     D --> E[StatusResult<br/>branch · upstream · ahead/behind<br/>staged · unstaged · untracked · is_clean]
     E --> F[ResultEnvelope]
@@ -129,7 +134,9 @@ SHA before use, exactly like a plain ref.
 Each diff runs two passes: the patch itself (or `--name-status` for stat-only) and a companion `--numstat -z` pass.
 The two are merged into one `DiffResult` so every file carries both its hunks and its line counts. `contextLines`
 maps to git's `-U<n>`. Every pass runs with `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your
-git config cannot put escape codes in the patch.
+git config cannot put escape codes in the patch. A diff against the working tree (worktree mode, or `fromRef` or
+`toRef` alone) also runs every pass with `--ignore-submodules=dirty`, so a submodule with only uncommitted changes
+inside it is not listed; see [Security model (long version)](#security-model-long-version).
 
 ```mermaid
 flowchart TD
@@ -506,7 +513,7 @@ check out. Only argument names are echoed back, never values.
   - **There's no shell to trick.** The assistant never gets a command line. It fills in a form (which tool, which file, which commit), and the server assembles the real `git` command itself. Old tricks like hiding `; rm -rf` inside a filename go nowhere, because nothing interprets them as commands.
   - **It stays inside your repo.** Every file path is pinned to the repository folder. Attempts to climb out of it, reach network shares, or touch hidden file streams are rejected.
   - **Every input is treated as suspect.** Branch and commit names are checked against the real repo before use, and nothing the assistant sends can be mistaken for a secret command-line option.
-  - **Git itself is locked down.** Auto-running scripts (hooks), password prompts, and credential helpers are switched off, and the command runs in a stripped-down environment, so a booby-trapped repo can't hijack it.
+  - **Git itself is locked down.** Auto-running scripts (hooks and filter drivers), password prompts, and credential helpers are switched off, and the command runs in a stripped-down environment, so a booby-trapped repo can't hijack it.
   - **It can't run away.** Each call is capped at 30 seconds and 8 MB of output, then stopped: no runaway processes, no memory blowups.
   - **It doesn't leak.** Error messages and logs are scrubbed of your file names, search terms, and paths.
 
@@ -528,7 +535,7 @@ flowchart TD
     C --> E[Single argv builder]
     D --> E
     P --> E
-    E --> F[Fixed hardening prefix<br/>-c core.hooksPath=… -c credential.helper=…<br/>--no-pager]
+    E --> F[Fixed hardening prefix<br/>-c core.hooksPath=… -c credential.helper=…<br/>status/diff/blame: -c filter.NAME.clean= … per driver<br/>--no-pager]
     F --> G[--end-of-options before positional refs<br/>omitted for git grep]
     G --> S["Pathspecs after --<br/>paths as :(literal)…, excludes as :(exclude)…,<br/>globs bare"]
     S --> H[ArgumentList execution<br/>no shell, no string join]
@@ -566,11 +573,42 @@ flowchart TD
   `git <subcommand> failed (exit 128)`), and the server log's `subprocess_exit` Warning for that call shows git's
   reason in `stderr_tail` (`lazy fetching disabled` under an English or C locale). In a partial clone you trust, run
   the same git command in your own shell once to fetch what it needs.
+- **Filter drivers pinned.** `git status`, a `git diff` against the working tree, and `git blame` without a revision
+  hash worktree files, and hashing a file runs the `clean` or `process` command of the filter driver its `filter`
+  attribute selects (from `.gitattributes` or `.git/info/attributes`). The driver is defined in config
+  (`filter.<driver>.clean`, `filter.<driver>.process`), which a repository's own config can carry, and driver names are
+  arbitrary, so no fixed `-c` key covers them. Before each `git status`, `git diff`, and `git blame` it runs, the server
+  lists the drivers the config names (`git config -z --name-only --get-regexp '^filter\.'`, with the same prefix and
+  environment) and adds `-c filter.<driver>.clean= -c filter.<driver>.smudge= -c filter.<driver>.process=
+  -c filter.<driver>.required=false` for each; git runs nothing for a driver with no command. A driver name that
+  contains `=` (a `-c` argument cannot carry one) or is not valid UTF-8, or a listing longer than the 8 MB output cap,
+  fails the call with `GitCommandError`. Drivers from your global config are pinned too, so through the tools a file
+  under git-lfs, git-crypt, or another filter is compared as the raw bytes in your worktree: `git_status` can list such
+  a file as modified when only its timestamp changed, a worktree `git_diff` shows the stored pointer or ciphertext
+  against the raw content, and `git_blame` without `ref` attributes every line of such a file to the uncommitted
+  working-tree version. In a repository you trust, run git in your own shell for those files; running `git status`
+  there once, with the filter installed, writes the refreshed timestamps to the index, and `git_status` and a worktree
+  `git_diff` then leave those files out until their timestamps change again. To see which drivers the server pins and
+  which config file names each one, run `git config --show-origin --name-only --get-regexp '^filter\.'` in the
+  repository (entries whose origin is the system config file are ones the server never reads, since it runs git with
+  `GIT_CONFIG_NOSYSTEM=1`; the rest are the drivers it pins). With `MCP_GITOPS_LOG_LEVEL=DEBUG`, the call's
+  `argv_built` line shows four `-c <filter_driver>` pairs per pinned driver, never the name. The
+  `suspicious_filter_invocation` Warning stays as a tripwire: it fires when git's stderr shows
+  `external filter '<command>' failed` for a command with no `'` in it, and its `driver_name` field holds that command,
+  cut to 128 bytes. With the pins in place no tool call should produce it, so one most likely means a filter ran that
+  the server did not pin; a repository's config can also put that text into a git warning, so treat it as a lead, not
+  proof.
+- **Submodule worktrees are not entered.** Left to itself, `git status` and a `git diff` against the working tree run
+  `git status` inside every checked-out submodule, and that process reads the submodule's own config, filter drivers
+  included. `git_status` and a worktree `git_diff` pass `--ignore-submodules=dirty`, so a submodule whose commit moved
+  is still listed, but one with only uncommitted changes inside it is not. Call the tool with `cwd` inside the
+  submodule to see those. On those calls the flag also overrides a `submodule.<name>.ignore` or
+  `diff.ignoreSubmodules` setting, so a submodule commit change is listed even where that config would hide it.
 
-One path is still open. A filter driver that a repository's config names (`filter.<driver>.clean` or
-`filter.<driver>.process`, matched through a `filter` attribute) can run when git reads a worktree file for
-`git_status`, a worktree `git_diff`, or `git_blame` without `ref`; the `suspicious_filter_invocation` Warning reports
-one that fails.
+One path is still open. With `diff.submodule=diff` in a repository's config, a `git_diff`, `git_show`, or
+`git_stash_show` whose diff includes a submodule commit change makes git start `git diff` inside the submodule, without
+`--no-ext-diff` or `--no-textconv`, and that process reads the submodule's own config, so an external diff command or
+textconv driver it names can run.
 
 ---
 

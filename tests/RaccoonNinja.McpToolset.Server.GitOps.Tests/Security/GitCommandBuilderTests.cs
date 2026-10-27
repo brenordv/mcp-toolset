@@ -308,6 +308,32 @@ public class GitCommandBuilderTests
     }
 
     [Fact]
+    public void Build_WithFilterDrivers_PinsEachDriverAfterFixedConfig()
+    {
+        // Act
+        var (argv, _) = GitCommandBuilder.Build(BasicIntent("status"), ["lfs"]);
+
+        // Assert
+        var start = argv.IndexOf("filter.lfs.clean=");
+        Assert.Equal("-c", argv[start - 1]);
+        Assert.Equal(
+            ["filter.lfs.clean=", "-c", "filter.lfs.smudge=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false"],
+            argv.Skip(start).Take(7));
+        Assert.True(argv.IndexOf("log.showSignature=false") < start);
+        Assert.True(start < argv.IndexOf("--no-pager"));
+    }
+
+    [Fact]
+    public void Build_WithoutFilterDrivers_EmitsNoFilterPins()
+    {
+        // Act
+        var (argv, _) = GitCommandBuilder.Build(BasicIntent("status"));
+
+        // Assert
+        Assert.DoesNotContain(argv, token => token.StartsWith("filter.", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void HardeningArgvPrefix_ContainsFixedConfigAndGlobalFlags()
     {
         // Act
@@ -338,6 +364,21 @@ public class GitCommandBuilderTests
         Assert.Contains("--author=<author>", masked);
         Assert.Contains("<path>", masked);
         Assert.Contains("log.showSignature=false", masked);
+    }
+
+    [Fact]
+    public void MaskedForLog_MasksFilterDriverPins()
+    {
+        // Arrange
+        var intent = BasicIntent("status");
+        var (argv, _) = GitCommandBuilder.Build(intent, ["private-driver"]);
+
+        // Act
+        var masked = GitCommandBuilder.MaskedForLog(argv, intent);
+
+        // Assert
+        Assert.DoesNotContain("private-driver", string.Join(' ', masked));
+        Assert.Equal(4, masked.Count(token => token == "<filter_driver>"));
     }
 
     [Fact]

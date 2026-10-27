@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors;
@@ -95,7 +96,7 @@ public class ToolCommonTests
 
         var common = Build(runner: runner);
         var ctx = common.MakeContext("test");
-        var intent = new GitIntent { Subcommand = "status", RepoRoot = Path.GetTempPath() };
+        var intent = new GitIntent { Subcommand = "log", RepoRoot = Path.GetTempPath() };
 
         // Act
         var result = await common.ExecuteAsync(intent, ctx);
@@ -114,7 +115,7 @@ public class ToolCommonTests
         var runner = RunnerReturning(128, System.Text.Encoding.UTF8.GetBytes("fatal: bad revision"));
         var common = Build(runner: runner);
         var ctx = common.MakeContext("test");
-        var intent = new GitIntent { Subcommand = "status", RepoRoot = Path.GetTempPath() };
+        var intent = new GitIntent { Subcommand = "log", RepoRoot = Path.GetTempPath() };
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<GitCommandException>(() => common.ExecuteAsync(intent, ctx));
@@ -179,6 +180,84 @@ public class ToolCommonTests
         Assert.Equal(1L, (long)calls["git_test:error"]);
         Assert.False(calls.ContainsKey("git_test:ok"));
         Assert.Equal(1L, summary["git_command_errors_total"]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Status_ListsFilterDriversThenPinsThemOnStatus()
+    {
+        // Arrange
+        var runner = new ScriptedRunner(Completed(0, "filter.lfs.clean\0filter.lfs.process\0"), Completed(0));
+        var common = Build(runner: runner);
+        var intent = new GitIntent { Subcommand = "status", RepoRoot = Path.GetTempPath() };
+
+        // Act
+        await common.ExecuteAsync(intent, common.MakeContext("test"));
+
+        // Assert
+        Assert.Equal(2, runner.Calls.Count);
+        Assert.Equal(["config", "-z", "--name-only", "--get-regexp", @"^filter\."], runner.Calls[0].TakeLast(5));
+        Assert.Contains("status", runner.Calls[1]);
+        Assert.Contains("filter.lfs.clean=", runner.Calls[1]);
+        Assert.Contains("filter.lfs.required=false", runner.Calls[1]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Status_NoFilterDrivers_RunsStatusWithoutPins()
+    {
+        // Arrange
+        var runner = new ScriptedRunner(Completed(1), Completed(0));
+        var common = Build(runner: runner);
+        var intent = new GitIntent { Subcommand = "status", RepoRoot = Path.GetTempPath() };
+
+        // Act
+        await common.ExecuteAsync(intent, common.MakeContext("test"));
+
+        // Assert
+        Assert.Equal(2, runner.Calls.Count);
+        Assert.DoesNotContain(runner.Calls[1], token => token.StartsWith("filter.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WrapAsync_TruncatedDriverList_CountsTruncationAndToolErrorButNotGitCommandError()
+    {
+        // Arrange
+        var metrics = new SessionMetrics();
+        var runner = new ScriptedRunner(Completed(0, "filter.lfs.clean\0", truncated: true));
+        var common = Build(runner: runner, metrics: metrics);
+        var ctx = common.MakeContext("git_test");
+
+        // Act
+        var envelope = await common.WrapAsync(ctx, new RootHolder(), async () =>
+        {
+            await common.ExecuteAsync(new GitIntent { Subcommand = "status", RepoRoot = Path.GetTempPath() }, ctx);
+            return ToolCommon.SingleSuccess("unreachable", "/repo");
+        });
+
+        // Assert
+        Assert.Single(runner.Calls);
+        Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
+        Assert.False(envelope.Error.Detail.ContainsKey(LogFields.GitExitCode));
+        var summary = metrics.Summary();
+        var calls = (Dictionary<string, object>)summary["tool_calls_total"];
+        Assert.Equal(1L, (long)calls["git_test:error"]);
+        Assert.Equal(1L, summary["truncations_total"]);
+        Assert.Equal(0L, summary["git_command_errors_total"]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Log_RunsWithoutListingFilterDrivers()
+    {
+        // Arrange
+        var runner = new ScriptedRunner(Completed(0));
+        var common = Build(runner: runner);
+        var intent = new GitIntent { Subcommand = "log", RepoRoot = Path.GetTempPath() };
+
+        // Act
+        await common.ExecuteAsync(intent, common.MakeContext("test"));
+
+        // Assert
+        var argv = Assert.Single(runner.Calls);
+        Assert.Contains("log", argv);
     }
 
     [Fact]
@@ -265,4 +344,41 @@ public class ToolCommonTests
         // Assert
         Assert.Equal(3, env.Count);
     }
+
+    #region Test Helpers
+
+    private static RunResult Completed(int exitCode, string stdout = "", bool truncated = false)
+        => new()
+        {
+            Argv = [],
+            ExitCode = exitCode,
+            Stdout = Encoding.UTF8.GetBytes(stdout),
+            Stderr = [],
+            DurationMs = 1,
+            Truncated = truncated,
+        };
+
+    /// <summary>Answers each run with the next queued result and records the argv of every run.</summary>
+    private sealed class ScriptedRunner(params RunResult[] results) : IGitProcessRunner
+    {
+        private readonly Queue<RunResult> _results = new(results);
+        private readonly List<IList<string>> _calls = [];
+
+        public IReadOnlyList<IList<string>> Calls => [.. _calls];
+
+        public Task<RunResult> RunAsync(
+            IList<string> argv,
+            IDictionary<string, string> env,
+            string workingDirectory,
+            int? timeoutMs = null,
+            int? outputCapBytes = null,
+            int? callId = null,
+            CancellationToken cancellationToken = default)
+        {
+            _calls.Add(argv);
+            return Task.FromResult(_results.Dequeue());
+        }
+    }
+
+    #endregion
 }

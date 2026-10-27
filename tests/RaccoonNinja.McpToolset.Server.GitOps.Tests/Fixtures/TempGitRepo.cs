@@ -31,6 +31,12 @@ internal sealed class TempGitRepo : IDisposable
     /// <summary>Where <see cref="ConfigureLazyFetchTrap"/> writes the script <c>remote.origin.uploadpack</c> names.</summary>
     private const string UploadPackTrapFile = ".git/fake-upload-pack";
 
+    /// <summary>Where <see cref="ArmFilterDriverTrap"/> writes the script a filter driver's <c>clean</c> names, under a repository's <c>.git</c>.</summary>
+    private const string FilterTrapFile = ".git/fake-filter";
+
+    /// <summary>The one file <see cref="AddSubmoduleWithFilterDriverTrap"/> commits in the submodule.</summary>
+    private const string SubmoduleFile = "s.txt";
+
     /// <summary>Appended to the script's path to name the marker file the script creates when it runs.</summary>
     private const string TrapMarkerSuffix = ".ran";
 
@@ -39,6 +45,12 @@ internal sealed class TempGitRepo : IDisposable
     /// stderr, and exits 1. LF endings, so the shebang line reads <c>/bin/sh</c>.
     /// </summary>
     private const string TrapScript = $"#!/bin/sh\n: > \"$0{TrapMarkerSuffix}\"\necho \"trap program ran\" >&2\nexit 1\n";
+
+    /// <summary>
+    /// How far <see cref="ArmFilterDriverTrap"/> moves a tracked file's modification time, so it no longer matches the time
+    /// the index recorded and git hashes the file again.
+    /// </summary>
+    private static readonly TimeSpan StatDirtyShift = TimeSpan.FromMinutes(-10);
 
     public TempGitRepo()
     {
@@ -177,6 +189,58 @@ internal sealed class TempGitRepo : IDisposable
         return marker;
     }
 
+    /// <summary>
+    /// Configure the repository as a hostile one could: <c>filter.trap.clean</c> names a script that creates a marker file
+    /// whenever anything runs it, <c>.git/info/attributes</c> selects the driver for every path, and
+    /// <paramref name="trackedPath"/> gets a modification time the index did not record, so the next status hashes it
+    /// through the filter. Then check that the trap fires by running <c>git --no-optional-locks status</c> once, without
+    /// the server's pins (with optional locks, that status would write the refreshed index and the file would stop being
+    /// stat-dirty), so a trap test never passes on a machine where git cannot start the script: the calling test is
+    /// skipped on Windows, where git needs <c>sh</c> on its <c>PATH</c> to start it, and fails anywhere else. The check
+    /// fires through <c>git status</c>, and a worktree <c>git diff</c> or a <c>git blame</c> without a revision reach the
+    /// same clean conversion, so it gates those callers as well.
+    /// </summary>
+    /// <param name="trackedPath">A <c>/</c>-separated path committed at <c>HEAD</c>, unchanged in the worktree.</param>
+    /// <returns>The marker file's path, with the file deleted again. It exists afterwards only if git ran the script.</returns>
+    public string ConfigureFilterDriverTrap(string trackedPath)
+    {
+        var marker = ArmFilterDriverTrap(string.Empty, "trap", trackedPath);
+        Run("--no-optional-locks", "status", "--porcelain");
+        RequireTrapFired(marker, "git did not run the filter.trap.clean script on this machine, so the filter-driver trap cannot fire");
+        File.Delete(marker);
+        return marker;
+    }
+
+    /// <summary>
+    /// Add a checked-out submodule at <paramref name="submodulePath"/> as a hostile repository could: a repository of its
+    /// own with one committed file, recorded in this repository as a committed gitlink, whose own config and
+    /// <c>.git/info/attributes</c> select a <c>filter.subtrap.clean</c> script that creates a marker file, and whose file
+    /// gets a modification time the submodule's index did not record. A status here then runs <c>git status</c> inside the
+    /// submodule, which hashes that file through the submodule's filter. Check that the trap fires the same way
+    /// <see cref="ConfigureFilterDriverTrap"/> does; a <c>git diff</c> against the working tree starts the submodule's
+    /// <c>git status</c> from the same check, so the status-based self-check gates diff callers as well.
+    /// </summary>
+    /// <param name="submodulePath">A <c>/</c>-separated path that does not exist yet.</param>
+    /// <returns>The marker file's path, with the file deleted again. It exists afterwards only if git ran the script.</returns>
+    public string AddSubmoduleWithFilterDriverTrap(string submodulePath)
+    {
+        Run("init", "-b", "main", submodulePath);
+        Run("-C", submodulePath, "config", "user.email", IdentityEmail);
+        Run("-C", submodulePath, "config", "user.name", IdentityName);
+        Run("-C", submodulePath, "config", "commit.gpgsign", "false");
+        WriteFile($"{submodulePath}/{SubmoduleFile}", "sub\n");
+        Run("-C", submodulePath, "add", SubmoduleFile);
+        Run("-C", submodulePath, "commit", "-m", "submodule");
+        Run("add", submodulePath);
+        Run("commit", "-m", "add submodule");
+
+        var marker = ArmFilterDriverTrap($"{submodulePath}/", "subtrap", SubmoduleFile);
+        Run("--no-optional-locks", "status", "--porcelain");
+        RequireTrapFired(marker, "git did not run the submodule's filter.subtrap.clean script on this machine, so the submodule filter-driver trap cannot fire");
+        File.Delete(marker);
+        return marker;
+    }
+
     public void Dispose()
     {
         if (!Directory.Exists(RepoPath))
@@ -251,6 +315,26 @@ internal sealed class TempGitRepo : IDisposable
         }
 
         Assert.Fail(reason);
+    }
+
+    /// <summary>
+    /// In the repository at <paramref name="repoPrefix"/>, point <c>filter.&lt;driver&gt;.clean</c> at a trap script, select
+    /// the driver for every path through that repository's <c>.git/info/attributes</c>, and move
+    /// <paramref name="trackedPath"/>'s modification time by <see cref="StatDirtyShift"/>.
+    /// </summary>
+    /// <param name="repoPrefix">Empty for this repository, or a submodule's <c>/</c>-separated path with a trailing <c>/</c>.</param>
+    /// <param name="driver">The driver name to configure and select.</param>
+    /// <param name="trackedPath">A file committed in that repository, relative to its root.</param>
+    /// <returns>The path of the marker file the script creates when git runs it.</returns>
+    private string ArmFilterDriverTrap(string repoPrefix, string driver, string trackedPath)
+    {
+        var script = WriteTrapScript(repoPrefix + FilterTrapFile);
+        var repoDirectory = Path.Combine(RepoPath, repoPrefix.Replace('/', Path.DirectorySeparatorChar));
+        Run("-C", repoDirectory, "config", $"filter.{driver}.clean", $"'{script.Replace('\\', '/')}'");
+        WriteFile($"{repoPrefix}.git/info/attributes", $"* filter={driver}\n");
+        var file = PrepareTarget(repoPrefix + trackedPath);
+        File.SetLastWriteTimeUtc(file, File.GetLastWriteTimeUtc(file) + StatDirtyShift);
+        return script + TrapMarkerSuffix;
     }
 
     private string PrepareTarget(string relativePath)

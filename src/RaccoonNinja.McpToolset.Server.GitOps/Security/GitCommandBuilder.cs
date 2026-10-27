@@ -64,18 +64,41 @@ public static class GitCommandBuilder
     }
 
     /// <summary>Convert a <see cref="GitIntent"/> into a hardened argv list plus the child env.</summary>
-    public static (IList<string> Argv, IDictionary<string, string> Env) Build(GitIntent intent, string gitExecutable = "git")
+    /// <param name="intent">The invocation to serialize.</param>
+    /// <param name="filterDrivers">
+    /// Filter driver names to pin, as <see cref="FilterDriverPins.ParseDriverNames"/> returns them; <c>null</c> pins none.
+    /// Each name comes from the config git reads, which includes the repository's own, so its argv tokens are masked in logs.
+    /// </param>
+    /// <param name="gitExecutable">The git executable to start.</param>
+    /// <returns>The argv, executable first, and the child environment.</returns>
+    public static (IList<string> Argv, IDictionary<string, string> Env) Build(
+        GitIntent intent,
+        IReadOnlyCollection<string> filterDrivers = null,
+        string gitExecutable = "git")
     {
         ArgumentNullException.ThrowIfNull(intent);
 
         var argv = new List<string> { gitExecutable };
         var provenance = new Dictionary<int, string>();
 
-        // 1. Fixed hardening config.
+        // 1. Fixed hardening config, then the pins for each filter driver the config git reads names.
         foreach (var (key, value) in FixedConfig)
         {
             argv.Add("-c");
             argv.Add($"{key}={value}");
+        }
+
+        if (filterDrivers is not null)
+        {
+            foreach (var driver in filterDrivers)
+            {
+                foreach (var (key, value) in FilterDriverPins.PinsFor(driver))
+                {
+                    argv.Add("-c");
+                    provenance[argv.Count] = "filter_driver";
+                    argv.Add($"{key}={value}");
+                }
+            }
         }
 
         // 2. Global flags.

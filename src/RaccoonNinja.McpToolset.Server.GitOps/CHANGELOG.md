@@ -1,3 +1,35 @@
+## v2.10.0
+- Fixed: a filter driver that a repository's config names (`filter.<driver>.clean` or `filter.<driver>.process`),
+  selected through a `filter` attribute in `.gitattributes` or `.git/info/attributes`, ran when `git_status`, a
+  worktree `git_diff`, or `git_blame` without `ref` read a worktree file; for `git_status`, every file whose timestamp
+  no longer matched the index, which is every file in a copied repository. Before each `git status`, `git diff`, and
+  `git blame`, the server now lists the drivers the config names and pins each one's `clean`, `smudge`, and `process`
+  to empty and `required` to `false` with `-c`. A driver name that contains `=` or is not valid UTF-8, or a listing
+  longer than the 8 MB output cap, fails the call with `GitCommandError`.
+- Fixed: `git_status` and a worktree `git_diff` made git run `git status` inside each checked-out submodule, with the
+  submodule's own config and filter drivers. Both now pass `--ignore-submodules=dirty`.
+- Behavior change: drivers from your global config are pinned too, so a file under git-lfs, git-crypt, or another
+  filter is compared as its raw worktree bytes: `git_status` can list it as modified when only its timestamp changed,
+  a worktree `git_diff` shows the stored pointer or ciphertext against the raw content, and `git_blame` without `ref`
+  attributes every line to the uncommitted working-tree version. In a repository you trust, running `git status` once
+  in your own shell, with the filter installed, refreshes the index's timestamps and clears those files from
+  `git_status` and a worktree `git_diff`. A submodule with only uncommitted changes inside it is no longer listed by
+  `git_status` or a worktree `git_diff`; one whose commit moved still is, even where `submodule.<name>.ignore` or
+  `diff.ignoreSubmodules` would hide it.
+- Log change: each `git status`, `git diff`, and `git blame` process is preceded by a `git config` process with its own
+  `argv_built` and `subprocess_exit` debug lines under the same `call_id`. That `subprocess_exit` shows
+  `git_exit_code` 1 when the config names no filter driver, which is not an error. The pins show in the next
+  `argv_built` line as `-c <filter_driver>`, four per driver, with `argv_len` 8 higher per driver, and the `argv_built`
+  line for `git_status` and for each `git_diff` pass that reads the working tree shows `--ignore-submodules=dirty`. A
+  listing that hits the output cap, or a driver name the server cannot pin, logs only the call's `tool_error` at Error,
+  with the fixed message and no `git_exit_code`. `suspicious_filter_invocation` is unchanged, and with the pins in
+  place no call should produce it.
+- Metrics change: the listing is a git subprocess, so `subprocess_duration_ms_p50` and `subprocess_duration_ms_p95` get
+  one more sample per `git_status` and `git_blame` call and two more per `git_diff` call, and are not comparable with an
+  earlier version's `server_stop` summary. A listing that hits the 8 MB cap counts in `truncations_total`. The two
+  refusals count as `error` in `tool_calls_total` and not in `git_command_errors_total`, which counts only git exits a
+  tool does not allow.
+
 ## v2.9.0
 - Fixed: in a repository whose config names a promisor remote (`remote.<name>.promisor=true`,
   `remote.<name>.partialCloneFilter`, or `extensions.partialClone`), a tool call that read an object git did not have
