@@ -36,7 +36,8 @@ public sealed class GitStashShowTool(ToolCommon common)
                 Subcommand = "stash",
                 SubSubcommand = "show",
                 RepoRoot = root,
-                Flags = ["-p", .. DiffParser.PatchShapeFlags],
+                Flags = ["-p", .. DiffParser.StashPatchShapeFlags],
+                ConfigPins = DiffParser.StashHeaderPrefixConfig,
                 VerifiedRefs = [stashRef],
             };
             var numstatIntent = new GitIntent
@@ -44,7 +45,8 @@ public sealed class GitStashShowTool(ToolCommon common)
                 Subcommand = "stash",
                 SubSubcommand = "show",
                 RepoRoot = root,
-                Flags = ["--numstat", "-z", .. DiffParser.PatchShapeFlags],
+                Flags = ["--numstat", "-z", .. DiffParser.StashPatchShapeFlags],
+                ConfigPins = DiffParser.StashHeaderPrefixConfig,
                 VerifiedRefs = [stashRef],
             };
             var unified = await common.ExecuteAsync(unifiedIntent, ctx, cancellationToken: cancellationToken);

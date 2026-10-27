@@ -27,6 +27,13 @@ public sealed class GitIntent
     /// <summary>Pathspecs supplied by the user, each tagged with the magic the builder prefixes. The tool confines or validates every value before adding it here.</summary>
     public IList<Pathspec> Pathspecs { get; init; } = [];
 
+    /// <summary>
+    /// <c>-c</c> pairs for this one invocation. Server constants only, never user input: a value here is config git
+    /// obeys, and keys such as <c>core.fsmonitor</c> or <c>diff.external</c> run programs. The builder writes them before
+    /// the fixed hardening config, so a pin that repeats one of its keys cannot beat it. <c>null</c> means none.
+    /// </summary>
+    public IReadOnlyList<(string Key, string Value)> ConfigPins { get; init; }
+
     /// <summary>Map <c>argv_index → param_name</c> populated during build for masked DEBUG logging.</summary>
     public IDictionary<int, string> Provenance { get; set; } = new Dictionary<int, string>();
 }

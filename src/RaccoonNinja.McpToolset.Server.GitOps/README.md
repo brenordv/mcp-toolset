@@ -429,16 +429,19 @@ flowchart LR
 Returns the diff for a single stash (`index`, 0 = most recent) as a `DiffResult`, using the same two-pass
 patch + `--numstat -z` assembly as `git_diff`. A negative index returns a `RejectedArgument` error. Every pass runs
 with `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your git config cannot put escape codes in
-the patch. Every pass also runs with `--src-prefix=a/ --dst-prefix=b/ --submodule=short`, so `diff.noprefix`,
+the patch. Every pass also runs with `--submodule=short` and with
+`-c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.srcPrefix=a/ -c diff.dstPrefix=b/`, so `diff.noprefix`,
 `diff.mnemonicPrefix`, `diff.srcPrefix`, `diff.dstPrefix`, or `diff.submodule` in your git config cannot change the
-`diff --git a/<path> b/<path>` header each file is read from.
+`diff --git a/<path> b/<path>` header each file is read from. The prefixes are pinned through config here, not with
+`--src-prefix=` and `--dst-prefix=` as in `git_diff`, because `git stash show` in git 2.52.0 through 2.55.x garbles a
+prefix given on its command line.
 
 ```mermaid
 flowchart TD
     A["git_stash_show: cwd, index"] --> B[Resolve root]
     B --> C{index >= 0?}
     C -- no --> D[RejectedArgument error]
-    C -- yes --> E["stash show -p --no-color --src-prefix=a/ --dst-prefix=b/<br/>--submodule=short stash@{index}<br/>(+ the same with --numstat -z)"]
+    C -- yes --> E["-c diff.noprefix=false -c diff.mnemonicPrefix=false<br/>-c diff.srcPrefix=a/ -c diff.dstPrefix=b/<br/>stash show -p --no-color --submodule=short stash@{index}<br/>(+ the same with --numstat -z)"]
     E --> F[DiffParser: merge patch + counts]
     F --> G[DiffResult]
     G --> H[ResultEnvelope]

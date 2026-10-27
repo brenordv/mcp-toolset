@@ -81,7 +81,17 @@ public static class GitCommandBuilder
         var argv = new List<string> { gitExecutable };
         var provenance = new Dictionary<int, string>();
 
-        // 1. Fixed hardening config, then the pins for each filter driver the config git reads names.
+        // 1. The intent's own config pins, then the fixed hardening config, which wins over a pin that repeats one of its
+        // keys, then the pins for each filter driver the config git reads names.
+        if (intent.ConfigPins is not null)
+        {
+            foreach (var (key, value) in intent.ConfigPins)
+            {
+                argv.Add("-c");
+                argv.Add($"{key}={value}");
+            }
+        }
+
         foreach (var (key, value) in FixedConfig)
         {
             argv.Add("-c");

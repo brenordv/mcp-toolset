@@ -10,11 +10,13 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 public static class DiffParser
 {
     /// <summary>
-    /// Flags every patch-producing git invocation passes so the output has the one shape <see cref="ParseUnified"/>
-    /// reads, whatever the user's or the repository's git config says: no color escapes (<c>color.ui</c>,
-    /// <c>color.diff</c>), the <c>a/</c> and <c>b/</c> header prefixes the reader splits on (<c>diff.noprefix</c>,
-    /// <c>diff.mnemonicPrefix</c>, <c>diff.srcPrefix</c>, <c>diff.dstPrefix</c>), and the <c>short</c> submodule
-    /// format, the only one that prints a <c>diff --git</c> header for a submodule (<c>diff.submodule</c>).
+    /// Flags the <c>git diff</c> and <c>git show</c> patch passes add so the output has the one shape
+    /// <see cref="ParseUnified"/> reads, whatever the user's or the repository's git config says: no color escapes
+    /// (<c>color.ui</c>, <c>color.diff</c>), the <c>a/</c> and <c>b/</c> header prefixes the reader splits on
+    /// (<c>diff.noprefix</c>, <c>diff.mnemonicPrefix</c>, <c>diff.srcPrefix</c>, <c>diff.dstPrefix</c>), and the
+    /// <c>short</c> submodule format, the only one that prints a <c>diff --git</c> header for a submodule
+    /// (<c>diff.submodule</c>). <c>git stash show</c> gets the same pins from <see cref="StashPatchShapeFlags"/> and
+    /// <see cref="StashHeaderPrefixConfig"/>.
     /// </summary>
     public static readonly IReadOnlyList<string> PatchShapeFlags =
     [
@@ -22,6 +24,32 @@ public static class DiffParser
         "--src-prefix=a/",
         "--dst-prefix=b/",
         "--submodule=short",
+    ];
+
+    /// <summary>
+    /// The <see cref="PatchShapeFlags"/> entries <c>git stash show</c> takes safely: no color escapes and the
+    /// <c>short</c> submodule format. Its header prefixes come from <see cref="StashHeaderPrefixConfig"/>.
+    /// </summary>
+    public static readonly IReadOnlyList<string> StashPatchShapeFlags =
+    [
+        "--no-color",
+        "--submodule=short",
+    ];
+
+    /// <summary>
+    /// <c>-c</c> pairs that give <c>git stash show</c> the <c>a/</c> and <c>b/</c> header prefixes whatever
+    /// <c>diff.noprefix</c>, <c>diff.mnemonicPrefix</c>, <c>diff.srcPrefix</c>, or <c>diff.dstPrefix</c> say. They are
+    /// config rather than <c>--src-prefix=</c> and <c>--dst-prefix=</c> because <c>git stash show</c> in git 2.52.0
+    /// through 2.55.x frees the arguments it parsed before it prints the diff, so a prefix it was given on the command
+    /// line comes out garbled, while git copies config values into its own storage. A git older than 2.45 does not read
+    /// <c>diff.srcPrefix</c> or <c>diff.dstPrefix</c>, from the command line or from a repository's config.
+    /// </summary>
+    public static readonly IReadOnlyList<(string Key, string Value)> StashHeaderPrefixConfig =
+    [
+        ("diff.noprefix", "false"),
+        ("diff.mnemonicPrefix", "false"),
+        ("diff.srcPrefix", "a/"),
+        ("diff.dstPrefix", "b/"),
     ];
 
     /// <summary>Parse <c>git diff --numstat -z</c> into <c>path → (additions, deletions)</c>.</summary>

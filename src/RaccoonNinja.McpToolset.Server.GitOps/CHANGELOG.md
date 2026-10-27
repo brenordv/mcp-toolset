@@ -3,14 +3,18 @@
   line instead of its path when the user's or the repository's git config set `diff.noprefix`,
   `diff.mnemonicPrefix` (worktree, staged, and `HEAD`-to-worktree diffs), `diff.srcPrefix`, or `diff.dstPrefix`,
   because the parser reads the path after ` b/`; the numstat overlay then missed the file. With `diff.submodule`
-  set to `log` or `diff`, a changed submodule was missing from `files`. The three now pass
-  `--src-prefix=a/ --dst-prefix=b/ --submodule=short` next to `--no-color` on every diff pass.
+  set to `log` or `diff`, a changed submodule was missing from `files`. `git_diff` and `git_show` now pass
+  `--src-prefix=a/ --dst-prefix=b/ --submodule=short` next to `--no-color` on every diff pass. `git_stash_show` passes
+  `--submodule=short` and pins the prefixes with
+  `-c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.srcPrefix=a/ -c diff.dstPrefix=b/`, because
+  `git stash show` in git 2.52.0 through 2.55.x garbles a prefix given on its command line.
 - Fixed: with `diff.submodule=diff` in a repository's config, a `git_diff`, `git_show`, or `git_stash_show` whose diff
   included a submodule commit change made git start `git diff` inside the submodule, without `--no-ext-diff` or
   `--no-textconv`, so an external diff command or textconv driver the submodule's own config names could run.
   `--submodule=short` overrides the key, and git starts no process inside the submodule.
-- Log change: the `argv_built` debug line shows the three new flags on every `git_diff` and `git_stash_show` pass
-  and on the `git_show` patch pass, and its `argv_len` is 3 higher on each of those passes.
+- Log change: the `argv_built` debug line shows the three new flags on each `git diff` pass of `git_diff` and on the
+  `git_show` patch pass, with `argv_len` 3 higher, and on each `git stash show` pass of `git_stash_show` the four
+  `-c diff.*` pairs in front of the fixed `-c` pairs plus `--submodule=short`, with `argv_len` 9 higher.
 
 ## v2.10.0
 - Fixed: a filter driver that a repository's config names (`filter.<driver>.clean` or `filter.<driver>.process`),

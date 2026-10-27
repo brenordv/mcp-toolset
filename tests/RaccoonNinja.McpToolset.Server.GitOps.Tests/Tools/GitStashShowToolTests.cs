@@ -40,6 +40,7 @@ public sealed class GitStashShowToolTests : IDisposable
     [Theory]
     [InlineData("color.ui", "always")]
     [InlineData("diff.noprefix", "true")]
+    [InlineData("diff.dstPrefix", "x/")]
     public async Task StashShow_WithPatchShapeConfig_ReturnsChangedFile(string configKey, string configValue)
     {
         // Arrange

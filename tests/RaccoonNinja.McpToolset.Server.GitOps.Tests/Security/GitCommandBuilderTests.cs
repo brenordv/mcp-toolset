@@ -334,6 +334,27 @@ public class GitCommandBuilderTests
     }
 
     [Fact]
+    public void Build_WithConfigPins_EmitsEachPinBeforeFixedConfig()
+    {
+        // Arrange
+        var intent = new GitIntent
+        {
+            Subcommand = "stash",
+            RepoRoot = Path.GetTempPath(),
+            ConfigPins = [("diff.noprefix", "false"), ("diff.srcPrefix", "a/")],
+        };
+
+        // Act
+        var (argv, _) = GitCommandBuilder.Build(intent);
+
+        // Assert
+        var start = argv.IndexOf("diff.noprefix=false");
+        Assert.Equal("-c", argv[start - 1]);
+        Assert.Equal(["diff.noprefix=false", "-c", "diff.srcPrefix=a/"], argv.Skip(start).Take(3));
+        Assert.True(start < argv.IndexOf("core.fsmonitor="));
+    }
+
+    [Fact]
     public void HardeningArgvPrefix_ContainsFixedConfigAndGlobalFlags()
     {
         // Act
