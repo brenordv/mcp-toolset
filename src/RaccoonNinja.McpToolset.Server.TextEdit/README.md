@@ -36,7 +36,10 @@ share one selector: give exactly one of `glob` (primary), `regex`, or `paths`, o
 in the scope", optionally narrowed by `extensions`. A glob with no `/` matches the basename at any depth, so
 `*.cs` is recursive. Ignore rules (`.gitignore`, the agent-ignore files, `.mcpignore`) always apply; there is no `include_ignored` on
 the write path. The ignore files themselves are never written: a selected `.gitignore`, agent-ignore
-file, or `.mcpignore` is refused with `ignore_file`.
+file, or `.mcpignore` is refused with `ignore_file`. An ignore file the server sees but cannot read fails
+the call, and so does a directory it cannot list on the way to a requested path or to a scoped `cwd`, since
+it cannot know whether that directory holds an ignore file. A selection skips a subdirectory it cannot
+list; a subdirectory it can list but whose ignore file it cannot open fails the selection.
 
 **Scoping a call.** The optional `cwd` argument is an absolute working directory inside the base root. Pass
 it to scope an edit to one project: the selector and every write are confined to that `cwd`, so a scoped

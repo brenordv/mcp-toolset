@@ -227,6 +227,11 @@ remain: a backslash inside brackets is a literal character, POSIX classes such a
 such a line). A line the server cannot compile is skipped; every other line
 applies, and the secret denylist and content scan are unaffected.
 
+An ignore file the server sees but cannot read fails the call, and so does a directory it cannot list on
+the way to a requested path or to a scoped `cwd`, since it cannot know whether that directory holds an
+ignore file. A walk skips a subdirectory it cannot list; a subdirectory it can list but whose ignore file
+it cannot open fails the walk.
+
 ## Package roots
 
 Package roots let one instance also search out-of-tree dependency caches (the NuGet, Cargo, or npm stores,

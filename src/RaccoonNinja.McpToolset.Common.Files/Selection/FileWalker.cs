@@ -11,7 +11,9 @@ namespace RaccoonNinja.McpToolset.Common.Files.Selection;
 /// symlink cycle impossible, and it counts every skipped link so the caller can report an aggregate rather
 /// than leave the entries looking mysteriously absent. Confinement and the denylist are the security
 /// controls; ignore is a convenience rail a caller re-includes past with the <c>IncludeIgnored</c> globs.
-/// The result is sorted ordinal by root-relative path so pagination is deterministic.
+/// A subdirectory the walker cannot list is pruned; the walk's start directory, or a directory on the path
+/// to it, that cannot be listed fails the walk. The result is sorted ordinal by root-relative path so
+/// pagination is deterministic.
 /// </summary>
 public sealed class FileWalker
 {
@@ -187,7 +189,19 @@ public sealed class FileWalker
             results.Add(ToEntry(info, relativePath, isDirectory: true));
         }
 
-        var childRules = IgnoreRules.Combine([frame.Rules, IgnoreRules.Load(info.FullName, relativePath)]);
+        IgnoreRules own;
+        try
+        {
+            own = IgnoreRules.Load(info.FullName, relativePath);
+        }
+        catch (IgnoreDirectoryUnlistableException)
+        {
+            // A directory the walker cannot list yields no entries (EnumerateOrdered returns none for it), so
+            // nothing beneath it can surface and there is nothing its ignore files could have hidden.
+            return;
+        }
+
+        var childRules = IgnoreRules.Combine([frame.Rules, own]);
         stack.Push(new Frame(info.FullName, relativePath, childRules, InReIncludedSubtree: false));
     }
 

@@ -355,6 +355,33 @@ public sealed class FileWalkerTests : IDisposable
         Assert.Throws<ArgumentException>(() => _walker.Walk(new FileWalkOptions { Start = "missing" }));
     }
 
+    [Fact]
+    public void Walk_UnlistableSubdirectory_IsPrunedNotFailed()
+    {
+        SkipUnlessUnixModesApply();
+
+        // Arrange
+        Write("sub/.gitignore", "*.log\n");
+        Write("sub/a.txt", "a");
+        Write("top.txt", "t");
+        var sub = Path.Combine(_rootDir, "sub");
+        MakeUnlistable(sub);
+        try
+        {
+            // Act
+            var result = _walker.Walk(new FileWalkOptions());
+
+            // Assert
+            Assert.Equal(["top.txt"], Paths(result));
+        }
+        finally
+        {
+            MakeListable(sub);
+        }
+    }
+
+    #region Test Helpers
+
     private static string[] Paths(WalkResult result)
         => result.Entries.Select(entry => entry.RelativePath).ToArray();
 
@@ -423,4 +450,39 @@ public sealed class FileWalkerTests : IDisposable
             return false;
         }
     }
+
+    private static void SkipUnlessUnixModesApply()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Unix file modes do not apply on Windows.");
+        }
+
+        if (Environment.IsPrivilegedProcess)
+        {
+            Assert.Skip("A privileged process bypasses directory mode bits.");
+        }
+    }
+
+    private static void MakeUnlistable(string directory)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        File.SetUnixFileMode(directory, UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    private static void MakeListable(string directory)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    #endregion
 }

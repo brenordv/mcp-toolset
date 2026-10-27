@@ -1,3 +1,15 @@
+## v1.8.0
+- Fixed: which ignore files a directory holds was decided by `File.Exists` per name, which reports an
+  existing file as absent when the server cannot read its attributes or list its directory, so such a
+  file's rules were silently not applied. Presence now comes from the directory listing, and ignore-file
+  names match case-insensitively on every platform. Behavior change: a `read_lines`, `read_json`,
+  `inspect_files`, or `search_text` call that names a path inside a directory the server can enter but not
+  list now fails with `InternalError`, as does a walk whose `cwd` is such a directory or lies under one; a
+  walk still skips such a subdirectory, and a subdirectory the server can list but whose ignore file it
+  cannot open now fails the walk. The `tool_error` log line for the failed call names the directory by its
+  root-relative path (`.` for the root) and the filesystem exception type; no new log field. Both servers
+  share the fix through `Common.Files`.
+
 ## v1.7.0
 - Fixed: an extra deny entry containing a `/` (`MCP_TEXTSEARCH_EXTRA_DENY=**/.claude/settings*.json`) did
   not cover a call whose `cwd` was at or inside the directory it names, because the denylist was tested

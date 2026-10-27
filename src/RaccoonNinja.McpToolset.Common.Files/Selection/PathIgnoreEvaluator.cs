@@ -10,8 +10,11 @@ namespace RaccoonNinja.McpToolset.Common.Files.Selection;
 /// missing ancestor tests: it accumulates the project ignore-file chain (<c>.gitignore</c>, the agent-ignore files, <c>.mcpignore</c>) from the root down
 /// and reports the path ignored when any ancestor directory or the leaf itself matches. An instance
 /// remembers each directory's rule chain, for a caller that tests many paths under one root in a single
-/// operation (a filtered walk). Like <see cref="IgnoreRules"/>, it is not the secret control; secrets are
-/// guarded by <see cref="Security.SecretDenylist"/> and the content scan.
+/// operation (a filtered walk). A directory on the path that exists but cannot be listed throws
+/// <see cref="IgnoreDirectoryUnlistableException"/>: on this route the caller can open a file by name inside
+/// such a directory, so its rules must be known or the read must not happen. Like <see cref="IgnoreRules"/>,
+/// it is not the secret control; secrets are guarded by <see cref="Security.SecretDenylist"/> and the content
+/// scan.
 /// </summary>
 public sealed class PathIgnoreEvaluator
 {
