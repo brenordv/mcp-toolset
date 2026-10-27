@@ -98,18 +98,17 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
     }
 
     /// <summary>
-    /// Server-built diff flags: <c>--no-color</c> always, because a <c>color.ui</c> or <c>color.diff</c> setting of
-    /// <c>always</c> in the user's or the repository's config would wrap the patch in escape codes the parser cannot
-    /// read; <c>--cached</c> when diffing the staged index; and <c>--ignore-submodules=dirty</c> when the diff reads the
-    /// working tree, because git otherwise runs <c>git status</c> inside each checked-out submodule, with the submodule's
-    /// own config and filter drivers.
+    /// Server-built diff flags: <see cref="DiffParser.PatchShapeFlags"/> always, so the user's or the repository's
+    /// config cannot change the patch shape the parser reads; <c>--cached</c> when diffing the staged index; and
+    /// <c>--ignore-submodules=dirty</c> when the diff reads the working tree, because git otherwise runs
+    /// <c>git status</c> inside each checked-out submodule, with the submodule's own config and filter drivers.
     /// </summary>
     /// <param name="staged">Whether the diff is of the staged index.</param>
     /// <param name="readsWorktree">Whether the diff compares against the working tree (see <see cref="ReadsWorktree"/>).</param>
     /// <returns>The server-controlled flag list.</returns>
     private static List<string> BuildFlags(bool staged, bool readsWorktree)
     {
-        var flags = new List<string> { "--no-color" };
+        var flags = new List<string>(DiffParser.PatchShapeFlags);
         if (staged)
         {
             flags.Add("--cached");

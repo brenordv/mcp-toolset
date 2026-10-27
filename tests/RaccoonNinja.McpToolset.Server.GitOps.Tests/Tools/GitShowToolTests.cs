@@ -36,11 +36,13 @@ public sealed class GitShowToolTests : IDisposable
 
     public void Dispose() => _repo.Dispose();
 
-    [Fact]
-    public async Task Show_WithColorUiAlways_ReturnsFiles()
+    [Theory]
+    [InlineData("color.ui", "always")]
+    [InlineData("diff.noprefix", "true")]
+    public async Task Show_WithPatchShapeConfig_ReturnsFiles(string configKey, string configValue)
     {
         // Arrange
-        _repo.Run("config", "color.ui", "always");
+        _repo.Run("config", configKey, configValue);
 
         // Act
         var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);

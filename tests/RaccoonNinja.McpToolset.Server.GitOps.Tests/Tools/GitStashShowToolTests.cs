@@ -37,11 +37,13 @@ public sealed class GitStashShowToolTests : IDisposable
 
     public void Dispose() => _repo.Dispose();
 
-    [Fact]
-    public async Task StashShow_WithColorUiAlways_ReturnsChangedFile()
+    [Theory]
+    [InlineData("color.ui", "always")]
+    [InlineData("diff.noprefix", "true")]
+    public async Task StashShow_WithPatchShapeConfig_ReturnsChangedFile(string configKey, string configValue)
     {
         // Arrange
-        _repo.Run("config", "color.ui", "always");
+        _repo.Run("config", configKey, configValue);
 
         // Act
         var envelope = await _tool.InvokeAsync(_repo.RepoPath, index: 0, cancellationToken: TestContext.Current.CancellationToken);

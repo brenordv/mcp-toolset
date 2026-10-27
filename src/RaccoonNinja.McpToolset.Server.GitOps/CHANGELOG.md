@@ -1,3 +1,17 @@
+## v2.11.0
+- Fixed: `git_diff`, `git_show`, and `git_stash_show` reported a changed file under the whole `diff --git` header
+  line instead of its path when the user's or the repository's git config set `diff.noprefix`,
+  `diff.mnemonicPrefix` (worktree, staged, and `HEAD`-to-worktree diffs), `diff.srcPrefix`, or `diff.dstPrefix`,
+  because the parser reads the path after ` b/`; the numstat overlay then missed the file. With `diff.submodule`
+  set to `log` or `diff`, a changed submodule was missing from `files`. The three now pass
+  `--src-prefix=a/ --dst-prefix=b/ --submodule=short` next to `--no-color` on every diff pass.
+- Fixed: with `diff.submodule=diff` in a repository's config, a `git_diff`, `git_show`, or `git_stash_show` whose diff
+  included a submodule commit change made git start `git diff` inside the submodule, without `--no-ext-diff` or
+  `--no-textconv`, so an external diff command or textconv driver the submodule's own config names could run.
+  `--submodule=short` overrides the key, and git starts no process inside the submodule.
+- Log change: the `argv_built` debug line shows the three new flags on every `git_diff` and `git_stash_show` pass
+  and on the `git_show` patch pass, and its `argv_len` is 3 higher on each of those passes.
+
 ## v2.10.0
 - Fixed: a filter driver that a repository's config names (`filter.<driver>.clean` or `filter.<driver>.process`),
   selected through a `filter` attribute in `.gitattributes` or `.git/info/attributes`, ran when `git_status`, a

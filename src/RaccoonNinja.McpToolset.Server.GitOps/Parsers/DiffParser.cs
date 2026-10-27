@@ -9,6 +9,21 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 /// </summary>
 public static class DiffParser
 {
+    /// <summary>
+    /// Flags every patch-producing git invocation passes so the output has the one shape <see cref="ParseUnified"/>
+    /// reads, whatever the user's or the repository's git config says: no color escapes (<c>color.ui</c>,
+    /// <c>color.diff</c>), the <c>a/</c> and <c>b/</c> header prefixes the reader splits on (<c>diff.noprefix</c>,
+    /// <c>diff.mnemonicPrefix</c>, <c>diff.srcPrefix</c>, <c>diff.dstPrefix</c>), and the <c>short</c> submodule
+    /// format, the only one that prints a <c>diff --git</c> header for a submodule (<c>diff.submodule</c>).
+    /// </summary>
+    public static readonly IReadOnlyList<string> PatchShapeFlags =
+    [
+        "--no-color",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "--submodule=short",
+    ];
+
     /// <summary>Parse <c>git diff --numstat -z</c> into <c>path → (additions, deletions)</c>.</summary>
     public static IReadOnlyDictionary<string, (int Additions, int Deletions)> ParseNumstatZ(byte[] raw)
     {

@@ -134,9 +134,12 @@ SHA before use, exactly like a plain ref.
 Each diff runs two passes: the patch itself (or `--name-status` for stat-only) and a companion `--numstat -z` pass.
 The two are merged into one `DiffResult` so every file carries both its hunks and its line counts. `contextLines`
 maps to git's `-U<n>`. Every pass runs with `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your
-git config cannot put escape codes in the patch. A diff against the working tree (worktree mode, or `fromRef` or
-`toRef` alone) also runs every pass with `--ignore-submodules=dirty`, so a submodule with only uncommitted changes
-inside it is not listed; see [Security model (long version)](#security-model-long-version).
+git config cannot put escape codes in the patch. Every pass also runs with
+`--src-prefix=a/ --dst-prefix=b/ --submodule=short`, so `diff.noprefix`, `diff.mnemonicPrefix`, `diff.srcPrefix`,
+`diff.dstPrefix`, or `diff.submodule` in your git config cannot change the `diff --git a/<path> b/<path>` header each
+file is read from. A diff against the working tree (worktree mode, or `fromRef` or `toRef` alone) also runs every
+pass with `--ignore-submodules=dirty`, so a submodule with only uncommitted changes inside it is not listed; see
+[Security model (long version)](#security-model-long-version).
 
 ```mermaid
 flowchart TD
@@ -144,8 +147,8 @@ flowchart TD
     B --> C[Verify fromRef / toRef → SHAs]
     C --> D[Confine paths]
     D --> E{statOnly?}
-    E -- yes --> F["diff --no-color --numstat -z<br/>(+ diff --no-color --name-status -z)"]
-    E -- no --> G["diff --no-color [--cached] [-U n] refs -- pathspecs<br/>(+ diff --no-color --numstat -z)"]
+    E -- yes --> F["diff --no-color --src-prefix=a/ --dst-prefix=b/<br/>--submodule=short [--cached] [--ignore-submodules=dirty]<br/>--numstat -z<br/>(+ the same with --name-status -z)"]
+    E -- no --> G["diff --no-color --src-prefix=a/ --dst-prefix=b/<br/>--submodule=short [--cached] [--ignore-submodules=dirty]<br/>[-U n] refs -- pathspecs<br/>(+ the same with --numstat -z)"]
     F --> H[DiffParser: merge counts + change kinds]
     G --> H
     H --> I[DiffResult: per-file hunks + additions/deletions + mode]
@@ -188,7 +191,8 @@ and is verified to a SHA before use.
 Runs two passes: a one-commit `git log` for metadata (same format as `git_log`), and `git show --format=` for the
 patch, parsed into the same `FileDiff` shape as `git_diff`. `paths` restricts the diff section. Every pass runs with
 `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your git config cannot put escape codes in the
-patch.
+patch. The patch pass also runs with `--src-prefix=a/ --dst-prefix=b/ --submodule=short`, so the diff prefix and
+submodule keys in your git config cannot change the header each file is read from.
 
 A `ref` in `<rev>:<path>` form (`HEAD:README.md`, `:README.md`, or `HEAD:` for the root tree) names a file or tree,
 not a commit, and is rejected with a
@@ -202,7 +206,7 @@ flowchart TD
     R -- yes --> X[RejectedArgument → use git_file_at_ref]
     R -- no --> C[Verify ref → SHA<br/>required]
     C --> D["git log -1 --pretty=format:… SHA<br/>(metadata)"]
-    C --> E["git show --format= --no-color SHA -- pathspecs<br/>(patch)"]
+    C --> E["git show --format= --no-color --src-prefix=a/<br/>--dst-prefix=b/ --submodule=short SHA -- pathspecs<br/>(patch)"]
     D --> F[Commit record]
     E --> G[FileDiff list]
     F --> H["payload { commit, files }"]
@@ -425,14 +429,16 @@ flowchart LR
 Returns the diff for a single stash (`index`, 0 = most recent) as a `DiffResult`, using the same two-pass
 patch + `--numstat -z` assembly as `git_diff`. A negative index returns a `RejectedArgument` error. Every pass runs
 with `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your git config cannot put escape codes in
-the patch.
+the patch. Every pass also runs with `--src-prefix=a/ --dst-prefix=b/ --submodule=short`, so `diff.noprefix`,
+`diff.mnemonicPrefix`, `diff.srcPrefix`, `diff.dstPrefix`, or `diff.submodule` in your git config cannot change the
+`diff --git a/<path> b/<path>` header each file is read from.
 
 ```mermaid
 flowchart TD
     A["git_stash_show: cwd, index"] --> B[Resolve root]
     B --> C{index >= 0?}
     C -- no --> D[RejectedArgument error]
-    C -- yes --> E["stash show -p --no-color stash@{index}<br/>(+ stash show --numstat -z --no-color)"]
+    C -- yes --> E["stash show -p --no-color --src-prefix=a/ --dst-prefix=b/<br/>--submodule=short stash@{index}<br/>(+ the same with --numstat -z)"]
     E --> F[DiffParser: merge patch + counts]
     F --> G[DiffResult]
     G --> H[ResultEnvelope]
@@ -603,12 +609,11 @@ flowchart TD
   included. `git_status` and a worktree `git_diff` pass `--ignore-submodules=dirty`, so a submodule whose commit moved
   is still listed, but one with only uncommitted changes inside it is not. Call the tool with `cwd` inside the
   submodule to see those. On those calls the flag also overrides a `submodule.<name>.ignore` or
-  `diff.ignoreSubmodules` setting, so a submodule commit change is listed even where that config would hide it.
-
-One path is still open. With `diff.submodule=diff` in a repository's config, a `git_diff`, `git_show`, or
-`git_stash_show` whose diff includes a submodule commit change makes git start `git diff` inside the submodule, without
-`--no-ext-diff` or `--no-textconv`, and that process reads the submodule's own config, so an external diff command or
-textconv driver it names can run.
+  `diff.ignoreSubmodules` setting, so a submodule commit change is listed even where that config would hide it. Every
+  diff pass of `git_diff`, `git_show`, and `git_stash_show` runs with `--submodule=short`, which prints a submodule
+  commit change as one `Subproject commit` line per side, so a `diff.submodule=diff` setting cannot make git start
+  `git diff` inside the submodule, where the submodule's own config could name an external diff command or textconv
+  driver.
 
 ---
 

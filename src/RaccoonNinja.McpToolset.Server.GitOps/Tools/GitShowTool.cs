@@ -54,7 +54,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
             {
                 Subcommand = "show",
                 RepoRoot = root,
-                Flags = ["--format=", "--no-color"],
+                Flags = ["--format=", .. DiffParser.PatchShapeFlags],
                 VerifiedRefs = [sha],
                 Pathspecs = pathspecs,
             };
