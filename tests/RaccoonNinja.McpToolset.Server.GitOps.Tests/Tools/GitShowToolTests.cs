@@ -27,11 +27,12 @@ public sealed class GitShowToolTests : IDisposable
         _repo.Run("commit", "-m", "second");
 
         var common = new ToolCommon(
-            new RepoRootResolver(),
+            new RepoRootResolver(TestGit.Executable),
             new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
             new SessionMetrics(),
-            NullLoggerFactory.Instance);
-        _tool = new GitShowTool(common, new RefVerifier());
+            NullLoggerFactory.Instance,
+            TestGit.Executable);
+        _tool = new GitShowTool(common, new RefVerifier(TestGit.Executable));
     }
 
     public void Dispose() => _repo.Dispose();

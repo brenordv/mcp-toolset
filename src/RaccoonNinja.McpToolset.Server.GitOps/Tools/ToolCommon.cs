@@ -18,7 +18,8 @@ public sealed class ToolCommon(
     IRepoRootResolver resolver,
     IGitProcessRunner runner,
     SessionMetrics metrics,
-    ILoggerFactory loggerFactory)
+    ILoggerFactory loggerFactory,
+    string gitExecutable)
 {
     public CallContext MakeContext(string tool)
         => new(tool, loggerFactory.CreateLogger(tool));
@@ -45,7 +46,7 @@ public sealed class ToolCommon(
         CancellationToken cancellationToken = default)
     {
         var filterDrivers = await ReadFilterDriversAsync(intent, ctx, cancellationToken);
-        var (argv, env) = GitCommandBuilder.Build(intent, filterDrivers);
+        var (argv, env) = GitCommandBuilder.Build(intent, gitExecutable, filterDrivers);
         var masked = GitCommandBuilder.MaskedForLog(argv, intent);
         ctx.Log(
             LogLevel.Debug,

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
+using RaccoonNinja.McpToolset.Server.GitOps.Repo;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Runner;
 
@@ -29,6 +30,8 @@ public sealed class GitProcessRunner(ILogger<GitProcessRunner> logger) : IGitPro
     {
         if (argv == null || argv.Count == 0)
             throw new ArgumentException("argv must contain at least the executable", nameof(argv));
+
+        GitNotInstalledException.ThrowIfNotFullyQualified(argv[0]);
 
         var effectiveTimeout = timeoutMs ?? DefaultTimeoutMs;
         var capBytes = outputCapBytes ?? DefaultOutputCapBytes;
@@ -64,15 +67,15 @@ public sealed class GitProcessRunner(ILogger<GitProcessRunner> logger) : IGitPro
         catch (Exception ex) when (ex is Win32Exception or FileNotFoundException)
         {
             throw new GitNotInstalledException(
-                $"git executable not found on PATH ({argv[0]})",
-                new Dictionary<string, object> { ["executable"] = argv[0] });
+                "git executable could not be started",
+                new Dictionary<string, object> { ["executable"] = GitExecutableLocator.DisplayName });
         }
 
         if (process == null)
         {
             throw new GitNotInstalledException(
-                $"failed to start git process ({argv[0]})",
-                new Dictionary<string, object> { ["executable"] = argv[0] });
+                "failed to start git process",
+                new Dictionary<string, object> { ["executable"] = GitExecutableLocator.DisplayName });
         }
 
         // Close stdin immediately so git never blocks on it.

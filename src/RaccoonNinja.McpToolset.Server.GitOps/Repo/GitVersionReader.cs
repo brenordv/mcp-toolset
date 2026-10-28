@@ -56,7 +56,7 @@ internal static class GitVersionReader
     /// out, exits non-zero, or prints a line that does not parse. Never throws for those cases.
     /// </summary>
     /// <param name="serverLogger">The server-scoped logger.</param>
-    /// <param name="gitExecutable">The git executable to start.</param>
+    /// <param name="gitExecutable">The absolute path of git, or <c>null</c> when none was found on <c>PATH</c>.</param>
     /// <param name="cancellationToken">Cancels the call; a cancellation is rethrown, not logged.</param>
     /// <returns>A task that completes once the line is written.</returns>
     public static async Task LogAsync(ILogger serverLogger, string gitExecutable, CancellationToken cancellationToken)

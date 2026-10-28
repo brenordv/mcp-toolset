@@ -30,11 +30,12 @@ public sealed class GitDiffToolTests : IDisposable
         _repo.Run("commit", "-m", "second");
 
         var common = new ToolCommon(
-            new RepoRootResolver(),
+            new RepoRootResolver(TestGit.Executable),
             new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
             new SessionMetrics(),
-            NullLoggerFactory.Instance);
-        _tool = new GitDiffTool(common, new RefVerifier());
+            NullLoggerFactory.Instance,
+            TestGit.Executable);
+        _tool = new GitDiffTool(common, new RefVerifier(TestGit.Executable));
     }
 
     public void Dispose() => _repo.Dispose();

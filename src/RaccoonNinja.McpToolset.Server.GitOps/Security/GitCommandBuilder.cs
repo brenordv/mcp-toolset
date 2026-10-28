@@ -1,4 +1,5 @@
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
+using RaccoonNinja.McpToolset.Server.GitOps.Repo;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Security;
 
@@ -65,16 +66,16 @@ public static class GitCommandBuilder
 
     /// <summary>Convert a <see cref="GitIntent"/> into a hardened argv list plus the child env.</summary>
     /// <param name="intent">The invocation to serialize.</param>
+    /// <param name="gitExecutable">The absolute path of the git executable, written as <c>argv[0]</c>.</param>
     /// <param name="filterDrivers">
     /// Filter driver names to pin, as <see cref="FilterDriverPins.ParseDriverNames"/> returns them; <c>null</c> pins none.
     /// Each name comes from the config git reads, which includes the repository's own, so its argv tokens are masked in logs.
     /// </param>
-    /// <param name="gitExecutable">The git executable to start.</param>
     /// <returns>The argv, executable first, and the child environment.</returns>
     public static (IList<string> Argv, IDictionary<string, string> Env) Build(
         GitIntent intent,
-        IReadOnlyCollection<string> filterDrivers = null,
-        string gitExecutable = "git")
+        string gitExecutable,
+        IReadOnlyCollection<string> filterDrivers = null)
     {
         ArgumentNullException.ThrowIfNull(intent);
 
@@ -229,13 +230,21 @@ public static class GitCommandBuilder
                 new Dictionary<string, object> { ["param"] = spec.Param }),
         };
 
-    /// <summary>Return a copy of <paramref name="argv"/> with user-originating tokens replaced by their parameter name.</summary>
+    /// <summary>
+    /// Return a copy of <paramref name="argv"/> with user-originating tokens replaced by their parameter name, and the
+    /// executable shown as <c>git</c>, never its path.
+    /// </summary>
     public static IList<string> MaskedForLog(IList<string> argv, GitIntent intent)
     {
         ArgumentNullException.ThrowIfNull(argv);
         ArgumentNullException.ThrowIfNull(intent);
 
         var masked = new List<string>(argv);
+        if (masked.Count > 0)
+        {
+            masked[0] = GitExecutableLocator.DisplayName;
+        }
+
         foreach (var (index, paramName) in intent.Provenance)
         {
             if (index < 0 || index >= masked.Count) continue;

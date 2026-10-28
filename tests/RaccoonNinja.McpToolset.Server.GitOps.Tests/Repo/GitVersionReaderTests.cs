@@ -2,6 +2,7 @@ using System.Text.Json;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors;
 using RaccoonNinja.McpToolset.Server.GitOps.Logging;
 using RaccoonNinja.McpToolset.Server.GitOps.Repo;
+using RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
@@ -10,8 +11,9 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Repo;
 
 public sealed class GitVersionReaderTests
 {
-    private const string GitExecutable = "git";
     private const string VersionPrefix = "git version ";
+    private const string MissingGitName = "mcp-gitops-tests-missing-git";
+    private const string BareExecutableName = "git";
 
     [Theory]
     [InlineData("git version 2.55.0\n", "2.55.0")]
@@ -45,7 +47,7 @@ public sealed class GitVersionReaderTests
         using var logger = new LoggerConfiguration().MinimumLevel.Verbose().WriteTo.Sink(sink).CreateLogger();
 
         // Act
-        await GitVersionReader.LogAsync(logger, GitExecutable, TestContext.Current.CancellationToken);
+        await GitVersionReader.LogAsync(logger, TestGit.Executable, TestContext.Current.CancellationToken);
 
         // Assert
         var logEvent = Assert.Single(sink.Events);
@@ -57,16 +59,16 @@ public sealed class GitVersionReaderTests
         Assert.Equal(version, GitVersionReader.ParseVersion(VersionPrefix + version));
     }
 
-    [Fact]
-    public async Task LogAsync_WithMissingGit_LogsUnavailableWarning()
+    [Theory]
+    [MemberData(nameof(NotStartableExecutables))]
+    public async Task LogAsync_WithGitNotStartable_LogsUnavailableWarning(string gitExecutable)
     {
         // Arrange
         var sink = new CollectingSink();
         using var logger = new LoggerConfiguration().MinimumLevel.Verbose().WriteTo.Sink(sink).CreateLogger();
-        var missingExecutable = "git-missing-" + Guid.NewGuid().ToString("N");
 
         // Act
-        await GitVersionReader.LogAsync(logger, missingExecutable, TestContext.Current.CancellationToken);
+        await GitVersionReader.LogAsync(logger, gitExecutable, TestContext.Current.CancellationToken);
 
         // Assert
         var logEvent = Assert.Single(sink.Events);
@@ -78,6 +80,16 @@ public sealed class GitVersionReaderTests
     }
 
     #region Test Helpers
+
+    public static TheoryData<string> NotStartableExecutables()
+    {
+        return new()
+        {
+            null,
+            BareExecutableName,
+            Path.Combine(Path.GetTempPath(), MissingGitName),
+        };
+    }
 
     public static TheoryData<string> UnexpectedOutputs()
     {

@@ -24,10 +24,11 @@ public sealed class GitReflogToolTests : IDisposable
         _repo.Run("commit", "-m", "first");
 
         var common = new ToolCommon(
-            new RepoRootResolver(),
+            new RepoRootResolver(TestGit.Executable),
             new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
             new SessionMetrics(),
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance,
+            TestGit.Executable);
         _tool = new GitReflogTool(common);
     }
 

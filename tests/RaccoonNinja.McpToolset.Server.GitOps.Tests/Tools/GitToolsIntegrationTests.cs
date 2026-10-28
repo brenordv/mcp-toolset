@@ -20,11 +20,11 @@ public class GitToolsIntegrationTests
     public GitToolsIntegrationTests(GitRepoFixture fixture)
     {
         _fixture = fixture;
-        var resolver = new RepoRootResolver();
+        var resolver = new RepoRootResolver(TestGit.Executable);
         var runner = new GitProcessRunner(NullLogger<GitProcessRunner>.Instance);
         var metrics = new SessionMetrics();
-        _common = new ToolCommon(resolver, runner, metrics, NullLoggerFactory.Instance);
-        _refVerifier = new RefVerifier();
+        _common = new ToolCommon(resolver, runner, metrics, NullLoggerFactory.Instance, TestGit.Executable);
+        _refVerifier = new RefVerifier(TestGit.Executable);
     }
 
     [Fact]

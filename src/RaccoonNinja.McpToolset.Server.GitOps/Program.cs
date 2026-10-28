@@ -14,11 +14,12 @@ namespace RaccoonNinja.McpToolset.Server.GitOps;
 /// <summary>
 /// stdio MCP server entrypoint. Order of operations is load-bearing:
 /// 1. Configure logging (stderr or rotating file) before anything touches stdout.
-/// 2. Build the host with MCP server registration.
-/// 3. Install the stdout sentinel AFTER the host has captured Console.OpenStandardOutput().
-/// 4. Log the git version (first statement in the try).
-/// 5. Run the host.
-/// 6. On shutdown, emit a server_stop summary with metrics.
+/// 2. Find git once in the absolute PATH entries; every git process starts from that path.
+/// 3. Build the host with MCP server registration.
+/// 4. Install the stdout sentinel AFTER the host has captured Console.OpenStandardOutput().
+/// 5. Log the git version (first statement in the try).
+/// 6. Run the host.
+/// 7. On shutdown, emit a server_stop summary with metrics.
 /// </summary>
 public static class Program
 {
@@ -29,6 +30,7 @@ public static class Program
         var bootstrapLogger = ServerEventLog.ForServer(Log.Logger);
 
         ServerEventLog.Start(bootstrapLogger);
+        var gitExecutable = GitExecutableLocator.Find(Environment.GetEnvironmentVariable("PATH"));
 
         var builder = Host.CreateApplicationBuilder(args);
         builder.Logging.ClearProviders();
@@ -36,9 +38,14 @@ public static class Program
 
         builder.Services.AddSingleton(metrics);
         builder.Services.AddSingleton<IGitProcessRunner, GitProcessRunner>();
-        builder.Services.AddSingleton<IRepoRootResolver>(_ => new RepoRootResolver());
-        builder.Services.AddSingleton<IRefVerifier>(_ => new RefVerifier());
-        builder.Services.AddSingleton<ToolCommon>();
+        builder.Services.AddSingleton<IRepoRootResolver>(_ => new RepoRootResolver(gitExecutable));
+        builder.Services.AddSingleton<IRefVerifier>(_ => new RefVerifier(gitExecutable));
+        builder.Services.AddSingleton(services => new ToolCommon(
+            services.GetRequiredService<IRepoRootResolver>(),
+            services.GetRequiredService<IGitProcessRunner>(),
+            services.GetRequiredService<SessionMetrics>(),
+            services.GetRequiredService<ILoggerFactory>(),
+            gitExecutable));
 
         builder.Services
             .AddMcpServer()
@@ -52,7 +59,7 @@ public static class Program
         var reason = "graceful";
         try
         {
-            await GitVersionReader.LogAsync(bootstrapLogger, "git", CancellationToken.None);
+            await GitVersionReader.LogAsync(bootstrapLogger, gitExecutable, CancellationToken.None);
             await builder.Build().RunAsync();
         }
         catch (OperationCanceledException)

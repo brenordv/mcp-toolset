@@ -8,6 +8,7 @@ using RaccoonNinja.McpToolset.Server.GitOps.Metrics;
 using RaccoonNinja.McpToolset.Server.GitOps.Repo;
 using RaccoonNinja.McpToolset.Server.GitOps.Runner;
 using RaccoonNinja.McpToolset.Server.GitOps.Security;
+using RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
 using RaccoonNinja.McpToolset.Server.GitOps.Tools;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Tools;
@@ -21,7 +22,7 @@ public class ToolCommonTests
     {
         runner ??= Substitute.For<IGitProcessRunner>();
         resolver ??= Substitute.For<IRepoRootResolver>();
-        return new ToolCommon(resolver, runner, metrics ?? new SessionMetrics(), NullLoggerFactory.Instance);
+        return new ToolCommon(resolver, runner, metrics ?? new SessionMetrics(), NullLoggerFactory.Instance, TestGit.Executable);
     }
 
     private static IGitProcessRunner RunnerReturning(int exitCode, byte[] stderr = null)

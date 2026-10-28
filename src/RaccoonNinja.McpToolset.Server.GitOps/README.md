@@ -573,6 +573,12 @@ flowchart TD
   Pattern matching cost is bounded by the 30 s timeout, the same bound that applies to user regexes.
 - **No shell.** The subprocess is started with an explicit argument list, not a joined string, so shell
   meta-characters can't leak.
+- **git starts from an absolute path.** At startup the server takes the first `git` (`git.exe` on Windows; elsewhere a
+  file with an execute bit) in the absolute directories of its `PATH` and starts every git process from that path, so
+  a `git` or `git.exe` committed at a repository's root does not run when a client starts the server there. Empty and
+  relative `PATH` entries are skipped, and on Windows a `git.cmd` or `git.bat` never matches, since it would start
+  through `cmd.exe`, which re-reads the arguments. An absolute `PATH` entry inside a repository (a virtualenv `bin`, the
+  `node_modules/.bin` that `npm run` adds, a direnv `PATH_add`) is still trusted, as it is in your own shell.
 - **Scrubbed environment.** The child env is built from a small allowlist (`PATH`, locale vars, `HOME`, plus a few
   Windows essentials) with fixed git neutralizers added. Everything else is dropped. `GIT_NO_LAZY_FETCH=1` is one of
   them. In a partial clone, or any repository whose config names a promisor remote, reading an object git does not have
@@ -633,10 +639,10 @@ can't be opened. stdout is reserved for the MCP protocol.
 Files rotate at 10 MB, keeping 5 backups. On shutdown the server writes a `server_stop` summary with session metrics
 (call counts, cache hit rate, truncations, timeouts).
 
-Right after `server_start`, the server logs which git it found: a `git_version` line at Info whose `git_version` field
-holds the text after `git version ` (for example `2.55.0`), or a `git_version_unavailable` Warning with `error_code`
-`GitNotInstalled`, `GitTimeout`, or `GitCommandError` when git is missing, takes more than 5 seconds, exits non-zero, or
-prints something else; `git_exit_code` is set whenever git exited.
+Right after `server_start`, the server logs the version of the git it found: a `git_version` line at Info whose
+`git_version` field holds the text after `git version ` (for example `2.55.0`), or a `git_version_unavailable` Warning
+with `error_code` `GitNotInstalled`, `GitTimeout`, or `GitCommandError` when no git was found on `PATH` or it failed to
+start, takes more than 5 seconds, exits non-zero, or prints something else; `git_exit_code` is set whenever git exited.
 
 ---
 
@@ -648,8 +654,9 @@ TODO: Add instructions to build on Windows, macOS, and Linux.
 
 ## Requirements
 
-- **`git` on `PATH`**: required. This server runs your system `git` for every call; without it, tools fail with a
-  `GitNotInstalled` error. Any reasonably recent `git` works. The lazy-fetch block in the security model needs git
+- **`git` on `PATH`**: required. It must sit in a directory your `PATH` names by an absolute path (`.` and other
+  relative entries are skipped). The server looks for it once at startup, so restart the server after installing or
+  moving git. This server runs your system `git` for every call; without it, tools fail with a `GitNotInstalled` error. Any reasonably recent `git` works. The lazy-fetch block in the security model needs git
   2.45.1 or later, or 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1, or a later release in the same series. git 2.45.0
   honors `GIT_NO_LAZY_FETCH` only in part and an older git ignores it, so in a repository with a promisor remote a tool
   call can still start a fetch there. The server log's `git_version` line shows the version of the git the server runs.

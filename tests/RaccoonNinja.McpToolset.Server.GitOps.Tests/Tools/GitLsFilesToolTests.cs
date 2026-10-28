@@ -39,10 +39,11 @@ public sealed class GitLsFilesToolTests : IDisposable
         _repo.Run("commit", "-m", "add pathspec tree");
 
         var common = new ToolCommon(
-            new RepoRootResolver(),
+            new RepoRootResolver(TestGit.Executable),
             new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
             new SessionMetrics(),
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance,
+            TestGit.Executable);
         _tool = new GitLsFilesTool(common);
     }
 

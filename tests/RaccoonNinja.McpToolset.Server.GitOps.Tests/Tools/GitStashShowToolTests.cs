@@ -28,10 +28,11 @@ public sealed class GitStashShowToolTests : IDisposable
         _repo.Run("stash", "push", "-m", "wip");
 
         var common = new ToolCommon(
-            new RepoRootResolver(),
+            new RepoRootResolver(TestGit.Executable),
             new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
             new SessionMetrics(),
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance,
+            TestGit.Executable);
         _tool = new GitStashShowTool(common);
     }
 

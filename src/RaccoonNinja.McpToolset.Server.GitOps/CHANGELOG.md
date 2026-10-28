@@ -1,3 +1,18 @@
+## v2.13.0
+- Fixed: every git process started from the bare name `git`, which .NET looks up in the server's own directory and
+  current directory before `PATH` (on Windows, `CreateProcess` also tries the system directories first). An MCP client
+  that started the server inside a repository could make it run a `git` or `git.exe` committed at that repository's
+  root: on the first tool call in every earlier release, and at startup in v2.12.0. The server now finds git once at
+  startup in the absolute directories of its `PATH` (`git.exe` on Windows; elsewhere a file with an execute bit) and
+  starts that path every time.
+- Behavior change: empty and relative `PATH` entries are ignored, and a git found only in the server's own directory,
+  or on Windows only in a system directory not on `PATH`, is no longer found; tools then fail with `GitNotInstalled`.
+  Restart the server after installing or moving git.
+- Log change: a `GitNotInstalled` `tool_error` carries `git executable not found on PATH when the server started` when
+  no git was found and `git executable could not be started` when the file found fails to start, and the message no
+  longer ends with the executable in parentheses (the envelope's `message` carries the same text). No event or field
+  changes; the `argv_built` debug line still starts with `git`, and no line carries the path found.
+
 ## v2.12.0
 - Log change: at startup the server runs `git version` once and logs, right after `server_start`, a `git_version` Info
   line with a new `git_version` field, or a `git_version_unavailable` Warning with `error_code` (`GitNotInstalled`,
