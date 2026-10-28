@@ -69,9 +69,9 @@ public sealed class GatedFileWriter
     /// <param name="skippedSymlinks">The selector's skipped-symlink count, echoed into the outcome.</param>
     /// <param name="truncated">Whether selection hit its ceiling, echoed into the outcome.</param>
     /// <param name="effective">The per-call effective confiner (the base root, or a <c>cwd</c> beneath it); every candidate is confined to it, so a scoped call cannot write outside its <c>cwd</c>.</param>
-    /// <param name="cancellationToken">Checked between files so the operation budget can bound the batch.</param>
+    /// <param name="cancellationToken">The operation budget, checked before each file; once it is cancelled the batch aborts with <c>OperationBudgetExceeded</c> before any write.</param>
     /// <returns>The batch outcome.</returns>
-    /// <exception cref="TextEditException">Thrown for an unknown source encoding or an expected-match-count mismatch (before any write).</exception>
+    /// <exception cref="TextEditException">Thrown for an unknown source encoding, an expected-match-count mismatch, or (as <c>OperationBudgetExceeded</c>) a cancelled budget token, always before any write.</exception>
     public BatchOutcome Apply(
         string tool,
         IReadOnlyList<string> relativePaths,
@@ -96,7 +96,11 @@ public sealed class GatedFileWriter
 
         foreach (var relativePath in relativePaths)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw TextEditException.OperationBudgetExceeded((int)_config.OperationBudget.TotalMilliseconds);
+            }
+
             var preparation = PrepareFile(relativePath, transform, codec, dryRun, effective);
             totalMatches += preparation.MatchCount;
             outcomes.Add(preparation.Outcome);

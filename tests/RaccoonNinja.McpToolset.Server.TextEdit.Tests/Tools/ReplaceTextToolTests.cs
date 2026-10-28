@@ -1,3 +1,4 @@
+using RaccoonNinja.McpToolset.Server.TextEdit.Errors;
 using RaccoonNinja.McpToolset.Server.TextEdit.Models;
 using RaccoonNinja.McpToolset.Server.TextEdit.Tests.TestSupport;
 
@@ -125,5 +126,30 @@ public sealed class ReplaceTextToolTests
         Assert.Equal(2, result.Refused);
         Assert.All(result.Files, file => Assert.Equal(RegexTimeoutReason, file.RefusalReason));
         Assert.Equal(2L, (long)harness.Metrics.Summary()[RegexTimeoutsTotal]);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RegexTimeoutWithExpectedMatchCount_CountsTimeoutAndReportsMismatch()
+    {
+        // Arrange
+        const string slowFile = "slow.txt";
+        const int expectedMatchCount = 1;
+        var config = TextEditHarness.DefaultConfig() with { RegexTimeout = TimeSpan.FromMilliseconds(RegexTimeoutMs) };
+        using var harness = new TextEditHarness(config);
+        harness.WriteText(slowFile, BacktrackingInput);
+
+        // Act
+        var envelope = await harness.Replace.InvokeAsync(
+            BacktrackingPattern,
+            BacktrackingReplacement,
+            glob: TextFileGlob,
+            is_regex: true,
+            expected_match_count: expectedMatchCount,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(ErrorCodes.ExpectedMatchCountMismatch, envelope.Error.Code);
+        Assert.Equal(BacktrackingInput, harness.ReadText(slowFile));
+        Assert.Equal(1L, (long)harness.Metrics.Summary()[RegexTimeoutsTotal]);
     }
 }
