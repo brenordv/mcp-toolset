@@ -1,3 +1,29 @@
+## v2.14.0
+- Fixed: `submodule.<name>.ignore=all`, which a committed `.gitmodules` can carry, `diff.ignoreSubmodules=all` in the
+  user's or the repository's config, or a `.gitmodules` left unmerged in the index made a staged or commit-to-commit
+  `git_diff`, `git_show`, and `git_stash_show` leave out a submodule whose recorded commit changed, and made `git_log`
+  skip the commits that moved it when called with `pickaxe`, with `follow`, or with one `paths` entry in a repository
+  whose config sets `log.follow=true`. Every pass of the three diff tools and every `git_log` call now passes
+  `--ignore-submodules=dirty`, which overrides those settings, as `git_status` and a `git_diff` against the working
+  tree already did. A diff against the working tree still never runs git inside a checked-out submodule.
+- Fixed: with `log.follow=true` in the user's or the repository's config, `git_log` with one `paths` entry followed
+  renames although `follow` was false, so it listed commits from before the file was renamed. Every git call now
+  passes `-c log.follow=false`, and only `follow` turns rename following on.
+- Behavior change: the submodule override applies to a setting you made on purpose too. A submodule that
+  `submodule.<name>.ignore=all` (in your global or the repository's config, or in `.gitmodules`) or
+  `diff.ignoreSubmodules=all` kept out of a staged or commit-to-commit `git_diff`, `git_show`, or `git_stash_show` now
+  appears whenever its recorded commit changed, and `git_log` with `pickaxe` or `follow` can return the commits that
+  moved it, so a `maxCount` page can hold commits it skipped before. There is no opt-out; run git in your own shell to
+  keep the setting's effect. Without an `all` value in either setting, or a `.gitmodules` left unmerged in the index,
+  the submodule override changes no result.
+- Behavior change: if you set `log.follow=true` so that `git log` follows renames, `git_log` with one `paths` entry no
+  longer does, and its history stops at the commit that renamed the file; pass `follow: true`.
+- Log change: every `argv_built` debug line shows `-c log.follow=false`, with `argv_len` 2 higher; the bootstrap calls
+  carry the same pin but log no argv line. The line also shows `--ignore-submodules=dirty` on every `git_log` call, on
+  the `git_show` patch pass, on both `git_stash_show` passes, and on each `git_diff` pass that does not read the working
+  tree, so those lines have `argv_len` 3 higher than in v2.13.0 in all; the passes that read the working tree showed the
+  flag already. A `git_log` line without `--follow` now means git did not follow renames, whatever `log.follow` says.
+
 ## v2.13.0
 - Fixed: every git process started from the bare name `git`, which .NET looks up in the server's own directory and
   current directory before `PATH` (on Windows, `CreateProcess` also tries the system directories first). An MCP client

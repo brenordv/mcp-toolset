@@ -13,10 +13,15 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Tools;
 public sealed class GitLogToolTests : IDisposable
 {
     private const string AlphaSubject = "GMS-1 alpha";
+    private const string BetaFile = "beta.txt";
     private const string BetaSubject = "DEVOPS-2 beta";
     private const string FeatureSubject = "GMS-9 feature work";
     private const string AlternationPattern = "GMS-1|DEVOPS-2";
     private const string SignedSubject = "GMS-4 signed";
+    private const string SubmodulePath = "sub";
+    private const string SubmoduleMoveSubject = "move submodule";
+    private const string RenamedFile = "renamed.txt";
+    private const string RenameSubject = "rename beta";
 
     private readonly TempGitRepo _repo;
     private readonly GitLogTool _tool;
@@ -25,7 +30,7 @@ public sealed class GitLogToolTests : IDisposable
     {
         _repo = new TempGitRepo();
         CommitFile("alpha.txt", AlphaSubject);
-        CommitFile("beta.txt", BetaSubject);
+        CommitFile(BetaFile, BetaSubject);
         CommitFile("gamma.txt", "plain gamma");
         _repo.Run("checkout", "-b", "feature");
         CommitFile("feature.txt", FeatureSubject);
@@ -168,6 +173,56 @@ public sealed class GitLogToolTests : IDisposable
         var commit = Assert.IsType<Commit>(Assert.Single(envelope.Results));
         Assert.Equal(signedHash, commit.Hash);
         Assert.False(File.Exists(marker));
+    }
+
+    [Fact]
+    public async Task Log_PickaxeOnGitlinkWithGitmodulesIgnoreAll_ReturnsMovingCommit()
+    {
+        // Arrange
+        var movedTo = _repo.StageIgnoredSubmoduleMove(SubmodulePath);
+        _repo.Run("commit", "-m", SubmoduleMoveSubject);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, pickaxe: movedTo, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var commit = Assert.IsType<Commit>(Assert.Single(envelope.Results));
+        Assert.Equal(SubmoduleMoveSubject, commit.Subject);
+    }
+
+    [Fact]
+    public async Task Log_FollowOnGitlinkWithGitmodulesIgnoreAll_ReturnsMovingCommit()
+    {
+        // Arrange
+        _repo.StageIgnoredSubmoduleMove(SubmodulePath);
+        _repo.Run("commit", "-m", SubmoduleMoveSubject);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, paths: [SubmodulePath], follow: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Contains(SubmoduleMoveSubject, Subjects(envelope));
+    }
+
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 2)]
+    public async Task Log_SinglePathWithLogFollowConfig_FollowsRenamesOnlyWhenAsked(bool follow, int expectedCount)
+    {
+        // Arrange
+        _repo.Run("mv", BetaFile, RenamedFile);
+        _repo.Run("commit", "-m", RenameSubject);
+        _repo.Run("config", "log.follow", "true");
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, paths: [RenamedFile], follow: follow, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(expectedCount, envelope.Count);
+        Assert.Contains(RenameSubject, Subjects(envelope));
     }
 
     #region Test Helpers

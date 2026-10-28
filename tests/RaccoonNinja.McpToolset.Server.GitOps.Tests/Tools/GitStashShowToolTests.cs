@@ -11,6 +11,7 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Tools;
 public sealed class GitStashShowToolTests : IDisposable
 {
     private const string ChangedFile = "a.txt";
+    private const string SubmodulePath = "sub";
 
     private readonly TempGitRepo _repo;
     private readonly GitStashShowTool _tool;
@@ -57,5 +58,24 @@ public sealed class GitStashShowToolTests : IDisposable
         Assert.Equal(ChangedFile, file.Path);
         Assert.Equal(1, file.Additions);
         Assert.NotEmpty(file.Hunks);
+    }
+
+    [Fact]
+    public async Task StashShow_WithGitmodulesIgnoreAll_ReturnsSubmoduleEntry()
+    {
+        // Arrange
+        _repo.StageIgnoredSubmoduleMove(SubmodulePath);
+        _repo.WriteFile(ChangedFile, "four\n");
+        _repo.Run("stash", "push", "-m", "move submodule");
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, index: 0, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var diff = Assert.IsType<DiffResult>(envelope.Results[0]);
+        var file = Assert.Single(diff.Files, entry => entry.Path == SubmodulePath);
+        Assert.Equal(1, file.Additions);
+        Assert.Equal(1, file.Deletions);
     }
 }

@@ -11,12 +11,16 @@ public static class DiffParser
 {
     /// <summary>
     /// Flags the <c>git diff</c> and <c>git show</c> patch passes add so the output has the one shape
-    /// <see cref="ParseUnified"/> reads, whatever the user's or the repository's git config says: no color escapes
-    /// (<c>color.ui</c>, <c>color.diff</c>), the <c>a/</c> and <c>b/</c> header prefixes the reader splits on
-    /// (<c>diff.noprefix</c>, <c>diff.mnemonicPrefix</c>, <c>diff.srcPrefix</c>, <c>diff.dstPrefix</c>), and the
-    /// <c>short</c> submodule format, the only one that prints a <c>diff --git</c> header for a submodule
-    /// (<c>diff.submodule</c>). <c>git stash show</c> gets the same pins from <see cref="StashPatchShapeFlags"/> and
-    /// <see cref="StashHeaderPrefixConfig"/>.
+    /// <see cref="ParseUnified"/> reads and holds every changed submodule, whatever the user's or the repository's git config
+    /// says: no color escapes (<c>color.ui</c>, <c>color.diff</c>), the <c>a/</c> and <c>b/</c> header prefixes the reader
+    /// splits on (<c>diff.noprefix</c>, <c>diff.mnemonicPrefix</c>, <c>diff.srcPrefix</c>, <c>diff.dstPrefix</c>), and the
+    /// <c>short</c> submodule format, the only one that prints a <c>diff --git</c> header for a submodule and starts no git
+    /// process inside it (<c>diff.submodule</c>). <c>--ignore-submodules=dirty</c> overrides
+    /// <c>submodule.&lt;name&gt;.ignore</c>, which a committed <c>.gitmodules</c> can carry, and
+    /// <c>diff.ignoreSubmodules</c>, either of which would drop a submodule whose recorded commit changed; unlike
+    /// <c>none</c>, it also keeps a diff against the working tree from running <c>git status</c> inside each checked-out
+    /// submodule, with that submodule's own config and filter drivers. <c>git stash show</c> gets the same pins from
+    /// <see cref="StashPatchShapeFlags"/> and <see cref="StashHeaderPrefixConfig"/>.
     /// </summary>
     public static readonly IReadOnlyList<string> PatchShapeFlags =
     [
@@ -24,16 +28,19 @@ public static class DiffParser
         "--src-prefix=a/",
         "--dst-prefix=b/",
         "--submodule=short",
+        "--ignore-submodules=dirty",
     ];
 
     /// <summary>
-    /// The <see cref="PatchShapeFlags"/> entries <c>git stash show</c> takes safely: no color escapes and the
-    /// <c>short</c> submodule format. Its header prefixes come from <see cref="StashHeaderPrefixConfig"/>.
+    /// The <see cref="PatchShapeFlags"/> entries <c>git stash show</c> takes safely: no color escapes, the <c>short</c>
+    /// submodule format, and <c>--ignore-submodules=dirty</c>. Its header prefixes come from
+    /// <see cref="StashHeaderPrefixConfig"/>.
     /// </summary>
     public static readonly IReadOnlyList<string> StashPatchShapeFlags =
     [
         "--no-color",
         "--submodule=short",
+        "--ignore-submodules=dirty",
     ];
 
     /// <summary>

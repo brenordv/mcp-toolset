@@ -35,7 +35,7 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
             GuardRangeCombination(fromRef, toRef);
             var verifiedRefs = await refVerifier.VerifyOptionalRefsOrRangesAsync(root, [fromRef, toRef], cancellationToken);
 
-            var flags = BuildFlags(staged, ReadsWorktree(staged, verifiedRefs));
+            var flags = BuildFlags(staged);
             var attached = BuildAttachedOptions(contextLines);
             var pathspecs = ToolCommon.ConfinePaths(root, paths);
             var mode = DetermineMode(staged, verifiedRefs.Count > 0, statOnly);
@@ -98,15 +98,13 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
     }
 
     /// <summary>
-    /// Server-built diff flags: <see cref="DiffParser.PatchShapeFlags"/> always, so the user's or the repository's
-    /// config cannot change the patch shape the parser reads; <c>--cached</c> when diffing the staged index; and
-    /// <c>--ignore-submodules=dirty</c> when the diff reads the working tree, because git otherwise runs
-    /// <c>git status</c> inside each checked-out submodule, with the submodule's own config and filter drivers.
+    /// Server-built diff flags: <see cref="DiffParser.PatchShapeFlags"/> always, so the user's or the repository's config
+    /// can neither change the patch shape the parser reads nor hide a changed submodule, plus <c>--cached</c> when diffing
+    /// the staged index.
     /// </summary>
     /// <param name="staged">Whether the diff is of the staged index.</param>
-    /// <param name="readsWorktree">Whether the diff compares against the working tree (see <see cref="ReadsWorktree"/>).</param>
     /// <returns>The server-controlled flag list.</returns>
-    private static List<string> BuildFlags(bool staged, bool readsWorktree)
+    private static List<string> BuildFlags(bool staged)
     {
         var flags = new List<string>(DiffParser.PatchShapeFlags);
         if (staged)
@@ -114,25 +112,8 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
             flags.Add("--cached");
         }
 
-        if (readsWorktree)
-        {
-            flags.Add("--ignore-submodules=dirty");
-        }
-
         return flags;
     }
-
-    /// <summary>
-    /// Whether the diff compares against the working tree: not staged, and neither two refs nor a range. A verified range
-    /// token always contains <c>..</c> and a verified ref never does.
-    /// </summary>
-    /// <param name="staged">Whether the diff is of the staged index.</param>
-    /// <param name="verifiedRefs">The verified refs and range tokens, in slot order.</param>
-    /// <returns><c>true</c> when git reads worktree files for the diff.</returns>
-    private static bool ReadsWorktree(bool staged, List<string> verifiedRefs)
-        => !staged
-            && verifiedRefs.Count < 2
-            && !verifiedRefs.Any(token => token.Contains("..", StringComparison.Ordinal));
 
     /// <summary>Translate a non-negative <paramref name="contextLines"/> override into a <c>-U&lt;n&gt;</c> attached option.</summary>
     private static List<AttachedOption> BuildAttachedOptions(int? contextLines)

@@ -32,7 +32,8 @@ public static class GitCommandBuilder
     /// every config file, so these beat the user's and the repository's config. <c>log.showSignature=false</c> keeps a
     /// repository's config from making <c>git log</c>, <c>git show</c>, <c>git reflog</c>, or the <c>git log</c> that
     /// <c>git stash list</c> starts verify signed commits, which runs the program <c>gpg.program</c>,
-    /// <c>gpg.ssh.program</c>, or <c>gpg.x509.program</c> names.
+    /// <c>gpg.ssh.program</c>, or <c>gpg.x509.program</c> names. <c>log.follow=false</c> keeps <c>git log</c> with one
+    /// pathspec from following renames unless the call passes <c>--follow</c>, which sets the mode directly.
     /// </summary>
     private static readonly IReadOnlyList<(string Key, string Value)> FixedConfig =
     [
@@ -43,7 +44,8 @@ public static class GitCommandBuilder
         ("credential.helper", string.Empty),
         ("core.askpass", string.Empty),
         ("core.quotePath", "false"),
-        ("log.showSignature", "false")
+        ("log.showSignature", "false"),
+        ("log.follow", "false")
     ];
 
     private static readonly HashSet<string> DiffBearingSubcommands = new(StringComparer.Ordinal)

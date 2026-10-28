@@ -37,6 +37,24 @@ internal sealed class TempGitRepo : IDisposable
     /// <summary>The one file <see cref="AddSubmoduleWithFilterDriverTrap"/> commits in the submodule.</summary>
     private const string SubmoduleFile = "s.txt";
 
+    /// <summary>The message of the commit that records a submodule's first gitlink.</summary>
+    private const string SubmoduleAddMessage = "add submodule";
+
+    /// <summary>The file <see cref="StageIgnoredSubmoduleMove"/> declares its submodule in.</summary>
+    private const string GitmodulesFile = ".gitmodules";
+
+    /// <summary>The index mode of a gitlink, the entry a submodule occupies in its superproject.</summary>
+    private const string GitlinkMode = "160000";
+
+    /// <summary>
+    /// The commit <see cref="StageIgnoredSubmoduleMove"/> first records for its gitlink. A gitlink names a commit in
+    /// another repository, so any 40-hex value works.
+    /// </summary>
+    private const string SubmoduleOldCommit = "1111111111111111111111111111111111111111";
+
+    /// <summary>The commit <see cref="StageIgnoredSubmoduleMove"/> stages for its gitlink.</summary>
+    private const string SubmoduleNewCommit = "2222222222222222222222222222222222222222";
+
     /// <summary>Appended to the script's path to name the marker file the script creates when it runs.</summary>
     private const string TrapMarkerSuffix = ".ran";
 
@@ -232,13 +250,33 @@ internal sealed class TempGitRepo : IDisposable
         Run("-C", submodulePath, "add", SubmoduleFile);
         Run("-C", submodulePath, "commit", "-m", "submodule");
         Run("add", submodulePath);
-        Run("commit", "-m", "add submodule");
+        Run("commit", "-m", SubmoduleAddMessage);
 
         var marker = ArmFilterDriverTrap($"{submodulePath}/", "subtrap", SubmoduleFile);
         Run("--no-optional-locks", "status", "--porcelain");
         RequireTrapFired(marker, "git did not run the submodule's filter.subtrap.clean script on this machine, so the submodule filter-driver trap cannot fire");
         File.Delete(marker);
         return marker;
+    }
+
+    /// <summary>
+    /// Set up a submodule the way a hostile repository can hide one: an empty directory at <paramref name="path"/>, as a
+    /// clone whose submodules were never initialized has; a committed <c>.gitmodules</c> that declares the submodule there
+    /// with <c>ignore = all</c>; and a committed gitlink there at <see cref="SubmoduleOldCommit"/>. Then stage the gitlink
+    /// at <see cref="SubmoduleNewCommit"/>, so the next commit moves the submodule. No submodule repository exists:
+    /// <c>git update-index --cacheinfo</c> records a gitlink without checking the commit it names.
+    /// </summary>
+    /// <param name="path">A <c>/</c>-separated path that does not exist yet; also the submodule's name.</param>
+    /// <returns>The commit id the staged gitlink names.</returns>
+    public string StageIgnoredSubmoduleMove(string path)
+    {
+        Directory.CreateDirectory(PrepareTarget(path));
+        WriteFile(GitmodulesFile, $"[submodule \"{path}\"]\n\tpath = {path}\n\tignore = all\n");
+        Run("add", GitmodulesFile);
+        Run("update-index", "--add", "--cacheinfo", $"{GitlinkMode},{SubmoduleOldCommit},{path}");
+        Run("commit", "-m", SubmoduleAddMessage);
+        Run("update-index", "--cacheinfo", $"{GitlinkMode},{SubmoduleNewCommit},{path}");
+        return SubmoduleNewCommit;
     }
 
     public void Dispose()

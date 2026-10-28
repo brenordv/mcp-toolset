@@ -28,6 +28,7 @@ public class GitCommandBuilderTests
         Assert.Contains("--no-pager", argv);
         Assert.DoesNotContain("--literal-pathspecs", argv);
         Assert.Contains("log.showSignature=false", argv);
+        Assert.Contains("log.follow=false", argv);
     }
 
     [Fact]

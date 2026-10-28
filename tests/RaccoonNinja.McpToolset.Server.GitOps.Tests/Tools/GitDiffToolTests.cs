@@ -15,6 +15,7 @@ public sealed class GitDiffToolTests : IDisposable
     private const string SubmodulePath = "sub";
     private const string SubmoduleOldCommit = "1111111111111111111111111111111111111111";
     private const string SubmoduleNewCommit = "2222222222222222222222222222222222222222";
+    private const string SubmoduleMoveSubject = "move submodule";
 
     private readonly TempGitRepo _repo;
     private readonly GitDiffTool _tool;
@@ -80,15 +81,17 @@ public sealed class GitDiffToolTests : IDisposable
         Assert.NotEmpty(file.Hunks);
     }
 
-    [Fact]
-    public async Task Diff_RefToRef_WithSubmoduleLogConfig_ReturnsSubmoduleEntry()
+    [Theory]
+    [InlineData("diff.submodule", "log")]
+    [InlineData("diff.ignoreSubmodules", "all")]
+    public async Task Diff_RefToRef_WithSubmoduleConfig_ReturnsSubmoduleEntry(string configKey, string configValue)
     {
         // Arrange
         _repo.Run("update-index", "--add", "--cacheinfo", $"{GitlinkMode},{SubmoduleOldCommit},{SubmodulePath}");
         _repo.Run("commit", "-m", "add submodule");
         _repo.Run("update-index", "--cacheinfo", $"{GitlinkMode},{SubmoduleNewCommit},{SubmodulePath}");
-        _repo.Run("commit", "-m", "move submodule");
-        _repo.Run("config", "diff.submodule", "log");
+        _repo.Run("commit", "-m", SubmoduleMoveSubject);
+        _repo.Run("config", configKey, configValue);
 
         // Act
         var envelope = await _tool.InvokeAsync(_repo.RepoPath, fromRef: "HEAD~1", toRef: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
@@ -148,5 +151,44 @@ public sealed class GitDiffToolTests : IDisposable
         var diff = Assert.IsType<DiffResult>(envelope.Results[0]);
         Assert.Empty(diff.Files);
         Assert.False(File.Exists(marker));
+    }
+
+    [Theory]
+    [InlineData("HEAD")]
+    [InlineData(null)]
+    public async Task Diff_FromParent_WithGitmodulesIgnoreAll_ReturnsSubmoduleEntry(string toRef)
+    {
+        // Arrange
+        _repo.StageIgnoredSubmoduleMove(SubmodulePath);
+        _repo.Run("commit", "-m", SubmoduleMoveSubject);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, fromRef: "HEAD~1", toRef: toRef, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var diff = Assert.IsType<DiffResult>(envelope.Results[0]);
+        var file = Assert.Single(diff.Files);
+        Assert.Equal(SubmodulePath, file.Path);
+        Assert.Equal(1, file.Additions);
+        Assert.Equal(1, file.Deletions);
+    }
+
+    [Fact]
+    public async Task Diff_Staged_WithGitmodulesIgnoreAll_ReturnsSubmoduleEntry()
+    {
+        // Arrange
+        _repo.StageIgnoredSubmoduleMove(SubmodulePath);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, staged: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var diff = Assert.IsType<DiffResult>(envelope.Results[0]);
+        var file = Assert.Single(diff.Files);
+        Assert.Equal(SubmodulePath, file.Path);
+        Assert.Equal(1, file.Additions);
+        Assert.Equal(1, file.Deletions);
     }
 }

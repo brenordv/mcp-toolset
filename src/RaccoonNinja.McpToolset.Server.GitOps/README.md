@@ -137,8 +137,9 @@ maps to git's `-U<n>`. Every pass runs with `--no-color`, so a `color.ui` or `co
 git config cannot put escape codes in the patch. Every pass also runs with
 `--src-prefix=a/ --dst-prefix=b/ --submodule=short`, so `diff.noprefix`, `diff.mnemonicPrefix`, `diff.srcPrefix`,
 `diff.dstPrefix`, or `diff.submodule` in your git config cannot change the `diff --git a/<path> b/<path>` header each
-file is read from. A diff against the working tree (worktree mode, or `fromRef` or `toRef` alone) also runs every
-pass with `--ignore-submodules=dirty`, so a submodule with only uncommitted changes inside it is not listed; see
+file is read from. Every pass also runs with `--ignore-submodules=dirty`, so a submodule ignore setting cannot hide a
+submodule whose recorded commit changed, and a diff against the working tree (worktree mode, or `fromRef` or `toRef`
+alone) does not list a submodule with only uncommitted changes inside it; see
 [Security model (long version)](#security-model-long-version).
 
 ```mermaid
@@ -147,8 +148,8 @@ flowchart TD
     B --> C[Verify fromRef / toRef → SHAs]
     C --> D[Confine paths]
     D --> E{statOnly?}
-    E -- yes --> F["diff --no-color --src-prefix=a/ --dst-prefix=b/<br/>--submodule=short [--cached] [--ignore-submodules=dirty]<br/>--numstat -z<br/>(+ the same with --name-status -z)"]
-    E -- no --> G["diff --no-color --src-prefix=a/ --dst-prefix=b/<br/>--submodule=short [--cached] [--ignore-submodules=dirty]<br/>[-U n] refs -- pathspecs<br/>(+ the same with --numstat -z)"]
+    E -- yes --> F["diff --no-color --src-prefix=a/ --dst-prefix=b/<br/>--submodule=short [--cached] --ignore-submodules=dirty<br/>--numstat -z<br/>(+ the same with --name-status -z)"]
+    E -- no --> G["diff --no-color --src-prefix=a/ --dst-prefix=b/<br/>--submodule=short --ignore-submodules=dirty<br/>[--cached] [-U n] refs -- pathspecs<br/>(+ the same with --numstat -z)"]
     F --> H[DiffParser: merge counts + change kinds]
     G --> H
     H --> I[DiffResult: per-file hunks + additions/deletions + mode]
@@ -168,15 +169,18 @@ Filters: `author`, `since`, `until`, `grep` (message match; a basic regular expr
 uses, so `A|B` alternation and `\d` work; a git without PCRE2 returns `PcreUnavailable`, as for `git_grep`),
 `pickaxe` (`-S`, find when a string was added or removed), `paths`, `ref` (start point, or a range `A..B` /
 `A...B` to list the commits one ref adds over another), `allRefs` (walk every ref under `refs/` plus `HEAD`;
-cannot be combined with `ref`), `follow` (track renames, only when scoped to a single path), and `maxCount`
-(default 50).
+cannot be combined with `ref`), `follow` (track renames, only when scoped to a single path; a `log.follow` setting in
+git config does not turn it on), and `maxCount` (default 50).
+
+Every call also passes `--ignore-submodules=dirty`, so a submodule ignore setting cannot drop a submodule's commit change
+from the diff git builds for `pickaxe` or `follow`; see [Security model (long version)](#security-model-long-version).
 
 ```mermaid
 flowchart LR
     A[git_log: cwd + filters] --> B[Resolve root]
     B --> C[Verify ref → SHA if provided]
     C --> D[Confine paths]
-    D --> E["git log --pretty=format:… <br/>--author --since --until --grep -S<br/>--basic-regexp or -P [--all]<br/>--max-count [--follow] ref -- pathspecs"]
+    D --> E["git log --pretty=format:… <br/>--author --since --until --grep -S<br/>--basic-regexp or -P [--all]<br/>--ignore-submodules=dirty<br/>--max-count [--follow] ref -- pathspecs"]
     E --> F[LogParser → Commit records]
     F --> G[ResultEnvelope · filters_applied]
 ```
@@ -192,7 +196,9 @@ Runs two passes: a one-commit `git log` for metadata (same format as `git_log`),
 patch, parsed into the same `FileDiff` shape as `git_diff`. `paths` restricts the diff section. Every pass runs with
 `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your git config cannot put escape codes in the
 patch. The patch pass also runs with `--src-prefix=a/ --dst-prefix=b/ --submodule=short`, so the diff prefix and
-submodule keys in your git config cannot change the header each file is read from.
+submodule keys in your git config cannot change the header each file is read from. It also runs with
+`--ignore-submodules=dirty`, so a submodule ignore setting cannot hide a submodule whose recorded commit changed; see
+[Security model (long version)](#security-model-long-version).
 
 A `ref` in `<rev>:<path>` form (`HEAD:README.md`, `:README.md`, or `HEAD:` for the root tree) names a file or tree,
 not a commit, and is rejected with a
@@ -206,7 +212,7 @@ flowchart TD
     R -- yes --> X[RejectedArgument → use git_file_at_ref]
     R -- no --> C[Verify ref → SHA<br/>required]
     C --> D["git log -1 --pretty=format:… SHA<br/>(metadata)"]
-    C --> E["git show --format= --no-color --src-prefix=a/<br/>--dst-prefix=b/ --submodule=short SHA -- pathspecs<br/>(patch)"]
+    C --> E["git show --format= --no-color --src-prefix=a/<br/>--dst-prefix=b/ --submodule=short<br/>--ignore-submodules=dirty SHA -- pathspecs<br/>(patch)"]
     D --> F[Commit record]
     E --> G[FileDiff list]
     F --> H["payload { commit, files }"]
@@ -434,14 +440,15 @@ the patch. Every pass also runs with `--submodule=short` and with
 `diff.mnemonicPrefix`, `diff.srcPrefix`, `diff.dstPrefix`, or `diff.submodule` in your git config cannot change the
 `diff --git a/<path> b/<path>` header each file is read from. The prefixes are pinned through config here, not with
 `--src-prefix=` and `--dst-prefix=` as in `git_diff`, because `git stash show` in git 2.52.0 through 2.55.x garbles a
-prefix given on its command line.
+prefix given on its command line. Both passes also run with `--ignore-submodules=dirty`, so a submodule ignore setting
+cannot hide a submodule whose recorded commit changed; see [Security model (long version)](#security-model-long-version).
 
 ```mermaid
 flowchart TD
     A["git_stash_show: cwd, index"] --> B[Resolve root]
     B --> C{index >= 0?}
     C -- no --> D[RejectedArgument error]
-    C -- yes --> E["-c diff.noprefix=false -c diff.mnemonicPrefix=false<br/>-c diff.srcPrefix=a/ -c diff.dstPrefix=b/<br/>stash show -p --no-color --submodule=short stash@{index}<br/>(+ the same with --numstat -z)"]
+    C -- yes --> E["-c diff.noprefix=false -c diff.mnemonicPrefix=false<br/>-c diff.srcPrefix=a/ -c diff.dstPrefix=b/<br/>stash show -p --no-color --submodule=short<br/>--ignore-submodules=dirty stash@{index}<br/>(+ the same with --numstat -z)"]
     E --> F[DiffParser: merge patch + counts]
     F --> G[DiffResult]
     G --> H[ResultEnvelope]
@@ -553,11 +560,12 @@ flowchart TD
 
 - **One argv producer.** Tools declare a typed `GitIntent`; a single `GitCommandBuilder` is the only code that
   serializes it to argv. It prepends fixed `-c` neutralizers (disable hooks, pager, fsmonitor, credential helpers,
-  askpass, auto-gc, signature verification) and, before any positional ref, inserts `--end-of-options` so no user
-  value can be read as an option (git grep excepted: its pattern is a glued `-e` token and its refs are pre-resolved
-  SHAs). `log.showSignature=false` is there because verifying a signed commit runs the program `gpg.program`,
-  `gpg.ssh.program`, or `gpg.x509.program` names, and a repository's own config can set both keys; a forged signature
-  is enough.
+  askpass, auto-gc, signature verification, rename following from config) and, before any positional ref, inserts
+  `--end-of-options` so no user value can be read as an option (git grep excepted: its pattern is a glued `-e` token
+  and its refs are pre-resolved SHAs). `log.showSignature=false` is there because verifying a signed commit runs the
+  program `gpg.program`, `gpg.ssh.program`, or `gpg.x509.program` names, and a repository's own config can set both
+  keys; a forged signature is enough. `log.follow=false` is there because `log.follow=true` in config makes `git log`
+  with one path follow renames although `follow` was false.
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or
@@ -617,12 +625,20 @@ flowchart TD
   `git status` inside every checked-out submodule, and that process reads the submodule's own config, filter drivers
   included. `git_status` and a worktree `git_diff` pass `--ignore-submodules=dirty`, so a submodule whose commit moved
   is still listed, but one with only uncommitted changes inside it is not. Call the tool with `cwd` inside the
-  submodule to see those. On those calls the flag also overrides a `submodule.<name>.ignore` or
-  `diff.ignoreSubmodules` setting, so a submodule commit change is listed even where that config would hide it. Every
-  diff pass of `git_diff`, `git_show`, and `git_stash_show` runs with `--submodule=short`, which prints a submodule
-  commit change as one `Subproject commit` line per side, so a `diff.submodule=diff` setting cannot make git start
-  `git diff` inside the submodule, where the submodule's own config could name an external diff command or textconv
-  driver.
+  submodule to see those. Every diff pass of `git_diff`, `git_show`, and `git_stash_show` runs with
+  `--submodule=short`, which prints a submodule commit change as one `Subproject commit` line per side, so a
+  `diff.submodule=diff` setting cannot make git start `git diff` inside the submodule, where the submodule's own config
+  could name an external diff command or textconv driver.
+- **Submodule ignore settings are overridden.** `submodule.<name>.ignore=all`, which a committed `.gitmodules` can
+  carry, `diff.ignoreSubmodules=all`, and a `.gitmodules` left unmerged in the index each make git leave a submodule out
+  of a diff even when its recorded commit changed. `git_status`, every `git_diff` and `git_stash_show` pass, the
+  `git_show` patch pass, and every `git_log` call pass `--ignore-submodules=dirty`, and that command-line value
+  overrides all three. For `git_log` it matters with `pickaxe` and with `follow`, since git then keeps only the commits
+  whose diff matches. The override applies to a setting you made yourself to quiet a submodule as well; the tools have
+  no opt-out. To see which settings a repository carries, run `git config --show-origin --get-regexp '\.ignore$'`,
+  `git config --show-origin --get diff.ignoreSubmodules`, and `git config -f .gitmodules --get-regexp '\.ignore$'` in
+  it (entries whose origin is the system config file are ones the server never reads, since it runs git with
+  `GIT_CONFIG_NOSYSTEM=1`); `git ls-files -u .gitmodules` prints lines when `.gitmodules` is unmerged.
 
 ---
 

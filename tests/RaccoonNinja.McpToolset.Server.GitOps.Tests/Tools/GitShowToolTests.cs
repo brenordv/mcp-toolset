@@ -12,6 +12,7 @@ public sealed class GitShowToolTests : IDisposable
 {
     private const string ChangedFile = "a.txt";
     private const string SignedSubject = "signed";
+    private const string SubmodulePath = "sub";
 
     private readonly TempGitRepo _repo;
     private readonly GitShowTool _tool;
@@ -73,5 +74,25 @@ public sealed class GitShowToolTests : IDisposable
         var commit = Assert.IsType<Commit>(payload["commit"]);
         Assert.Equal(signedHash, commit.Hash);
         Assert.False(File.Exists(marker));
+    }
+
+    [Fact]
+    public async Task Show_WithGitmodulesIgnoreAll_ReturnsSubmoduleEntry()
+    {
+        // Arrange
+        _repo.StageIgnoredSubmoduleMove(SubmodulePath);
+        _repo.Run("commit", "-m", "move submodule");
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        var files = Assert.IsAssignableFrom<IReadOnlyList<FileDiff>>(payload["files"]);
+        var file = Assert.Single(files);
+        Assert.Equal(SubmodulePath, file.Path);
+        Assert.Equal(1, file.Additions);
+        Assert.Equal(1, file.Deletions);
     }
 }
