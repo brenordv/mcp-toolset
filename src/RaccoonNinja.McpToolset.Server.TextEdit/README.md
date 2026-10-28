@@ -219,7 +219,9 @@ as a length and a hash, never verbatim. A regex that hits its per-match timeout 
 Warning event (`regex_timeout`) as well as that file's `refusal_reason`, and it is counted even when the call
 then fails (an `expected_match_count` mismatch, or the operation budget). A logged exception is recorded only
 as its type chain, never its message or stack trace; a startup failure's reason is printed to stderr as
-`text-edit: fatal error: ...`.
+`text-edit: fatal error: ...`. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of which names the
+working directory) are not logged. The MCP SDK's own lines (categories under `ModelContextProtocol`) are never logged
+below Information, so its Trace-level copy of every JSON-RPC frame is not logged.
 
 ## Requirements
 

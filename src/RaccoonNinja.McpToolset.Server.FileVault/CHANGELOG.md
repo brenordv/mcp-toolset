@@ -1,3 +1,15 @@
+## v3.4.0
+- Fixed: `stderr_tail` kept the scrubbed full text (message and stack trace) of every exception that was not a vault
+  or MCP exception, so a startup, host, SQLite, or filesystem exception that names a file by its absolute path
+  reached the log, most often on the `internal_error` line a failed tool call writes. Every exception now logs as its
+  type chain only, outer to inner, at most eight entries; a vault or MCP exception, which logged as its short type
+  name, now logs as its full type name. The `internal_error` line no longer carries the SQLite result code that was
+  in the exception text; `tool_call` keeps `exception_type`.
+- Fixed: the generic host logged `Content root path: <working directory>` at Information on every startup; the
+  host's lifetime category is now held at Warning. Log change: the content of `stderr_tail` on exception events, and
+  the host's four status lines (`Application started`, `Hosting environment`, `Content root path`,
+  `Application is shutting down`) are gone.
+
 ## v3.3.1
 - Internal: removed every `ConfigureAwait(false)` call. The stdio host has no synchronization context, so
   continuations run on the same threads as before. No wire or behavior change.

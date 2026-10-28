@@ -305,8 +305,10 @@ next to the executable), or stderr if the file cannot be opened. Set the level w
 owns. Log fields pass through a fixed allowlist, so a value can never leak through an unexpected key; the
 base root is logged only as an 8-character hash, never as a path. A logged exception is recorded only as its
 type chain, never its message or stack trace; a startup failure's reason is printed to stderr as
-`text-search: fatal error: ...`. A refusal (denylist hit, out-of-base `cwd`, regex timeout) is a
-first-class, counted event, and a shutdown line carries the session metrics.
+`text-search: fatal error: ...`. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of which names the
+working directory) are not logged. The MCP SDK's own lines (categories under `ModelContextProtocol`) are never logged
+below Information, so its Trace-level copy of every JSON-RPC frame is not logged. A refusal (denylist hit, out-of-base
+`cwd`, regex timeout) is a first-class, counted event, and a shutdown line carries the session metrics.
 
 ## Requirements
 

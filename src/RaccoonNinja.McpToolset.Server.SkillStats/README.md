@@ -63,7 +63,9 @@ The store defaults to `~/.skill-stats/skill-stats.db`; set `SKILL_STATS_HOME` to
 point the hook and this server at the same home. `MCP_SKILLSTATS_LOG_FILE` and
 `MCP_SKILLSTATS_LOG_LEVEL` control the server's own log; it never writes to stdout. A logged exception is
 recorded only as its type chain, never its message or stack trace; a startup failure's reason is printed to
-stderr as `skill-stats: fatal error: ...`.
+stderr as `skill-stats: fatal error: ...`. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of
+which names the working directory) are not logged. The MCP SDK's own lines (categories under `ModelContextProtocol`)
+are never logged below Information, so its Trace-level copy of every JSON-RPC frame is not logged.
 
 ## Adding it to Claude Code
 

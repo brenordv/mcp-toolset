@@ -1,3 +1,11 @@
+## v1.9.0
+- Fixed: the generic host logged `Content root path: <working directory>` at Information on every startup; the
+  host's lifetime category is now held at Warning. Log change: the host's four status lines (`Application started`,
+  `Hosting environment`, `Content root path`, `Application is shutting down`) are gone.
+- Fixed: at a `TRACE` log level the MCP SDK wrote every JSON-RPC frame verbatim (the `cwd`, paths, patterns, file
+  content) to the log; the SDK's categories are now held at Information or the configured level, whichever is
+  higher. Log change: at `DEBUG` and `TRACE`, the SDK's own lines below Information are gone.
+
 ## v1.8.0
 - Fixed: which ignore files a directory holds was decided by `File.Exists` per name, which reports an
   existing file as absent when the server cannot read its attributes or list its directory, so such a

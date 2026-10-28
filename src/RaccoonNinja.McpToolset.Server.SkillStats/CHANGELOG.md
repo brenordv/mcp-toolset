@@ -1,3 +1,12 @@
+## v1.3.0
+- Fixed: the generic host logged `Content root path: <working directory>` at Information on every startup; the
+  host's lifetime category is now held at Warning. Log change: the host's four status lines (`Application started`,
+  `Hosting environment`, `Content root path`, `Application is shutting down`) are gone.
+- Fixed: at a `TRACE` log level the MCP SDK wrote every JSON-RPC frame verbatim (skill names, recorded invocation
+  args, session ids, workspace directories) to the log; the SDK's categories are now held at Information or the
+  configured level, whichever is higher. Log change: at `DEBUG` and `TRACE`, the SDK's own lines below Information
+  are gone.
+
 ## v1.2.0
 - Fixed: the `exception_tail` log field, written when startup fails or when the host or the MCP SDK logs an
   exception, carried the exception's message and stack trace, which can name a file by its absolute path. It

@@ -1,3 +1,22 @@
+## v2.15.0
+- Fixed: a log event carrying an exception (a crash, or a record the host or the MCP SDK logged with an exception
+  attached) wrote the last 512 bytes of the exception's message and stack trace to `stderr_tail`, which can name a
+  file by its absolute path. It now writes the exception's type chain only, outer to inner, at most eight entries.
+  `stderr_tail` on `subprocess_exit` (git's own stderr) is unchanged.
+- Fixed: the generic host logged `Content root path: <working directory>` at Information on every startup; the
+  host's lifetime category is now held at Warning. Log change: the content of `stderr_tail` on exception events, and
+  the host's four status lines (`Application started`, `Hosting environment`, `Content root path`,
+  `Application is shutting down`) are gone.
+- Fixed: at a `TRACE` log level the MCP SDK wrote every JSON-RPC frame verbatim (the `cwd`, refs, paths, patterns,
+  file content) to the log; the SDK's categories are now held at Information or the configured level, whichever is
+  higher. Log change: at `DEBUG` and `TRACE`, the SDK's own lines below Information are gone.
+- Fixed: the `suspicious_filter_invocation` Warning put the failed filter's command, which can hold an absolute path,
+  in `driver_name`; it now carries no text from the command. It also missed a command containing `'`, such as a
+  quoted path (`'<path>' %f`), and now fires whatever characters the command holds.
+- Log change: `suspicious_filter_invocation` lines no longer have `driver_name`, and no line carries that field; the
+  event keeps `event`, `tool`, `call_id`, and `message`. It can now appear for a failed filter whose command contains
+  `'`, which wrote no line before.
+
 ## v2.14.0
 - Fixed: `submodule.<name>.ignore=all`, which a committed `.gitmodules` can carry, `diff.ignoreSubmodules=all` in the
   user's or the repository's config, or a `.gitmodules` left unmerged in the index made a staged or commit-to-commit

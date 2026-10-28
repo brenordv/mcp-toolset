@@ -173,7 +173,10 @@ stale-`base_version` `conflict` for one, is never rewritten. Only argument names
   guard.
 - **Logs never contain content**: an allowlist formatter admits only validated identifiers and system data
   (project, name, versions, sizes, durations, error codes). Summaries, tags, content, diffs, headings, and queries
-  are never logged; search terms appear only as hashes.
+  are never logged; search terms appear only as hashes. A logged exception is recorded only as its type chain, never
+  its message or stack trace, which can carry note content or an absolute path; a startup failure's reason is printed
+  to stderr as `vault-mcp: fatal error: ...`. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of
+  which names the working directory) are not logged.
 
 > **Plaintext store caveat:** the vault stores content as plain text on disk. It is not a secret store; do not save
 > credentials or other secrets in it.

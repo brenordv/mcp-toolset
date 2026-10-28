@@ -531,7 +531,7 @@ check out. Only argument names are echoed back, never values.
   - **Every input is treated as suspect.** Branch and commit names are checked against the real repo before use, and nothing the assistant sends can be mistaken for a secret command-line option.
   - **Git itself is locked down.** Auto-running scripts (hooks and filter drivers), password prompts, and credential helpers are switched off, and the command runs in a stripped-down environment, so a booby-trapped repo can't hijack it.
   - **It can't run away.** Each call is capped at 30 seconds and 8 MB of output, then stopped: no runaway processes, no memory blowups.
-  - **It doesn't leak.** Error messages and logs are scrubbed of your file names, search terms, and paths.
+  - **It doesn't leak.** Error messages and logs are scrubbed of your file names, search terms, and paths, except the end of git's own error output when a call fails, which the server log keeps for diagnosis.
 
 As is with all in-house security solutions: This is not perfect, and I might be unknowingly be re-inventing the wheel. But it's a best-effort type of thing. I'll gladly accept feedback and suggestions to improve it.
 
@@ -617,10 +617,14 @@ flowchart TD
   `GIT_CONFIG_NOSYSTEM=1`; the rest are the drivers it pins). With `MCP_GITOPS_LOG_LEVEL=DEBUG`, the call's
   `argv_built` line shows four `-c <filter_driver>` pairs per pinned driver, never the name. The
   `suspicious_filter_invocation` Warning stays as a tripwire: it fires when git's stderr shows
-  `external filter '<command>' failed` for a command with no `'` in it, and its `driver_name` field holds that command,
-  cut to 128 bytes. With the pins in place no tool call should produce it, so one most likely means a filter ran that
-  the server did not pin; a repository's config can also put that text into a git warning, so treat it as a lead, not
-  proof.
+  `external filter '<command>' failed`, whatever characters the command holds, and carries the git subcommand in
+  `tool` (`status` where the call's other lines say `git_status`) and the call's `call_id`, never the command, which
+  can hold an absolute path. With the pins in place no tool call should produce it, so one most likely means a filter
+  ran that the server did not pin; a repository's config can also put that text into a git warning, so treat it as a
+  lead, not proof. Its absence proves nothing: a filter that exits 0 prints no message, and under a non-English locale
+  git can print the message translated. No log line names the repository, so find it from your client's record of the
+  tool call made at the Warning's `ts`, then run `git config --show-origin --get-regexp '^filter\.'` there to see each
+  driver's command and the file that sets it.
 - **Submodule worktrees are not entered.** Left to itself, `git status` and a `git diff` against the working tree run
   `git status` inside every checked-out submodule, and that process reads the submodule's own config, filter drivers
   included. `git_status` and a worktree `git_diff` pass `--ignore-submodules=dirty`, so a submodule whose commit moved
@@ -645,7 +649,10 @@ flowchart TD
 ## Logging
 
 Structured JSON logs (allowlisted fields only, no user data) go to a rotating file, falling back to stderr if the file
-can't be opened. stdout is reserved for the MCP protocol.
+can't be opened. stdout is reserved for the MCP protocol. A logged exception is recorded in `stderr_tail` only as its
+type chain, never its message or stack trace. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of
+which names the working directory) are not logged. The MCP SDK's own lines (categories under `ModelContextProtocol`)
+are never logged below Information, so its Trace-level copy of every JSON-RPC frame is not logged.
 
 | Variable               | Purpose                                       | Default                                 |
 |------------------------|-----------------------------------------------|-----------------------------------------|

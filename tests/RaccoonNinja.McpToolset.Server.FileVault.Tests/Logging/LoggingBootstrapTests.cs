@@ -1,4 +1,5 @@
 using RaccoonNinja.McpToolset.Server.FileVault.Logging;
+using Serilog.Core;
 using Serilog.Events;
 
 namespace RaccoonNinja.McpToolset.Server.FileVault.Tests.Logging;
@@ -6,6 +7,10 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Tests.Logging;
 /// <summary>Tests for <see cref="LoggingBootstrap.Build"/>: level parsing, the RUST_LOG fallback, and the eager file-sink probe.</summary>
 public sealed class LoggingBootstrapTests : IDisposable
 {
+    private const string HostLifetimeCategory = "Microsoft.Hosting.Lifetime";
+    private const string ContentRootProbe = "content-root-probe";
+    private const string ControlEvent = "lifetime-control";
+
     private readonly string _root =
         Path.Combine(Path.GetTempPath(), "filevault-tests", Guid.NewGuid().ToString("N"));
 
@@ -121,5 +126,31 @@ public sealed class LoggingBootstrapTests : IDisposable
         Assert.False(hasBom);
         Assert.NotEmpty(bytes);
         Assert.Equal((byte)'{', bytes[0]);
+    }
+
+    [Fact]
+    public void Build_HostLifetimeInformation_IsNotWritten()
+    {
+        // Arrange
+        var logPath = Path.Combine(_root, "logs", "lifetime.log");
+        var env = new Dictionary<string, string>
+        {
+            [LoggingConstants.EnvLogFile] = logPath,
+            [LoggingConstants.EnvLogLevel] = "debug",
+        };
+
+        // Act
+        using (var logger = LoggingBootstrap.Build(env))
+        {
+            logger
+                .ForContext(Constants.SourceContextPropertyName, HostLifetimeCategory)
+                .Information("Content root path: {ContentRoot}", ContentRootProbe);
+            logger.Information("{Event}", ControlEvent);
+        }
+
+        // Assert
+        var content = File.ReadAllText(logPath);
+        Assert.DoesNotContain(ContentRootProbe, content, StringComparison.Ordinal);
+        Assert.Contains(ControlEvent, content, StringComparison.Ordinal);
     }
 }
