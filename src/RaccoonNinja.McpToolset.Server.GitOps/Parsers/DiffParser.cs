@@ -72,7 +72,8 @@ public static class DiffParser
             var chunk = tokens[i++];
             if (string.IsNullOrWhiteSpace(chunk)) continue;
 
-            var parts = chunk.Split('\t');
+            // Under -z the path is printed as it is and can hold a tab itself, so only the first two tabs separate fields.
+            var parts = chunk.Split('\t', 3);
             if (parts.Length < 2) continue;
             if (!TryParseCount(parts[0], out var additions) || !TryParseCount(parts[1], out var deletions)) continue;
 
@@ -97,12 +98,13 @@ public static class DiffParser
 
     /// <summary>
     /// Resolve the path for a numstat record. Plain entries carry it in <paramref name="parts"/>[2];
-    /// rename entries leave that blank and store the orig/new paths in the following two NUL-separated
+    /// rename and copy entries leave that empty and store the orig/new paths in the following two NUL-separated
     /// tokens, consuming them by advancing <paramref name="i"/>.
     /// </summary>
     private static bool TryResolvePath(string[] parts, string[] tokens, ref int i, out string path)
     {
-        if (parts.Length >= 3 && !string.IsNullOrWhiteSpace(parts[2]))
+        // A path can be all whitespace; only a rename or copy record leaves this field empty.
+        if (parts.Length >= 3 && parts[2].Length > 0)
         {
             path = parts[2];
             return true;
@@ -118,6 +120,21 @@ public static class DiffParser
         i += 2;
         return true;
     }
+
+    /// <summary>
+    /// True when a file read from the patch has a path the <c>--numstat -z</c> pass does not list. That pass lists every
+    /// path the patch prints, keyed on the new path for a rename or copy, so a miss is a path the reader misread from its
+    /// header, or a working tree, index, or stash that changed between the two git processes. The check runs one way on
+    /// purpose: the numstat pass also lists pairs the patch prints no <c>diff --git</c> header for (an unmerged path, a
+    /// byte-identical pair).
+    /// </summary>
+    /// <param name="files">Files read from the patch with <see cref="ParseUnified"/>.</param>
+    /// <param name="numstat">The map <see cref="ParseNumstatZ"/> returned for the same diff.</param>
+    /// <returns><c>true</c> when at least one file's path is not a key of <paramref name="numstat"/>.</returns>
+    public static bool HasPathMissingFromNumstat(
+        IEnumerable<FileDiff> files,
+        IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat)
+        => files.Any(file => !numstat.ContainsKey(file.Path));
 
     /// <summary>Parse <c>git diff --name-status -z</c> into <c>path → <see cref="ChangeType"/></c>.</summary>
     /// <param name="raw">Raw stdout bytes from <c>git diff --name-status -z</c>.</param>

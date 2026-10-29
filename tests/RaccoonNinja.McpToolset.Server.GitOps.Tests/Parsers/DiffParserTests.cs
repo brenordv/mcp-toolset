@@ -49,6 +49,37 @@ public class DiffParserTests
     }
 
     [Fact]
+    public void ParseNumstatZ_PathWithTab_KeepsWholePath()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes("1\t0\ta\tb.txt\0");
+
+        // Act
+        var ns = DiffParser.ParseNumstatZ(bytes);
+
+        // Assert
+        var entry = Assert.Single(ns);
+        Assert.Equal("a\tb.txt", entry.Key);
+        Assert.Equal((1, 0), entry.Value);
+    }
+
+    [Fact]
+    public void ParseNumstatZ_PathOfOnlyWhitespace_KeepsFollowingRecords()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes("1\t0\t \0" + "2\t0\tb.txt\0" + "3\t0\tc.txt\0");
+
+        // Act
+        var ns = DiffParser.ParseNumstatZ(bytes);
+
+        // Assert
+        Assert.Equal(3, ns.Count);
+        Assert.Equal((1, 0), ns[" "]);
+        Assert.Equal((2, 0), ns["b.txt"]);
+        Assert.Equal((3, 0), ns["c.txt"]);
+    }
+
+    [Fact]
     public void ParseUnified_ReadsSingleFileWithOneHunk()
     {
         // Arrange
@@ -116,6 +147,42 @@ public class DiffParserTests
 
         // Assert
         Assert.True(files.Single().IsBinary);
+    }
+
+    [Theory]
+    [InlineData("diff --git \"a/a\\\"b.txt\" \"b/a\\\"b.txt\"", "a\"b.txt")]
+    [InlineData("diff --git \"a/a\\\\b.txt\" \"b/a\\\\b.txt\"", "a\\b.txt")]
+    [InlineData("diff --git \"a/a\\tb.txt\" \"b/a\\tb.txt\"", "a\tb.txt")]
+    [InlineData("diff --git \"a/a\\001b.txt\" \"b/a\\001b.txt\"", "a\u0001b.txt")]
+    [InlineData("diff --git a/x b/c.txt b/x b/c.txt", "x b/c.txt")]
+    public void ParseUnified_HeaderWithQuotedOrSpaceBPath_ReadsPath(string header, string expectedPath)
+    {
+        // Act
+        var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(header + "\nold mode 100644\nnew mode 100755\n"));
+
+        // Assert
+        var file = Assert.Single(files);
+        Assert.Equal(expectedPath, file.Path);
+        Assert.Equal(expectedPath, file.OldPath);
+    }
+
+    [Theory]
+    [InlineData("diff --git \"a/caf\\303\\251.txt\" \"b/caf\\303\\251.txt\"")]
+    [InlineData("diff --git \"a/x.txt")]
+    [InlineData("diff --git \"a/x.txt\\")]
+    [InlineData("diff --git \"a/x.txt\"\"b/x.txt\"")]
+    [InlineData("diff --git a/x\"y")]
+    [InlineData("diff --git a/x \"b/x\"y")]
+    [InlineData("diff --git a/x.txt")]
+    public void ParseUnified_UnreadableHeader_KeepsHeaderLineAsPath(string header)
+    {
+        // Act
+        var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(header + "\n"));
+
+        // Assert
+        var file = Assert.Single(files);
+        Assert.Equal(header, file.Path);
+        Assert.Null(file.OldPath);
     }
 
     [Fact]
@@ -312,6 +379,21 @@ public class DiffParserTests
         Assert.Equal(ChangeType.Modified, result.Files[0].ChangeType);
     }
 
+    [Theory]
+    [MemberData(nameof(PatchAndNumstatPairs))]
+    public void HasPathMissingFromNumstat_ParsedPatchAndNumstat_ReturnsExpected(string patch, string numstat, bool expected)
+    {
+        // Arrange
+        var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(patch));
+        var counts = DiffParser.ParseNumstatZ(Encoding.UTF8.GetBytes(numstat));
+
+        // Act
+        var missing = DiffParser.HasPathMissingFromNumstat(files, counts);
+
+        // Assert
+        Assert.Equal(expected, missing);
+    }
+
     #region Test Helpers
 
     public static TheoryData<string, ChangeType> PlainNameStatusEntries()
@@ -348,6 +430,82 @@ public class DiffParserTests
                 ChangeType.Copied,
                 "orig.txt",
                 "copy.txt"
+            },
+            {
+                "diff --git \"a/old\\\"q.txt\" b/new.txt\n" +
+                "similarity index 95%\n" +
+                "rename from \"old\\\"q.txt\"\n" +
+                "rename to new.txt\n",
+                ChangeType.Renamed,
+                "old\"q.txt",
+                "new.txt"
+            },
+            {
+                "diff --git a/old.txt \"b/new\\\"q.txt\"\n" +
+                "similarity index 95%\n" +
+                "rename from old.txt\n" +
+                "rename to \"new\\\"q.txt\"\n",
+                ChangeType.Renamed,
+                "old.txt",
+                "new\"q.txt"
+            },
+            {
+                "diff --git a/x b/old.txt b/new.txt\n" +
+                "similarity index 95%\n" +
+                "rename from x b/old.txt\n" +
+                "rename to new.txt\n",
+                ChangeType.Renamed,
+                "x b/old.txt",
+                "new.txt"
+            },
+            {
+                "diff --git a/x b/orig.txt b/copy.txt\n" +
+                "similarity index 100%\n" +
+                "copy from x b/orig.txt\n" +
+                "copy to copy.txt\n",
+                ChangeType.Copied,
+                "x b/orig.txt",
+                "copy.txt"
+            },
+        };
+    }
+
+    public static TheoryData<string, string, bool> PatchAndNumstatPairs()
+    {
+        return new()
+        {
+            {
+                "diff --git a/old.txt \"b/new\\\"q.txt\"\n" +
+                "similarity index 90%\n" +
+                "rename from old.txt\n" +
+                "rename to \"new\\\"q.txt\"\n",
+                "1\t1\t\0old.txt\0new\"q.txt\0",
+                false
+            },
+            {
+                "diff --git a/x.bin b/x.bin\n" +
+                "Binary files a/x.bin and b/x.bin differ\n",
+                "-\t-\tx.bin\0",
+                false
+            },
+            {
+                "diff --git a/x b/s.sh b/x b/s.sh\n" +
+                "old mode 100644\n" +
+                "new mode 100755\n",
+                "0\t0\tx b/s.sh\0",
+                false
+            },
+            {
+                "diff --git a/  b/ \n" +
+                "old mode 100644\n" +
+                "new mode 100755\n",
+                "0\t0\t \0",
+                false
+            },
+            {
+                "diff --git \"a/caf\\303\\251.txt\" \"b/caf\\303\\251.txt\"\n",
+                "1\t0\tcafé.txt\0",
+                true
             },
         };
     }

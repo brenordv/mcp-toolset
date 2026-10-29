@@ -16,6 +16,10 @@ public sealed class GitDiffToolTests : IDisposable
     private const string SubmoduleOldCommit = "1111111111111111111111111111111111111111";
     private const string SubmoduleNewCommit = "2222222222222222222222222222222222222222";
     private const string SubmoduleMoveSubject = "move submodule";
+    private const string SpaceBPath = "x b/c.txt";
+    private const string DoubleQuotePath = "a\"b.txt";
+    private const string AddedFileContent = "one\n";
+    private const string AddedFileSubject = "add file";
 
     private readonly TempGitRepo _repo;
     private readonly GitDiffTool _tool;
@@ -190,5 +194,50 @@ public sealed class GitDiffToolTests : IDisposable
         Assert.Equal(SubmodulePath, file.Path);
         Assert.Equal(1, file.Additions);
         Assert.Equal(1, file.Deletions);
+    }
+
+    [Fact]
+    public async Task Diff_RefToRef_AddedPathHoldingSpaceB_ReturnsWholePath()
+    {
+        // Arrange
+        _repo.WriteFile(SpaceBPath, AddedFileContent);
+        _repo.Run("add", ".");
+        _repo.Run("commit", "-m", AddedFileSubject);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, fromRef: "HEAD~1", toRef: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var diff = Assert.IsType<DiffResult>(envelope.Results[0]);
+        var file = Assert.Single(diff.Files);
+        Assert.Equal(SpaceBPath, file.Path);
+        Assert.Equal(ChangeType.Added, file.ChangeType);
+        Assert.Equal(1, file.Additions);
+    }
+
+    [Fact]
+    public async Task Diff_RefToRef_AddedPathHoldingDoubleQuote_ReturnsUnquotedPath()
+    {
+        // Arrange
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Windows does not allow a double quote in a file name");
+        }
+
+        _repo.WriteFile(DoubleQuotePath, AddedFileContent);
+        _repo.Run("add", ".");
+        _repo.Run("commit", "-m", AddedFileSubject);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, fromRef: "HEAD~1", toRef: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var diff = Assert.IsType<DiffResult>(envelope.Results[0]);
+        var file = Assert.Single(diff.Files);
+        Assert.Equal(DoubleQuotePath, file.Path);
+        Assert.Equal(ChangeType.Added, file.ChangeType);
+        Assert.Equal(1, file.Additions);
     }
 }

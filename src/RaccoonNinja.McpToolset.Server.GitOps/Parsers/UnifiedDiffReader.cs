@@ -14,11 +14,14 @@ internal sealed class UnifiedDiffReader
     private const string NewFileModePrefix = "new file mode";
     private const string DeletedFileModePrefix = "deleted file mode";
     private const string RenameFromPrefix = "rename from ";
+    private const string RenameToPrefix = "rename to ";
     private const string CopyFromPrefix = "copy from ";
+    private const string CopyToPrefix = "copy to ";
     private const string BinaryFilesPrefix = "Binary files";
     private const string HunkHeaderPrefix = "@@";
-    private const string NewPathMarker = " b/";
-    private const string OldPathMarker = "a/";
+    private const string OldSidePrefix = "a/";
+    private const string NewSidePrefix = "b/";
+    private const string NewSideMarker = " b/";
 
     private readonly List<FileDiff> _files = [];
     private readonly List<DiffHunk> _hunks = [];
@@ -62,12 +65,20 @@ internal sealed class UnifiedDiffReader
         else if (line.StartsWith(RenameFromPrefix, StringComparison.Ordinal))
         {
             _changeType = ChangeType.Renamed;
-            _oldPath = line[RenameFromPrefix.Length..];
+            _oldPath = QuotedPath.UnquoteOrKeep(line[RenameFromPrefix.Length..]);
+        }
+        else if (line.StartsWith(RenameToPrefix, StringComparison.Ordinal))
+        {
+            _path = QuotedPath.UnquoteOrKeep(line[RenameToPrefix.Length..]);
         }
         else if (line.StartsWith(CopyFromPrefix, StringComparison.Ordinal))
         {
             _changeType = ChangeType.Copied;
-            _oldPath = line[CopyFromPrefix.Length..];
+            _oldPath = QuotedPath.UnquoteOrKeep(line[CopyFromPrefix.Length..]);
+        }
+        else if (line.StartsWith(CopyToPrefix, StringComparison.Ordinal))
+        {
+            _path = QuotedPath.UnquoteOrKeep(line[CopyToPrefix.Length..]);
         }
         else if (line.StartsWith(BinaryFilesPrefix, StringComparison.Ordinal))
         {
@@ -83,20 +94,22 @@ internal sealed class UnifiedDiffReader
         }
     }
 
-    /// <summary>Begin a new file entry from a <c>diff --git a/&lt;old&gt; b/&lt;new&gt;</c> header.</summary>
+    /// <summary>
+    /// Begin a new file entry from a <c>diff --git</c> header. Both paths come from <see cref="TrySplitHeader"/> without their
+    /// <c>a/</c> and <c>b/</c> prefixes; a header it cannot read, or whose sides lack those prefixes, leaves the whole line
+    /// as the path.
+    /// </summary>
+    /// <param name="line">The whole <c>diff --git</c> header line.</param>
     private void StartFile(string line)
     {
         FlushFile();
 
-        var paths = line[DiffHeaderPrefix.Length..];
-        var split = paths.IndexOf(NewPathMarker, StringComparison.Ordinal);
-        if (split > 0)
+        if (TrySplitHeader(line[DiffHeaderPrefix.Length..], out var oldSide, out var newSide)
+            && oldSide.StartsWith(OldSidePrefix, StringComparison.Ordinal)
+            && newSide.StartsWith(NewSidePrefix, StringComparison.Ordinal))
         {
-            var oldSegment = paths[..split];
-            _oldPath = oldSegment.StartsWith(OldPathMarker, StringComparison.Ordinal)
-                ? oldSegment[OldPathMarker.Length..]
-                : oldSegment;
-            _path = paths[(split + NewPathMarker.Length)..];
+            _oldPath = oldSide[OldSidePrefix.Length..];
+            _path = newSide[NewSidePrefix.Length..];
         }
         else
         {
@@ -104,6 +117,92 @@ internal sealed class UnifiedDiffReader
         }
         _changeType = ChangeType.Modified;
         _isBinary = false;
+    }
+
+    /// <summary>
+    /// Split the text after <c>diff --git </c> into its old and new side, each still carrying its prefix. git writes each
+    /// side as the prefix plus the path, C-quoted as one string when the path holds a double quote, a backslash, or a
+    /// control character (see <see cref="QuotedPath"/>), and as it is otherwise, so an unquoted side never holds a double
+    /// quote. With neither side quoted, the two sides name the same path on every entry but a rename or copy, which
+    /// <see cref="TrySplitSamePath"/> splits exactly even when the path holds <c> b/</c>; a rename or copy splits at its
+    /// first <c> b/</c>, and its <c>rename</c> or <c>copy</c> lines then name both paths.
+    /// </summary>
+    /// <param name="paths">The header text after <c>diff --git </c>.</param>
+    /// <param name="oldSide">The old side, unquoted, with its prefix.</param>
+    /// <param name="newSide">The new side, unquoted when it was a well-formed quoted path, with its prefix.</param>
+    /// <returns><c>true</c> when the text splits into two sides.</returns>
+    private static bool TrySplitHeader(string paths, out string oldSide, out string newSide)
+    {
+        oldSide = null;
+        newSide = null;
+        if (paths.StartsWith('"'))
+        {
+            if (!QuotedPath.TryUnquote(paths, out oldSide, out var end) || end >= paths.Length || paths[end] != ' ')
+            {
+                return false;
+            }
+
+            newSide = QuotedPath.UnquoteOrKeep(paths[(end + 1)..]);
+            return true;
+        }
+
+        var quote = paths.IndexOf('"');
+        if (quote >= 0)
+        {
+            if (paths[quote - 1] != ' ')
+            {
+                return false;
+            }
+
+            oldSide = paths[..(quote - 1)];
+            newSide = QuotedPath.UnquoteOrKeep(paths[quote..]);
+            return true;
+        }
+
+        if (TrySplitSamePath(paths, out oldSide, out newSide))
+        {
+            return true;
+        }
+
+        var split = paths.IndexOf(NewSideMarker, StringComparison.Ordinal);
+        if (split < 0)
+        {
+            return false;
+        }
+
+        oldSide = paths[..split];
+        newSide = paths[(split + 1)..];
+        return true;
+    }
+
+    /// <summary>
+    /// Split unquoted header text whose two sides name the same path: the old prefix, the path, a space, the new prefix, and
+    /// the path again. Both prefixes are two characters long, so the sides are equally long and the space sits at the middle
+    /// index; the split is then the only one that gives the same path twice.
+    /// </summary>
+    /// <param name="paths">The header text after <c>diff --git </c>, with no double quote in it.</param>
+    /// <param name="oldSide">The old side with its prefix, or <c>null</c> when the sides do not name the same path.</param>
+    /// <param name="newSide">The new side with its prefix, or <c>null</c> when the sides do not name the same path.</param>
+    /// <returns><c>true</c> when both sides name the same path.</returns>
+    private static bool TrySplitSamePath(string paths, out string oldSide, out string newSide)
+    {
+        oldSide = null;
+        newSide = null;
+        var middle = paths.Length / 2;
+        if (paths.Length % 2 == 0 || middle <= OldSidePrefix.Length || paths[middle] != ' ')
+        {
+            return false;
+        }
+
+        var pathLength = middle - OldSidePrefix.Length;
+        if (!paths.AsSpan(OldSidePrefix.Length, pathLength).SequenceEqual(paths.AsSpan(middle + 1 + NewSidePrefix.Length)))
+        {
+            return false;
+        }
+
+        oldSide = paths[..middle];
+        newSide = paths[(middle + 1)..];
+        return true;
     }
 
     /// <summary>Begin a new hunk from an <c>@@ ... @@</c> header line.</summary>

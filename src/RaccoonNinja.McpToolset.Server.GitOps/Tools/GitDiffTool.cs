@@ -183,6 +183,14 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
             ctx.Log(LogLevel.Warning, "patch_parse_empty");
         }
 
+        // A patch cut by the output cap can end inside its last file's header, so that file is left out, and a cut
+        // numstat pass lists too few paths to check against.
+        var checkedFiles = unifiedResult.Truncated ? files.SkipLast(1) : files;
+        if (!numstatResult.Truncated && DiffParser.HasPathMissingFromNumstat(checkedFiles, numstat))
+        {
+            ctx.Log(LogLevel.Warning, "patch_path_unmatched");
+        }
+
         var truncated = unifiedResult.Truncated || numstatResult.Truncated;
         var model = DiffParser.AssembleDiffResult(files, mode, truncated, numstat);
         return (model, truncated);

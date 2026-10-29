@@ -1,3 +1,19 @@
+## v2.16.0
+- Fixed: `git_diff`, `git_show`, and `git_stash_show` reported a file under the whole `diff --git` header line when git
+  quoted its path there, which git does for a path holding a double quote, a backslash, or a control character whatever
+  `core.quotePath` says, and under a wrong piece of the header when the path held ` b/` (a file in a directory named
+  `x b`, for one), which could be another file's path. A renamed or copied file with either kind of path got a wrong
+  `path` or `old_path` the same way, and the numstat overlay, keyed by path, missed every such file. The parser now
+  unquotes git's quoting, splits a header whose two sides name the same path at the one place that gives that path
+  twice, and takes a rename's or copy's paths from its `rename from`/`rename to` or `copy from`/`copy to` lines. The
+  `--numstat -z` reader cut a path holding a tab at the tab, and a file whose name was only whitespace made it take the
+  next two records as a rename's paths, dropping those files from `statOnly: true` results and from the overlay; it now
+  keeps both whole.
+- Log change: a new Warning event, `patch_path_unmatched`, when `git_diff` (any call but `statOnly: true`) or
+  `git_stash_show` reads a file from the patch whose path the `--numstat -z` pass does not list: a header the parser
+  could not read, or a working tree, index, or stash that changed between the call's two git passes. It is not checked
+  when the numstat pass was truncated, and a truncated patch's last file is left out.
+
 ## v2.15.0
 - Fixed: a log event carrying an exception (a crash, or a record the host or the MCP SDK logged with an exception
   attached) wrote the last 512 bytes of the exception's message and stack trace to `stderr_tail`, which can name a
