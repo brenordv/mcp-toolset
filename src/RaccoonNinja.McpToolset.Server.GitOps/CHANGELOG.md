@@ -1,3 +1,17 @@
+## v2.17.0
+- Fixed: on a git that does not check `GIT_NO_LAZY_FETCH` before a lazy fetch (see the README's Requirements), a tool
+  call that read an object missing from a repository with a promisor remote still started a fetch, and the fetch ran
+  the program the repository's config names for the transport, or, from git 2.40.0, first downloaded the bundle its
+  `fetch.bundleURI` names. Every git process the server starts now also gets `GIT_ALLOW_PROTOCOL=none`, so git allows
+  no transport, whatever a repository's `protocol.<name>.allow` config says, and every git call passes
+  `-c fetch.bundleURI=`, so no bundle is downloaded. No tool fetches, so on a git with the full check nothing changes.
+- Behavior change: on such a git, in an ordinary partial clone, a call whose read starts a lazy fetch fails with
+  `GitCommandError` instead of fetching, as it already does on newer gits. The server log's `subprocess_exit` Warning
+  for that call shows `transport '<protocol>' not allowed` in `stderr_tail` under an English or C locale. On 2.29.0 to
+  2.38.x, and on 2.45.0, `git_grep` with `ref` leaves such a file out of its results instead, with no Warning.
+- Log change: every `argv_built` debug line shows `-c fetch.bundleURI=`, and its `argv_len` is 2 higher. The bootstrap
+  `rev-parse` calls carry the same pin but log no argv line.
+
 ## v2.16.0
 - Fixed: `git_diff`, `git_show`, and `git_stash_show` reported a file under the whole `diff --git` header line when git
   quoted its path there, which git does for a path holding a double quote, a backslash, or a control character whatever

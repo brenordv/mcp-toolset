@@ -40,7 +40,10 @@ public static class EnvironmentBuilder
     /// fetch runs the transport program a repository's own config can name (for example
     /// <c>remote.&lt;name&gt;.uploadpack</c> for a remote at a local path, <c>core.sshCommand</c> for ssh, or a remote helper).
     /// git 2.45.1 and later, and the May 2024 security releases for 2.39 to 2.44, check it before any fetch starts; 2.45.0
-    /// honors it only in part, and an older git ignores it.
+    /// honors it only in part, and an older git ignores it. <c>GIT_ALLOW_PROTOCOL=none</c> covers those gits: git then
+    /// allows only the transports the variable lists, whatever <c>protocol.&lt;name&gt;.allow</c> in a repository's config
+    /// says, and checks before it starts a transport program or a remote helper, so the fetch dies first. git reads it from
+    /// 2.6.1 on. The value is <c>none</c> because git splits an empty value into one empty protocol name.
     /// </summary>
     private static readonly Dictionary<string, string> FixedGitEnv = new()
     {
@@ -48,6 +51,7 @@ public static class EnvironmentBuilder
         ["GIT_CONFIG_NOSYSTEM"] = "1",
         ["GIT_OPTIONAL_LOCKS"] = "0",
         ["GIT_NO_LAZY_FETCH"] = "1",
+        ["GIT_ALLOW_PROTOCOL"] = "none",
     };
 
     /// <summary>Construct the hardened child env from <paramref name="parent"/> (defaults to current process env).</summary>

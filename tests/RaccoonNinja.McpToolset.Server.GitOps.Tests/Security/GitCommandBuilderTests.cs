@@ -29,6 +29,7 @@ public class GitCommandBuilderTests
         Assert.DoesNotContain("--literal-pathspecs", argv);
         Assert.Contains("log.showSignature=false", argv);
         Assert.Contains("log.follow=false", argv);
+        Assert.Contains("fetch.bundleURI=", argv);
     }
 
     [Fact]
@@ -306,6 +307,7 @@ public class GitCommandBuilderTests
         Assert.Equal("1", env["GIT_CONFIG_NOSYSTEM"]);
         Assert.Equal("0", env["GIT_OPTIONAL_LOCKS"]);
         Assert.Equal("1", env["GIT_NO_LAZY_FETCH"]);
+        Assert.Equal("none", env["GIT_ALLOW_PROTOCOL"]);
         Assert.False(env.ContainsKey("GIT_LITERAL_PATHSPECS"));
         Assert.True(env.ContainsKey("PATH"));
     }
@@ -368,6 +370,7 @@ public class GitCommandBuilderTests
         Assert.Contains("core.pager=cat", prefix);
         Assert.Contains("--no-pager", prefix);
         Assert.Contains("log.showSignature=false", prefix);
+        Assert.Contains("fetch.bundleURI=", prefix);
     }
 
     [Fact]

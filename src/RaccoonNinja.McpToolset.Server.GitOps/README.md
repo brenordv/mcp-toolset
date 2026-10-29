@@ -555,7 +555,7 @@ flowchart TD
     F --> G[--end-of-options before positional refs<br/>omitted for git grep]
     G --> S["Pathspecs after --<br/>paths as :(literal)…, excludes as :(exclude)…,<br/>globs bare"]
     S --> H[ArgumentList execution<br/>no shell, no string join]
-    H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1<br/>GIT_NO_LAZY_FETCH=1]
+    H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1<br/>GIT_NO_LAZY_FETCH=1<br/>GIT_ALLOW_PROTOCOL=none]
 ```
 
 - **One argv producer.** Tools declare a typed `GitIntent`; a single `GitCommandBuilder` is the only code that
@@ -565,7 +565,10 @@ flowchart TD
   and its refs are pre-resolved SHAs). `log.showSignature=false` is there because verifying a signed commit runs the
   program `gpg.program`, `gpg.ssh.program`, or `gpg.x509.program` names, and a repository's own config can set both
   keys; a forged signature is enough. `log.follow=false` is there because `log.follow=true` in config makes `git log`
-  with one path follow renames although `follow` was false.
+  with one path follow renames although `follow` was false. `fetch.bundleURI=` is there for a git that does not check
+  `GIT_NO_LAZY_FETCH` (see the Scrubbed environment bullet below): from git 2.40.0, the `git fetch` that git starts for
+  a lazy fetch first downloads the bundle a repository's `fetch.bundleURI` names, before any protocol check, and git
+  skips an empty bundle URI.
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or
@@ -594,8 +597,15 @@ flowchart TD
   transport (for example `remote.<name>.uploadpack` for a remote at a local path, `core.sshCommand` for ssh, or a
   remote helper). A missing object fails the call with `GitCommandError` instead (message
   `git <subcommand> failed (exit 128)`), and the server log's `subprocess_exit` Warning for that call shows git's
-  reason in `stderr_tail` (`lazy fetching disabled` under an English or C locale). In a partial clone you trust, run
-  the same git command in your own shell once to fetch what it needs.
+  reason in `stderr_tail` (`lazy fetching disabled` under an English or C locale). `GIT_ALLOW_PROTOCOL=none` is the
+  second block, for a git that does not check `GIT_NO_LAZY_FETCH` before it fetches (see
+  [Requirements](#requirements)): with it set, git allows no transport, whatever a repository's
+  `protocol.<name>.allow` config says, so the fetch dies before it starts a transport program or a remote helper. On
+  such a git, a call whose read starts the fetch fails, and `stderr_tail` shows `transport 'file' not allowed` (or
+  `ssh`, `git`, or the helper's name, under an English or C locale). On 2.45.0 only a diff pass starts the fetch
+  (patch, stat, or pickaxe output, or rename detection); other reads fail with git's missing-object error alone. On
+  2.29.0 to 2.38.x, and on 2.45.0, `git_grep` with `ref` leaves out a file whose blob is missing and logs no Warning.
+  In a partial clone you trust, run the same git command in your own shell once to fetch what it needs.
 - **Filter drivers pinned.** `git status`, a `git diff` against the working tree, and `git blame` without a revision
   hash worktree files, and hashing a file runs the `clean` or `process` command of the filter driver its `filter`
   attribute selects (from `.gitattributes` or `.git/info/attributes`). The driver is defined in config
@@ -679,10 +689,13 @@ TODO: Add instructions to build on Windows, macOS, and Linux.
 
 - **`git` on `PATH`**: required. It must sit in a directory your `PATH` names by an absolute path (`.` and other
   relative entries are skipped). The server looks for it once at startup, so restart the server after installing or
-  moving git. This server runs your system `git` for every call; without it, tools fail with a `GitNotInstalled` error. Any reasonably recent `git` works. The lazy-fetch block in the security model needs git
-  2.45.1 or later, or 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1, or a later release in the same series. git 2.45.0
-  honors `GIT_NO_LAZY_FETCH` only in part and an older git ignores it, so in a repository with a promisor remote a tool
-  call can still start a fetch there. The server log's `git_version` line shows the version of the git the server runs.
+  moving git. This server runs your system `git` for every call; without it, tools fail with a `GitNotInstalled` error. Any reasonably recent `git` works. The lazy-fetch block in the security model has two parts.
+  `GIT_NO_LAZY_FETCH=1` stops the fetch before it starts on git 2.45.1 or later, or 2.39.4, 2.40.2, 2.41.1, 2.42.2,
+  2.43.4, 2.44.1, or a later release in the same series. git 2.45.0 honors it only in part and an older git ignores it,
+  so there a tool call in a repository with a promisor remote can still start a fetch (a `git fetch` child from 2.29.0
+  on, inside git itself before that); `GIT_ALLOW_PROTOCOL=none` and `-c fetch.bundleURI=` stop that fetch before it
+  starts a transport program or downloads a bundle. Every git from 2.6.1 on reads `GIT_ALLOW_PROTOCOL`, and no git
+  before 2.17.0 fetches a missing object on demand. The server log's `git_version` line shows the version of the git the server runs.
 - **.NET runtime**: *not* needed for the released binaries. Each release ships a self-contained, single-file
   executable per platform ([Releases and verification](../../README.md#releases-and-verification)), so there's nothing
   extra to install to run it.

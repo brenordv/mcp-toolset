@@ -34,6 +34,9 @@ public static class GitCommandBuilder
     /// <c>git stash list</c> starts verify signed commits, which runs the program <c>gpg.program</c>,
     /// <c>gpg.ssh.program</c>, or <c>gpg.x509.program</c> names. <c>log.follow=false</c> keeps <c>git log</c> with one
     /// pathspec from following renames unless the call passes <c>--follow</c>, which sets the mode directly.
+    /// <c>fetch.bundleURI=</c> reaches the <c>git fetch</c> a lazy fetch starts on a git that does not check
+    /// <c>GIT_NO_LAZY_FETCH</c>: from git 2.40.0 that fetch first downloads the bundle the key names, before any protocol
+    /// check, and git skips an empty bundle URI.
     /// </summary>
     private static readonly IReadOnlyList<(string Key, string Value)> FixedConfig =
     [
@@ -45,7 +48,8 @@ public static class GitCommandBuilder
         ("core.askpass", string.Empty),
         ("core.quotePath", "false"),
         ("log.showSignature", "false"),
-        ("log.follow", "false")
+        ("log.follow", "false"),
+        ("fetch.bundleURI", string.Empty)
     ];
 
     private static readonly HashSet<string> DiffBearingSubcommands = new(StringComparer.Ordinal)
