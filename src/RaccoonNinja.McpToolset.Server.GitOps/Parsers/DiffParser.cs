@@ -59,6 +59,8 @@ public static class DiffParser
         ("diff.dstPrefix", "b/"),
     ];
 
+    private const string UnmergedPathPrefix = "* Unmerged path ";
+
     /// <summary>Parse <c>git diff --numstat -z</c> into <c>path → (additions, deletions)</c>.</summary>
     public static IReadOnlyDictionary<string, (int Additions, int Deletions)> ParseNumstatZ(byte[] raw)
     {
@@ -135,6 +137,25 @@ public static class DiffParser
         IEnumerable<FileDiff> files,
         IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat)
         => files.Any(file => !numstat.ContainsKey(file.Path));
+
+    /// <summary>
+    /// True when a path in <paramref name="numstat"/> holds a line break and <paramref name="patch"/> has a
+    /// <c>* Unmerged path</c> line. git writes an unmerged path's name raw on that line, unlike a <c>diff --git</c> header,
+    /// so such a name can carry text that reads as a whole patch section.
+    /// </summary>
+    /// <param name="patch">Raw stdout bytes of the patch pass.</param>
+    /// <param name="numstat">The map <see cref="ParseNumstatZ"/> returned for the same diff.</param>
+    /// <returns>
+    /// <c>true</c> when at least one key of <paramref name="numstat"/> holds a line break and <paramref name="patch"/> has
+    /// at least one <c>* Unmerged path</c> line.
+    /// </returns>
+    public static bool HasUnreadableUnmergedPath(
+        byte[] patch,
+        IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat)
+        => numstat.Keys.Any(path => path.Contains('\n'))
+           && TextDecoding.Decode(patch)
+               .Split('\n')
+               .Any(line => line.StartsWith(UnmergedPathPrefix, StringComparison.Ordinal));
 
     /// <summary>Parse <c>git diff --name-status -z</c> into <c>path → <see cref="ChangeType"/></c>.</summary>
     /// <param name="raw">Raw stdout bytes from <c>git diff --name-status -z</c>.</param>

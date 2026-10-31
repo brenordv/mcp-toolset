@@ -176,6 +176,11 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
 
         var files = DiffParser.ParseUnified(unifiedResult.Stdout);
         var numstat = DiffParser.ParseNumstatZ(numstatResult.Stdout);
+        if (DiffParser.HasUnreadableUnmergedPath(unifiedResult.Stdout, numstat))
+        {
+            throw new GitCommandException("a changed path holds a line break while a path is unmerged; the patch cannot be read safely");
+        }
+
         // The numstat pass is never colored or reformatted, so files there and none from the patch means the
         // patch was in a shape the reader does not recognize; an empty success would hide that.
         if (numstat.Count > 0 && files.Count == 0)

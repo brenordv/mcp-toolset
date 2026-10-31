@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors;
 using RaccoonNinja.McpToolset.Server.GitOps.Metrics;
 using RaccoonNinja.McpToolset.Server.GitOps.Models;
 using RaccoonNinja.McpToolset.Server.GitOps.Repo;
@@ -20,6 +21,17 @@ public sealed class GitDiffToolTests : IDisposable
     private const string DoubleQuotePath = "a\"b.txt";
     private const string AddedFileContent = "one\n";
     private const string AddedFileSubject = "add file";
+    private const string ConflictFile = "m.txt";
+    private const string LaterFile = "z.txt";
+    private const string TheirsBranch = "theirs";
+    private const string MainBranch = "main";
+    private const string BaseSubject = "base";
+    private const string BaseContent = "base\n";
+    private const string OursContent = "ours\n";
+    private const string TwoLineContent = "one\ntwo\n";
+    private const string ThreeLineContent = "one\ntwo\nthree\n";
+    private const string ForgedUnmergedPath = "m\ndiff --git a/fake.txt b/fake.txt\n@@ -0,0 +1 @@\n+fake";
+    private const string UnreadablePatchMessage = "a changed path holds a line break while a path is unmerged; the patch cannot be read safely";
 
     private readonly TempGitRepo _repo;
     private readonly GitDiffTool _tool;
@@ -239,5 +251,65 @@ public sealed class GitDiffToolTests : IDisposable
         Assert.Equal(DoubleQuotePath, file.Path);
         Assert.Equal(ChangeType.Added, file.ChangeType);
         Assert.Equal(1, file.Additions);
+    }
+
+    [Fact]
+    public async Task Diff_Worktree_WithUnmergedPath_KeepsCombinedHunksOffOtherFiles()
+    {
+        // Arrange
+        _repo.WriteFile(ConflictFile, BaseContent);
+        _repo.WriteFile(LaterFile, AddedFileContent);
+        _repo.Run("add", ".");
+        _repo.Run("commit", "-m", BaseSubject);
+        _repo.Run("checkout", "-b", TheirsBranch);
+        _repo.WriteFile(ConflictFile, "theirs\n");
+        _repo.Run("commit", "-am", "their edit");
+        _repo.Run("checkout", MainBranch);
+        _repo.WriteFile(ConflictFile, OursContent);
+        _repo.Run("commit", "-am", "our edit");
+        _repo.MergeLeavingConflicts(TheirsBranch);
+        _repo.WriteFile(ChangedFile, ThreeLineContent);
+        _repo.WriteFile(LaterFile, TwoLineContent);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var diff = Assert.IsType<DiffResult>(envelope.Results[0]);
+        Assert.Equal([ChangedFile, LaterFile], diff.Files.Select(file => file.Path));
+        Assert.All(diff.Files, file => Assert.Equal(ChangeType.Modified, file.ChangeType));
+        Assert.All(diff.Files, file => Assert.Single(file.Hunks));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Diff_WithUnmergedPathHoldingLineBreak_FailsWithGitCommandError(bool staged)
+    {
+        // Arrange
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Windows does not allow a line break in a file name");
+        }
+
+        _repo.WriteFile(ForgedUnmergedPath, BaseContent);
+        _repo.Run("add", ".");
+        _repo.Run("commit", "-m", BaseSubject);
+        _repo.Run("checkout", "-b", TheirsBranch);
+        _repo.Run("rm", "--", ForgedUnmergedPath);
+        _repo.Run("commit", "-m", "delete");
+        _repo.Run("checkout", MainBranch);
+        _repo.WriteFile(ForgedUnmergedPath, OursContent);
+        _repo.Run("commit", "-am", "modify");
+        _repo.MergeLeavingConflicts(TheirsBranch);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, staged: staged, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
+        Assert.Equal(UnreadablePatchMessage, envelope.Error.Message);
     }
 }

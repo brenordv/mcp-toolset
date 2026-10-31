@@ -134,6 +134,30 @@ internal sealed class TempGitRepo : IDisposable
         => File.WriteAllBytes(PrepareTarget(relativePath), content);
 
     /// <summary>
+    /// Merge <paramref name="branch"/> into the current branch where the merge is expected to stop on a conflict, leaving
+    /// the conflicted paths unmerged in the index and marked up in the working tree.
+    /// </summary>
+    /// <param name="branch">The branch to merge.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the merge leaves no unmerged path.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void MergeLeavingConflicts(string branch)
+    {
+        try
+        {
+            Run("merge", "--no-edit", branch);
+        }
+        catch (InvalidOperationException)
+        {
+            // git merge exits 1 when it stops on a conflict.
+        }
+
+        if (Run("ls-files", "--unmerged").Length == 0)
+        {
+            throw new InvalidOperationException($"merging {branch} left no unmerged path");
+        }
+    }
+
+    /// <summary>
     /// Point the current branch at a new commit on top of <c>HEAD</c>, with the same tree, whose <c>gpgsig</c> header holds
     /// a PGP-armored block that is not a real signature. git treats any commit with that header as signed and hands the
     /// block to the verifier when it checks signatures, so no signing program is needed. SHA-1 repositories only; a

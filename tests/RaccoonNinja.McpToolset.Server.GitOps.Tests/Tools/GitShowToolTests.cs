@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors;
 using RaccoonNinja.McpToolset.Server.GitOps.Metrics;
 using RaccoonNinja.McpToolset.Server.GitOps.Models;
 using RaccoonNinja.McpToolset.Server.GitOps.Repo;
@@ -13,6 +14,17 @@ public sealed class GitShowToolTests : IDisposable
     private const string ChangedFile = "a.txt";
     private const string SignedSubject = "signed";
     private const string SubmodulePath = "sub";
+    private const string TagName = "v1";
+    private const string TreeTagName = "tree-tag";
+    private const string HeadTree = "HEAD^{tree}";
+
+    private const string PatchShapedTagMessage =
+        "diff --git a/fake.txt b/fake.txt\n" +
+        "new file mode 100644\n" +
+        "--- /dev/null\n" +
+        "+++ b/fake.txt\n" +
+        "@@ -0,0 +1 @@\n" +
+        "+fake\n";
 
     private readonly TempGitRepo _repo;
     private readonly GitShowTool _tool;
@@ -94,5 +106,59 @@ public sealed class GitShowToolTests : IDisposable
         Assert.Equal(SubmodulePath, file.Path);
         Assert.Equal(1, file.Additions);
         Assert.Equal(1, file.Deletions);
+    }
+
+    [Fact]
+    public async Task Show_AnnotatedTagWithPatchShapedMessage_ReturnsOnlyTheCommitFiles()
+    {
+        // Arrange
+        _repo.Run("tag", "--no-sign", "-a", TagName, "-m", PatchShapedTagMessage);
+        var headHash = _repo.Run("rev-parse", "HEAD");
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: TagName, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        var commit = Assert.IsType<Commit>(payload["commit"]);
+        Assert.Equal(headHash, commit.Hash);
+        var files = Assert.IsAssignableFrom<IReadOnlyList<FileDiff>>(payload["files"]);
+        var file = Assert.Single(files);
+        Assert.Equal(ChangedFile, file.Path);
+        Assert.Single(file.Hunks);
+    }
+
+    [Theory]
+    [InlineData(HeadTree)]
+    [InlineData($"HEAD:{ChangedFile}")]
+    public async Task Show_RefNamingTreeOrBlob_IsRejected(string revision)
+    {
+        // Arrange
+        var objectId = _repo.Run("rev-parse", revision);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: objectId, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal("ref", envelope.Error.Detail["param"]);
+    }
+
+    [Fact]
+    public async Task Show_AnnotatedTagOfTreeWithPatchShapedMessage_IsRejected()
+    {
+        // Arrange
+        var treeId = _repo.Run("rev-parse", HeadTree);
+        _repo.Run("tag", "--no-sign", "-a", TreeTagName, "-m", PatchShapedTagMessage, treeId);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: TreeTagName, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal("ref", envelope.Error.Detail["param"]);
     }
 }

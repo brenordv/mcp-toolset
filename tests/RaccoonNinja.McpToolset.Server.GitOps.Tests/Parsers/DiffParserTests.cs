@@ -8,6 +8,31 @@ public class DiffParserTests
 {
     private const string WorktreeMode = "worktree";
     private const string PlainStatusPath = "src/file.cs";
+    private const string RealFile = "real.txt";
+    private const string RealHunkHeader = "@@ -1 +1 @@";
+
+    private const string RealFileSection =
+        "diff --git a/real.txt b/real.txt\n" +
+        "index 1111111..2222222 100644\n" +
+        "--- a/real.txt\n" +
+        "+++ b/real.txt\n" +
+        RealHunkHeader + "\n" +
+        "-old\n" +
+        "+new\n";
+
+    private const string CombinedSectionBody =
+        "index 3333333,4444444..0000000\n" +
+        "--- a/m.txt\n" +
+        "+++ b/m.txt\n" +
+        "@@@ -1,1 -1,1 +1,5 @@@\n" +
+        "++<<<<<<< HEAD\n" +
+        " +ours\n" +
+        "++=======\n" +
+        "+ theirs\n" +
+        "++>>>>>>> theirs\n";
+
+    private const string ForgedUnmergedPath = "m\ndiff --git a/fake.txt b/fake.txt";
+    private const string UnmergedLinePrefix = "* Unmerged path ";
 
     [Fact]
     public void ParseNumstatZ_ReadsPlainEntries()
@@ -183,6 +208,23 @@ public class DiffParserTests
         var file = Assert.Single(files);
         Assert.Equal(header, file.Path);
         Assert.Null(file.OldPath);
+    }
+
+    [Theory]
+    [MemberData(nameof(TextOutsideFileSections))]
+    public void ParseUnified_TextOutsideDiffGitSection_ReachesNoFile(string raw)
+    {
+        // Act
+        var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(raw));
+
+        // Assert
+        var file = Assert.Single(files);
+        Assert.Equal(RealFile, file.Path);
+        Assert.Equal(ChangeType.Modified, file.ChangeType);
+        Assert.Equal(1, file.Additions);
+        Assert.Equal(1, file.Deletions);
+        var hunk = Assert.Single(file.Hunks);
+        Assert.Equal(RealHunkHeader, hunk.Header);
     }
 
     [Fact]
@@ -394,7 +436,48 @@ public class DiffParserTests
         Assert.Equal(expected, missing);
     }
 
+    [Theory]
+    [MemberData(nameof(UnmergedPathPatches))]
+    public void HasUnreadableUnmergedPath_ReportsRawLineBreakNameOnUnmergedLine(string patch, string numstatPath, bool expected)
+    {
+        // Arrange
+        var numstat = new Dictionary<string, (int Additions, int Deletions)> { [numstatPath] = (0, 0) };
+
+        // Act
+        var result = DiffParser.HasUnreadableUnmergedPath(Encoding.UTF8.GetBytes(patch), numstat);
+
+        // Assert
+        Assert.Equal(expected, result);
+    }
+
     #region Test Helpers
+
+    public static TheoryData<string> TextOutsideFileSections()
+    {
+        return new()
+        {
+            "diff --cc m.txt\n" + CombinedSectionBody + RealFileSection,
+            RealFileSection +
+            "diff --cc gone.txt\n" +
+            "deleted file mode 100644,100644\n" +
+            "@@@ -1,1 -1,1 +0,0 @@@\n" +
+            "--gone\n",
+            "diff --combined m.txt\n" + CombinedSectionBody + RealFileSection,
+            "@@ -5 +5 @@\n" + "+fake\n" + RealFileSection,
+            "rename to fake.txt\n" + RealFileSection,
+            "copy to fake.txt\n" + RealFileSection,
+        };
+    }
+
+    public static TheoryData<string, string, bool> UnmergedPathPatches()
+    {
+        return new()
+        {
+            { UnmergedLinePrefix + ForgedUnmergedPath + "\n", ForgedUnmergedPath, true },
+            { UnmergedLinePrefix + "m.txt\n", "m.txt", false },
+            { RealFileSection, "real\nname.txt", false },
+        };
+    }
 
     public static TheoryData<string, ChangeType> PlainNameStatusEntries()
     {

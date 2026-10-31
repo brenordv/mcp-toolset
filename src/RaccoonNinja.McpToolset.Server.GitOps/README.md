@@ -80,7 +80,7 @@ A few rules apply to every call regardless of tool:
 | [`git_status`](#git_status)           | Working-tree status snapshot                              | `cwd`                                                                                              |
 | [`git_diff`](#git_diff)               | Unified diff (staged / ref-to-ref / worktree / stat-only) | `cwd`, `staged`, `fromRef`, `toRef`, `paths`, `contextLines`, `statOnly`                           |
 | [`git_log`](#git_log)                 | Commit history with filters                               | `cwd`, `paths`, `author`, `since`, `until`, `grep`, `pickaxe`, `maxCount`, `ref`, `follow`, `perlRegex`, `allRefs` |
-| [`git_show`](#git_show)               | Inspect one commit/tag/tree + its diffs                   | `cwd`, `ref`, `paths`                                                                              |
+| [`git_show`](#git_show)               | Inspect one commit (or a tag's commit) + its diffs        | `cwd`, `ref`, `paths`                                                                              |
 | [`git_file_at_ref`](#git_file_at_ref) | One file's content, mode, and blob id at a ref            | `cwd`, `path`, `ref`, `lineStart`, `lineEnd`, `byteOffset`, `maxBytes`                             |
 | [`git_blame`](#git_blame)             | Per-line author/commit/time for a file                    | `cwd`, `path`, `lineStart`, `lineEnd`, `ref`                                                       |
 | [`git_grep`](#git_grep)               | Search tracked content (optionally at a ref)              | `cwd`, `pattern`, `paths`, `globs`, `excludePaths`, `ref`, `ignoreCase`, `fixedString`, `maxCount`, `countOnly` |
@@ -142,6 +142,12 @@ submodule whose recorded commit changed, and a diff against the working tree (wo
 alone) does not list a submodule with only uncommitted changes inside it; see
 [Security model (long version)](#security-model-long-version).
 
+On Linux and macOS, a worktree or staged `git_diff` fails with `GitCommandError` when the patch carries a
+`* Unmerged path <name>` line and any changed path has a line break in its name: git writes that line's name raw,
+where it could pass for patch text. A staged diff writes the line for every unmerged path; a worktree diff writes it
+only for a path that one side of the merge does not have (a modify/delete conflict, for one), and shows other
+conflicts as combined sections, which `git_diff` leaves out.
+
 ```mermaid
 flowchart TD
     A[git_diff: cwd, mode params] --> B[Resolve root]
@@ -189,13 +195,15 @@ flowchart LR
 
 ### `git_show`
 
-Inspects a single ref (commit, tag, or tree) and returns its metadata along with per-file diffs. The ref is required
-and is verified to a SHA before use.
+Inspects one commit, or the commit an annotated tag points to, and returns its metadata along with per-file diffs. The
+ref is required and is verified to a SHA before use. A ref naming a tree or a blob, or a tag of one, is rejected with a
+`RejectedArgument` that points at `git_file_at_ref`.
 
-Runs two passes: a one-commit `git log` for metadata (same format as `git_log`), and `git show --format=` for the
-patch, parsed into the same `FileDiff` shape as `git_diff`. `paths` restricts the diff section. Every pass runs with
-`--no-color`, so a `color.ui` or `color.diff` setting of `always` in your git config cannot put escape codes in the
-patch. The patch pass also runs with `--src-prefix=a/ --dst-prefix=b/ --submodule=short`, so the diff prefix and
+Runs two passes in order: a one-commit `git log` for metadata (same format as `git_log`), which also resolves a tag to
+its commit, then `git show --format=` on that commit's id for the patch, parsed into the same `FileDiff` shape as
+`git_diff`, so a tag's message never reaches the patch reader. `paths` restricts the diff section. The patch pass runs
+with `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your git config cannot put escape codes in
+the patch. The patch pass also runs with `--src-prefix=a/ --dst-prefix=b/ --submodule=short`, so the diff prefix and
 submodule keys in your git config cannot change the header each file is read from. It also runs with
 `--ignore-submodules=dirty`, so a submodule ignore setting cannot hide a submodule whose recorded commit changed; see
 [Security model (long version)](#security-model-long-version).
@@ -212,7 +220,9 @@ flowchart TD
     R -- yes --> X[RejectedArgument → use git_file_at_ref]
     R -- no --> C[Verify ref → SHA<br/>required]
     C --> D["git log -1 --pretty=format:… SHA<br/>(metadata)"]
-    C --> E["git show --format= --no-color --src-prefix=a/<br/>--dst-prefix=b/ --submodule=short<br/>--ignore-submodules=dirty SHA -- pathspecs<br/>(patch)"]
+    D --> N{commit listed?}
+    N -- no --> Y[RejectedArgument: tree or blob]
+    N -- yes --> E["git show --format= --no-color --src-prefix=a/<br/>--dst-prefix=b/ --submodule=short<br/>--ignore-submodules=dirty commit id -- pathspecs<br/>(patch)"]
     D --> F[Commit record]
     E --> G[FileDiff list]
     F --> H["payload { commit, files }"]
@@ -596,10 +606,12 @@ flowchart TD
   would otherwise start a fetch from that remote, and the fetch runs the program the repository's config names for the
   transport (for example `remote.<name>.uploadpack` for a remote at a local path, `core.sshCommand` for ssh, or a
   remote helper). A missing object fails the call with `GitCommandError` instead (message
-  `git <subcommand> failed (exit 128)`), and the server log's `subprocess_exit` Warning for that call shows git's
-  reason in `stderr_tail` (`lazy fetching disabled` under an English or C locale). `GIT_ALLOW_PROTOCOL=none` is the
-  second block, for a git that does not check `GIT_NO_LAZY_FETCH` before it fetches (see
-  [Requirements](#requirements)): with it set, git allows no transport, whatever a repository's
+  `git <subcommand> failed (exit 128)`), and the server log's `subprocess_exit` Warning for that call carries git's
+  error in `stderr_tail`. On git 2.45.1 or later, a diff pass (patch, stat, or pickaxe output, or rename detection)
+  shows `lazy fetching disabled` under an English or C locale and any other read shows git's missing-object error
+  alone; on the 2.39.4 to 2.44.1 security releases (the ones listed under Requirements), every read shows it.
+  `GIT_ALLOW_PROTOCOL=none` is the second block, for a git that does not check `GIT_NO_LAZY_FETCH` before it fetches
+  (see [Requirements](#requirements)): with it set, git allows no transport, whatever a repository's
   `protocol.<name>.allow` config says, so the fetch dies before it starts a transport program or a remote helper. On
   such a git, a call whose read starts the fetch fails, and `stderr_tail` shows `transport 'file' not allowed` (or
   `ssh`, `git`, or the helper's name, under an English or C locale). On 2.45.0 only a diff pass starts the fetch

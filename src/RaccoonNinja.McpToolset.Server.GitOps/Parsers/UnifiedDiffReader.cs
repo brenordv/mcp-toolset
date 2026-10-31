@@ -6,11 +6,13 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 /// Stateful, single-use reader that converts a textual unified diff (the output of
 /// <c>git diff</c>) into a sequence of <see cref="FileDiff"/> records. The per-file cursor
 /// state lives in instance fields rather than captured locals, which keeps the line-dispatch
-/// loop small and the flush logic explicit. Create one instance per diff.
+/// loop small and the flush logic explicit. Create one instance per diff. Text outside a <c>diff --git</c> section (a
+/// combined section for an unmerged path or a merge, or text that is not a patch at all) never reaches a file entry.
 /// </summary>
 internal sealed class UnifiedDiffReader
 {
     private const string DiffHeaderPrefix = "diff --git ";
+    private const string SectionHeaderPrefix = "diff ";
     private const string NewFileModePrefix = "new file mode";
     private const string DeletedFileModePrefix = "deleted file mode";
     private const string RenameFromPrefix = "rename from ";
@@ -46,14 +48,31 @@ internal sealed class UnifiedDiffReader
         return _files;
     }
 
-    /// <summary>Route a diff line to the handler matching its leading marker.</summary>
+    /// <summary>
+    /// Route a diff line to the handler matching its leading marker. Only a <c>diff --git</c> section opens a file: any
+    /// other <c>diff</c> section header (a combined <c>diff --cc</c> or <c>diff --combined</c> section) closes the open
+    /// file, and a line read while no file is open is dropped.
+    /// </summary>
     private void DispatchLine(string line)
     {
         if (line.StartsWith(DiffHeaderPrefix, StringComparison.Ordinal))
         {
             StartFile(line);
+            return;
         }
-        else if (line.StartsWith(NewFileModePrefix, StringComparison.Ordinal))
+
+        if (line.StartsWith(SectionHeaderPrefix, StringComparison.Ordinal))
+        {
+            FlushFile();
+            return;
+        }
+
+        if (_path is null)
+        {
+            return;
+        }
+
+        if (line.StartsWith(NewFileModePrefix, StringComparison.Ordinal))
         {
             _changeType = ChangeType.Added;
             _oldPath = null;

@@ -1,3 +1,18 @@
+## v2.18.0
+- Fixed: a worktree `git_diff` with a path a merge left unmerged attached that path's combined (`diff --cc`) hunks to
+  another file in the result, and could mark that file `deleted`. The patch reader now reads only `diff --git` sections
+  and skips any other `diff` section; the unmerged path still has no entry.
+- Fixed: `git_show` on an annotated tag parsed the tag's message as part of the patch, so a repository's author could
+  add a file entry the commit never changed, or put a hunk in front of its first real file. The patch pass now runs on
+  the commit the metadata pass resolved, and the reader drops any line outside a `diff --git` section.
+- Fixed: on Linux and macOS, a branch that conflicts on a path whose name holds a line break could forge file entries
+  in a worktree or staged `git_diff`, since git writes an unmerged path's name raw. Such a call now fails with
+  `GitCommandError`.
+- Behavior change: `git_show` with a ref that names a tree or a blob, or a tag of one, fails with `RejectedArgument` on
+  `ref`. It used to return `commit: null` and parse the tree listing or the blob's content as a patch.
+- Docs: the README's Scrubbed environment bullet says which reads show `lazy fetching disabled` in `stderr_tail` on
+  which gits.
+
 ## v2.17.0
 - Fixed: on a git that does not check `GIT_NO_LAZY_FETCH` before a lazy fetch (see the README's Requirements), a tool
   call that read an object missing from a repository with a promisor remote still started a fetch, and the fetch ran
