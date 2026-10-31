@@ -41,6 +41,9 @@ public static class GitCommandBuilder
     /// <c>.git/index</c>: with the key on, git refreshes the stat data of each file whose content matches the
     /// index but whose timestamps do not, holding the index lock, and <c>GIT_OPTIONAL_LOCKS=0</c> does not cover
     /// that write.
+    /// <c>log.showRoot=true</c> keeps a repository's config from hiding a root commit's diff: with the key off,
+    /// <c>git show</c> prints no diff for a commit with no parent, and <c>git log</c> with <c>-S</c> or
+    /// <c>--follow</c> never lists one.
     /// </summary>
     private static readonly IReadOnlyList<(string Key, string Value)> FixedConfig =
     [
@@ -54,7 +57,8 @@ public static class GitCommandBuilder
         ("log.showSignature", "false"),
         ("log.follow", "false"),
         ("fetch.bundleURI", string.Empty),
-        ("diff.autoRefreshIndex", "false")
+        ("diff.autoRefreshIndex", "false"),
+        ("log.showRoot", "true")
     ];
 
     private static readonly HashSet<string> DiffBearingSubcommands = new(StringComparer.Ordinal)

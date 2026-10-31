@@ -184,4 +184,23 @@ public sealed class GitShowToolTests : IDisposable
         Assert.Equal(ExecutableFileMode, file.NewMode);
         Assert.Empty(file.Hunks);
     }
+
+    [Fact]
+    public async Task Show_RootCommitWithShowRootOff_ReturnsAddedFile()
+    {
+        // Arrange
+        var rootCommit = _repo.ConfigureShowRootOff();
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: rootCommit, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        var files = Assert.IsAssignableFrom<IReadOnlyList<FileDiff>>(payload["files"]);
+        var file = Assert.Single(files);
+        Assert.Equal(ChangedFile, file.Path);
+        Assert.Equal(ChangeType.Added, file.ChangeType);
+        Assert.Equal(1, file.Additions);
+    }
 }

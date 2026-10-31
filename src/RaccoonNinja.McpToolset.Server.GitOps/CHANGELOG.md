@@ -1,3 +1,13 @@
+## v2.22.0
+- Fixed: with `log.showRoot=false` in the user's or the repository's git config, `git_show` on a root commit (a commit
+  with no parent, which in a shallow clone includes each boundary commit) returned the commit with `files: []`, and
+  `git_log` with `pickaxe`, or with `follow` and one path, never listed a root commit, so what a repository's first
+  commit added was invisible to those calls. Every git call now passes `-c log.showRoot=true`, git's default.
+  Behavior change: if you set `log.showRoot=false` to hide root commits' diffs, `git_show` and `git_log` no longer
+  follow it.
+- Log change: every `argv_built` debug line shows `-c log.showRoot=true`, and its `argv_len` is 2 higher; the bootstrap
+  calls (`git version` at startup and the `rev-parse` calls) carry the same pin but log no argv line.
+
 ## v2.21.0
 - Fixed: every git process got the server's `PATH` as it was, empty and relative entries included. git looks up on
   `PATH` a program it starts by name, such as the `git log` that `git stash list` starts, once its own exec path holds

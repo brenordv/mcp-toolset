@@ -177,6 +177,26 @@ internal sealed class TempGitRepo : IDisposable
     }
 
     /// <summary>
+    /// Set <c>log.showRoot=false</c> in the repository's config, as a hostile repository or a user's own config can,
+    /// then check that <c>git show</c> without the server's pin prints no diff for <c>HEAD</c>'s root commit, so a test
+    /// built on it never passes on a git that ignores the key. Call it once <c>HEAD</c> has exactly one root commit.
+    /// </summary>
+    /// <returns>The id of <c>HEAD</c>'s root commit.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or still prints the root commit's diff.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string ConfigureShowRootOff()
+    {
+        var root = Run("rev-list", "--max-parents=0", "HEAD");
+        Run("config", "log.showRoot", "false");
+        if (Run("show", "--format=", "--name-only", root).Length != 0)
+        {
+            throw new InvalidOperationException("git show still prints the root commit's diff with log.showRoot=false");
+        }
+
+        return root;
+    }
+
+    /// <summary>
     /// Point the current branch at a new commit on top of <c>HEAD</c>, with the same tree, whose <c>gpgsig</c> header holds
     /// a PGP-armored block that is not a real signature. git treats any commit with that header as signed and hands the
     /// block to the verifier when it checks signatures, so no signing program is needed. SHA-1 repositories only; a

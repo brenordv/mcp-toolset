@@ -608,7 +608,8 @@ flowchart TD
   below): from git 2.40.0, the `git fetch` that git starts for a lazy fetch first downloads the bundle a repository's
   `fetch.bundleURI` names, before any protocol check, and git skips an empty bundle URI. `diff.autoRefreshIndex=false`
   is there because a `git diff` against the working tree otherwise rewrites `.git/index` under its lock, which
-  `GIT_OPTIONAL_LOCKS=0` does not prevent.
+  `GIT_OPTIONAL_LOCKS=0` does not prevent. `log.showRoot=true` is there because `log.showRoot=false` in config makes
+  `git show` print no diff for a root commit and keeps `git log` with `-S` or `--follow` from listing one.
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or

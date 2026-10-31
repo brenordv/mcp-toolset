@@ -12,6 +12,7 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Tools;
 
 public sealed class GitLogToolTests : IDisposable
 {
+    private const string AlphaFile = "alpha.txt";
     private const string AlphaSubject = "GMS-1 alpha";
     private const string BetaFile = "beta.txt";
     private const string BetaSubject = "DEVOPS-2 beta";
@@ -29,7 +30,7 @@ public sealed class GitLogToolTests : IDisposable
     public GitLogToolTests()
     {
         _repo = new TempGitRepo();
-        CommitFile("alpha.txt", AlphaSubject);
+        CommitFile(AlphaFile, AlphaSubject);
         CommitFile(BetaFile, BetaSubject);
         CommitFile("gamma.txt", "plain gamma");
         _repo.Run("checkout", "-b", "feature");
@@ -223,6 +224,36 @@ public sealed class GitLogToolTests : IDisposable
         Assert.Null(envelope.Error);
         Assert.Equal(expectedCount, envelope.Count);
         Assert.Contains(RenameSubject, Subjects(envelope));
+    }
+
+    [Fact]
+    public async Task Log_PickaxeOnRootCommitWithShowRootOff_ReturnsRootCommit()
+    {
+        // Arrange
+        var rootCommit = _repo.ConfigureShowRootOff();
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, pickaxe: AlphaFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var commit = Assert.IsType<Commit>(Assert.Single(envelope.Results));
+        Assert.Equal(rootCommit, commit.Hash);
+    }
+
+    [Fact]
+    public async Task Log_FollowOnRootCommitFileWithShowRootOff_ReturnsRootCommit()
+    {
+        // Arrange
+        var rootCommit = _repo.ConfigureShowRootOff();
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, paths: [AlphaFile], follow: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var commit = Assert.IsType<Commit>(Assert.Single(envelope.Results));
+        Assert.Equal(rootCommit, commit.Hash);
     }
 
     #region Test Helpers
