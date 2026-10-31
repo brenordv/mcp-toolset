@@ -1,3 +1,11 @@
+## v2.20.0
+- `git_diff`, `git_show`, and `git_stash_show` file entries gained `old_mode` and `new_mode`, the file modes git prints
+  in the patch header as six octal digits (`100644`, `100755`, `120000` for a symlink, `160000` for a submodule).
+  Before this, a mode-only change, such as `git update-index --chmod=+x` with no content edit, came back as a
+  `modified` entry with no hunks and nothing to say what changed. An added file has no `old_mode`, a deleted one no
+  `new_mode`, and a rename or copy whose content and mode are both unchanged has neither, since git prints no mode for
+  it. `statOnly: true` entries have neither. No log change.
+
 ## v2.19.0
 - Fixed: a `git_diff` against the working tree (worktree mode, or `fromRef` or `toRef` alone) that met a file whose
   content matched the index but whose timestamps did not (a touched file, an edit undone, every file in a copied

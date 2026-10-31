@@ -17,6 +17,8 @@ public sealed class GitShowToolTests : IDisposable
     private const string TagName = "v1";
     private const string TreeTagName = "tree-tag";
     private const string HeadTree = "HEAD^{tree}";
+    private const string RegularFileMode = "100644";
+    private const string ExecutableFileMode = "100755";
 
     private const string PatchShapedTagMessage =
         "diff --git a/fake.txt b/fake.txt\n" +
@@ -160,5 +162,26 @@ public sealed class GitShowToolTests : IDisposable
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
         Assert.Equal("ref", envelope.Error.Detail["param"]);
+    }
+
+    [Fact]
+    public async Task Show_ModeOnlyChange_ReturnsOldAndNewMode()
+    {
+        // Arrange
+        _repo.Run("update-index", "--chmod=+x", ChangedFile);
+        _repo.Run("commit", "-m", "make a.txt executable");
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        var files = Assert.IsAssignableFrom<IReadOnlyList<FileDiff>>(payload["files"]);
+        var file = Assert.Single(files);
+        Assert.Equal(ChangedFile, file.Path);
+        Assert.Equal(RegularFileMode, file.OldMode);
+        Assert.Equal(ExecutableFileMode, file.NewMode);
+        Assert.Empty(file.Hunks);
     }
 }

@@ -142,6 +142,17 @@ submodule whose recorded commit changed, and a diff against the working tree (wo
 alone) does not list a submodule with only uncommitted changes inside it; see
 [Security model (long version)](#security-model-long-version).
 
+Each file entry carries `old_mode` and `new_mode`, the file modes git prints in the patch header: six octal digits,
+such as `100644` (a regular file), `100755` (an executable one), `120000` (a symlink), or `160000` (a submodule). A
+mode-only change, such as `git update-index --chmod=+x` with no content edit, is an entry with both modes and no
+hunks. An added file has no `old_mode` and a deleted one no `new_mode`. A change of file type, such as a regular file
+to a symlink or a submodule, is two entries for the same path, as git prints it: a deleted one with the old mode and
+an added one with the new mode. A rename or copy whose content and mode are both unchanged has neither field, since
+git prints no mode for it; `git_ls_files` with `stage: true` or `git_file_at_ref` reads it. `stat_only` entries have
+neither. When the repository's `core.fileMode` (or `core.symlinks`) is `false`, a worktree diff reports the
+working-tree side's mode as the one in the index, not the one on disk, so a `chmod` there is not reported until the
+index has it.
+
 On Linux and macOS, a worktree or staged `git_diff` fails with `GitCommandError` when the patch carries a
 `* Unmerged path <name>` line and any path the `--numstat` pass lists, a binary file whose timestamps alone changed
 included, has a line break in its name: git writes that line's name raw, where it could pass for patch text. A

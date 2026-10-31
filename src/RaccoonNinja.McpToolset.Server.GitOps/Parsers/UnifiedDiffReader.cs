@@ -15,6 +15,10 @@ internal sealed class UnifiedDiffReader
     private const string SectionHeaderPrefix = "diff ";
     private const string NewFileModePrefix = "new file mode";
     private const string DeletedFileModePrefix = "deleted file mode";
+    private const string OldModePrefix = "old mode";
+    private const string NewModePrefix = "new mode";
+    private const string IndexPrefix = "index ";
+    private const int ModeLength = 6;
     private const string RenameFromPrefix = "rename from ";
     private const string RenameToPrefix = "rename to ";
     private const string CopyFromPrefix = "copy from ";
@@ -32,6 +36,8 @@ internal sealed class UnifiedDiffReader
     private string _oldPath;
     private ChangeType _changeType = ChangeType.Modified;
     private bool _isBinary;
+    private string _oldMode;
+    private string _newMode;
     private List<string> _hunkLines;
     private DiffHunk _hunkHeader;
 
@@ -76,10 +82,24 @@ internal sealed class UnifiedDiffReader
         {
             _changeType = ChangeType.Added;
             _oldPath = null;
+            _newMode = ReadMode(line[NewFileModePrefix.Length..]);
         }
         else if (line.StartsWith(DeletedFileModePrefix, StringComparison.Ordinal))
         {
             _changeType = ChangeType.Deleted;
+            _oldMode = ReadMode(line[DeletedFileModePrefix.Length..]);
+        }
+        else if (line.StartsWith(OldModePrefix, StringComparison.Ordinal))
+        {
+            _oldMode = ReadMode(line[OldModePrefix.Length..]);
+        }
+        else if (line.StartsWith(NewModePrefix, StringComparison.Ordinal))
+        {
+            _newMode = ReadMode(line[NewModePrefix.Length..]);
+        }
+        else if (line.StartsWith(IndexPrefix, StringComparison.Ordinal))
+        {
+            ReadIndexMode(line);
         }
         else if (line.StartsWith(RenameFromPrefix, StringComparison.Ordinal))
         {
@@ -136,6 +156,8 @@ internal sealed class UnifiedDiffReader
         }
         _changeType = ChangeType.Modified;
         _isBinary = false;
+        _oldMode = null;
+        _newMode = null;
     }
 
     /// <summary>
@@ -224,6 +246,22 @@ internal sealed class UnifiedDiffReader
         return true;
     }
 
+    /// <summary>
+    /// Read the mode at the end of an <c>index &lt;old&gt;..&lt;new&gt; &lt;mode&gt;</c> line. git writes it only when both sides
+    /// have the same mode, so it is the old and the new mode at once; when the mode changed, git writes <c>old mode</c>
+    /// and <c>new mode</c> lines instead and the <c>index</c> line ends at the object names.
+    /// </summary>
+    /// <param name="line">The whole <c>index</c> line.</param>
+    private void ReadIndexMode(string line)
+    {
+        var mode = ReadMode(line[line.LastIndexOf(' ')..]);
+        if (mode is not null)
+        {
+            _oldMode = mode;
+            _newMode = mode;
+        }
+    }
+
     /// <summary>Begin a new hunk from an <c>@@ ... @@</c> header line.</summary>
     private void StartHunk(string line)
     {
@@ -279,6 +317,8 @@ internal sealed class UnifiedDiffReader
             Path = _path,
             ChangeType = _changeType,
             OldPath = _oldPath,
+            OldMode = _oldMode,
+            NewMode = _newMode,
             Additions = additions,
             Deletions = deletions,
             IsBinary = _isBinary,
@@ -295,6 +335,8 @@ internal sealed class UnifiedDiffReader
         _oldPath = null;
         _changeType = ChangeType.Modified;
         _isBinary = false;
+        _oldMode = null;
+        _newMode = null;
         _hunks.Clear();
     }
 
@@ -364,5 +406,23 @@ internal sealed class UnifiedDiffReader
             start = int.TryParse(spec.AsSpan(0, comma), out var s) ? s : 0;
             lines = int.TryParse(spec.AsSpan(comma + 1), out var l) ? l : 0;
         }
+    }
+
+    /// <summary>
+    /// Read a file mode from the text after its keyword: one space, then exactly six octal digits, the form git writes
+    /// after <c>old mode</c>, <c>new mode</c>, <c>new file mode</c>, and <c>deleted file mode</c>, and at the end of an
+    /// <c>index</c> line whose two sides share a mode.
+    /// </summary>
+    /// <param name="text">The text after the keyword, or an <c>index</c> line from its last space on.</param>
+    /// <returns>The six digits, or <c>null</c> for any other text, such as a combined diff's comma-joined modes.</returns>
+    private static string ReadMode(string text)
+    {
+        if (text.Length != ModeLength + 1 || text[0] != ' ')
+        {
+            return null;
+        }
+
+        var mode = text[1..];
+        return mode.All(static digit => digit is >= '0' and <= '7') ? mode : null;
     }
 }

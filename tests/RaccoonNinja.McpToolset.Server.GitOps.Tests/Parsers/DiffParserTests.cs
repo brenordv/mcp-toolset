@@ -35,6 +35,22 @@ public class DiffParserTests
     private const string UnmergedLinePrefix = "* Unmerged path ";
     private const string UnmergedFile = "m.txt";
     private const string BinaryNumstatRecord = "-\t-\tx.bin\0";
+    private const string RegularFileMode = "100644";
+    private const string ExecutableFileMode = "100755";
+    private const string RunShHeader = "diff --git a/run.sh b/run.sh\n";
+
+    private const string IdenticalRenameSection =
+        "diff --git a/old.sh b/new.sh\n" +
+        "similarity index 100%\n" +
+        "rename from old.sh\n" +
+        "rename to new.sh\n";
+
+    private const string RunShContentHunk =
+        "--- a/run.sh\n" +
+        "+++ b/run.sh\n" +
+        "@@ -1 +1 @@\n" +
+        "-one\n" +
+        "+two\n";
 
     [Fact]
     public void ParseNumstatZ_ReadsPlainEntries()
@@ -227,6 +243,94 @@ public class DiffParserTests
         Assert.Equal(1, file.Deletions);
         var hunk = Assert.Single(file.Hunks);
         Assert.Equal(RealHunkHeader, hunk.Header);
+    }
+
+    [Theory]
+    [MemberData(nameof(ModeHeaderDiffs))]
+    public void ParseUnified_ModeHeaderLines_SetsOldAndNewMode(string raw, string expectedOldMode, string expectedNewMode)
+    {
+        // Act
+        var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(raw));
+
+        // Assert
+        var file = Assert.Single(files);
+        Assert.Equal(expectedOldMode, file.OldMode);
+        Assert.Equal(expectedNewMode, file.NewMode);
+    }
+
+    [Theory]
+    [InlineData(RunShHeader + "old mode 10064\nnew mode 1007550\n")]
+    [InlineData(RunShHeader + "index 1111111..2222222 100758\n")]
+    [InlineData(RunShHeader + "deleted file mode 100644,100644\n")]
+    public void ParseUnified_ModeNotSixOctalDigits_LeavesModesNull(string raw)
+    {
+        // Act
+        var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(raw));
+
+        // Assert
+        var file = Assert.Single(files);
+        Assert.Null(file.OldMode);
+        Assert.Null(file.NewMode);
+    }
+
+    [Fact]
+    public void ParseUnified_ModeLinesBeforeFirstFile_DoNotReachTheFile()
+    {
+        // Arrange
+        const string raw =
+            $"new file mode {ExecutableFileMode}\n" +
+            $"old mode {RegularFileMode}\n" +
+            IdenticalRenameSection;
+
+        // Act
+        var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(raw));
+
+        // Assert
+        var file = Assert.Single(files);
+        Assert.Null(file.OldMode);
+        Assert.Null(file.NewMode);
+    }
+
+    [Fact]
+    public void ParseUnified_CombinedSectionAfterFile_KeepsFileModes()
+    {
+        // Arrange
+        const string raw =
+            RunShHeader +
+            $"index 1111111..2222222 {ExecutableFileMode}\n" +
+            RunShContentHunk +
+            "diff --cc x.txt\n" +
+            "index 1111111,2222222..0000000\n" +
+            $"new file mode {RegularFileMode}\n";
+
+        // Act
+        var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(raw));
+
+        // Assert
+        var file = Assert.Single(files, static entry => entry.Path == "run.sh");
+        Assert.Equal(ExecutableFileMode, file.OldMode);
+        Assert.Equal(ExecutableFileMode, file.NewMode);
+    }
+
+    [Fact]
+    public void ParseUnified_FileStatingNoModeAfterFileWithModes_LeavesItsModesNull()
+    {
+        // Arrange
+        const string raw =
+            RunShHeader +
+            $"old mode {RegularFileMode}\n" +
+            $"new mode {ExecutableFileMode}\n" +
+            IdenticalRenameSection;
+
+        // Act
+        var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(raw));
+
+        // Assert
+        Assert.Equal(2, files.Count);
+        Assert.Equal(RegularFileMode, files[0].OldMode);
+        Assert.Equal(ExecutableFileMode, files[0].NewMode);
+        Assert.Null(files[1].OldMode);
+        Assert.Null(files[1].NewMode);
     }
 
     [Fact]
@@ -621,6 +725,63 @@ public class DiffParserTests
             { string.Empty, $"0\t0\t{RealFile}\0", false },
             { string.Empty, BinaryNumstatRecord, false },
             { RealFileSection, $"1\t1\t{RealFile}\0", false },
+        };
+    }
+
+    public static TheoryData<string, string, string> ModeHeaderDiffs()
+    {
+        return new()
+        {
+            {
+                RunShHeader +
+                $"index 1111111..2222222 {RegularFileMode}\n" +
+                RunShContentHunk,
+                RegularFileMode,
+                RegularFileMode
+            },
+            {
+                RunShHeader +
+                $"old mode {RegularFileMode}\n" +
+                $"new mode {ExecutableFileMode}\n",
+                RegularFileMode,
+                ExecutableFileMode
+            },
+            {
+                RunShHeader +
+                $"old mode {RegularFileMode}\n" +
+                $"new mode {ExecutableFileMode}\n" +
+                "index 1111111..2222222\n" +
+                RunShContentHunk,
+                RegularFileMode,
+                ExecutableFileMode
+            },
+            {
+                RunShHeader +
+                $"new file mode {ExecutableFileMode}\n" +
+                "index 0000000..2222222\n" +
+                "--- /dev/null\n" +
+                "+++ b/run.sh\n" +
+                "@@ -0,0 +1 @@\n" +
+                "+two\n",
+                null,
+                ExecutableFileMode
+            },
+            {
+                RunShHeader +
+                $"deleted file mode {RegularFileMode}\n" +
+                "index 1111111..0000000\n" +
+                "--- a/run.sh\n" +
+                "+++ /dev/null\n" +
+                "@@ -1 +0,0 @@\n" +
+                "-one\n",
+                RegularFileMode,
+                null
+            },
+            {
+                IdenticalRenameSection,
+                null,
+                null
+            },
         };
     }
 

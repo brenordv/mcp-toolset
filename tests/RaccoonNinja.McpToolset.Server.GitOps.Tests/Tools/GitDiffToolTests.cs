@@ -36,6 +36,8 @@ public sealed class GitDiffToolTests : IDisposable
     private const string CutNumstatMessage = "the --numstat pass hit the output cap while a path is unmerged; the patch cannot be read safely";
     private const string DeleteSubject = "delete";
     private const string ModifySubject = "modify";
+    private const string RegularFileMode = "100644";
+    private const string ExecutableFileMode = "100755";
 
     private readonly TempGitRepo _repo;
     private readonly GitDiffTool _tool;
@@ -378,6 +380,26 @@ public sealed class GitDiffToolTests : IDisposable
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
         Assert.Equal(CutNumstatMessage, envelope.Error.Message);
+    }
+
+    [Fact]
+    public async Task Diff_RefToRef_ModeOnlyChange_ReturnsOldAndNewMode()
+    {
+        // Arrange
+        _repo.Run("update-index", "--chmod=+x", ChangedFile);
+        _repo.Run("commit", "-m", "make a.txt executable");
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, fromRef: "HEAD~1", toRef: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var diff = Assert.IsType<DiffResult>(envelope.Results[0]);
+        var file = Assert.Single(diff.Files);
+        Assert.Equal(ChangedFile, file.Path);
+        Assert.Equal(RegularFileMode, file.OldMode);
+        Assert.Equal(ExecutableFileMode, file.NewMode);
+        Assert.Empty(file.Hunks);
     }
 
     #region Test Helpers
