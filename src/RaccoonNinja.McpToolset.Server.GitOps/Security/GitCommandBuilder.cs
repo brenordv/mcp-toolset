@@ -1,17 +1,21 @@
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
+using RaccoonNinja.McpToolset.Server.GitOps.Repo;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Security;
 
 /// <summary>
 /// Sole producer of git argv. Tools declare typed <see cref="GitIntent"/> instances;
-/// this class is the only code that turns them into a process argv list.
+/// this class is the only code that turns them into a process argv list. Each pathspec
+/// is rendered with a per-item magic prefix chosen by the server (<see cref="PathspecMagic"/>).
 /// </summary>
 public static class GitCommandBuilder
 {
+    private const string LiteralMagic = ":(literal)";
+    private const string ExcludeMagic = ":(exclude)";
+
     private static readonly IReadOnlyList<string> GlobalFlags =
     [
-        "--no-pager",
-        "--literal-pathspecs"
+        "--no-pager"
     ];
 
     /// <summary><c>--no-textconv</c> is accepted by every diff-bearing subcommand (incl. grep). <c>--no-ext-diff</c> is NOT a grep flag.</summary>
@@ -23,7 +27,24 @@ public static class GitCommandBuilder
 
     private static readonly IReadOnlyList<string> GrepDiffFlags = ["--no-textconv"];
 
-    /// <summary>Fixed <c>-c</c> neutralizers: constant values, server-emitted, never user input.</summary>
+    /// <summary>
+    /// Fixed <c>-c</c> neutralizers: constant values, server-emitted, never user input. git reads <c>-c</c> values after
+    /// every config file, so these beat the user's and the repository's config. <c>log.showSignature=false</c> keeps a
+    /// repository's config from making <c>git log</c>, <c>git show</c>, <c>git reflog</c>, or the <c>git log</c> that
+    /// <c>git stash list</c> starts verify signed commits, which runs the program <c>gpg.program</c>,
+    /// <c>gpg.ssh.program</c>, or <c>gpg.x509.program</c> names. <c>log.follow=false</c> keeps <c>git log</c> with one
+    /// pathspec from following renames unless the call passes <c>--follow</c>, which sets the mode directly.
+    /// <c>fetch.bundleURI=</c> reaches the <c>git fetch</c> a lazy fetch starts on a git that does not check
+    /// <c>GIT_NO_LAZY_FETCH</c>: from git 2.40.0 that fetch first downloads the bundle the key names, before any protocol
+    /// check, and git skips an empty bundle URI.
+    /// <c>diff.autoRefreshIndex=false</c> keeps a <c>git diff</c> against the working tree from rewriting
+    /// <c>.git/index</c>: with the key on, git refreshes the stat data of each file whose content matches the
+    /// index but whose timestamps do not, holding the index lock, and <c>GIT_OPTIONAL_LOCKS=0</c> does not cover
+    /// that write.
+    /// <c>log.showRoot=true</c> keeps a repository's config from hiding a root commit's diff: with the key off,
+    /// <c>git show</c> prints no diff for a commit with no parent, and <c>git log</c> with <c>-S</c> or
+    /// <c>--follow</c> never lists one.
+    /// </summary>
     private static readonly IReadOnlyList<(string Key, string Value)> FixedConfig =
     [
         ("core.fsmonitor", string.Empty),
@@ -32,7 +53,12 @@ public static class GitCommandBuilder
         ("gc.auto", "0"),
         ("credential.helper", string.Empty),
         ("core.askpass", string.Empty),
-        ("core.quotePath", "false")
+        ("core.quotePath", "false"),
+        ("log.showSignature", "false"),
+        ("log.follow", "false"),
+        ("fetch.bundleURI", string.Empty),
+        ("diff.autoRefreshIndex", "false"),
+        ("log.showRoot", "true")
     ];
 
     private static readonly HashSet<string> DiffBearingSubcommands = new(StringComparer.Ordinal)
@@ -54,18 +80,51 @@ public static class GitCommandBuilder
     }
 
     /// <summary>Convert a <see cref="GitIntent"/> into a hardened argv list plus the child env.</summary>
-    public static (IList<string> Argv, IDictionary<string, string> Env) Build(GitIntent intent, string gitExecutable = "git")
+    /// <param name="intent">The invocation to serialize.</param>
+    /// <param name="gitExecutable">The absolute path of the git executable, written as <c>argv[0]</c>.</param>
+    /// <param name="filterDrivers">
+    /// Filter driver names to pin, as <see cref="FilterDriverPins.ParseDriverNames"/> returns them; <c>null</c> pins none.
+    /// Each name comes from the config git reads, which includes the repository's own, so its argv tokens are masked in logs.
+    /// </param>
+    /// <returns>The argv, executable first, and the child environment.</returns>
+    public static (IList<string> Argv, IDictionary<string, string> Env) Build(
+        GitIntent intent,
+        string gitExecutable,
+        IReadOnlyCollection<string> filterDrivers = null)
     {
         ArgumentNullException.ThrowIfNull(intent);
 
         var argv = new List<string> { gitExecutable };
         var provenance = new Dictionary<int, string>();
 
-        // 1. Fixed hardening config.
+        // 1. The intent's own config pins, then the fixed hardening config, which wins over a pin that repeats one of its
+        // keys, then the pins for each filter driver the config git reads names.
+        if (intent.ConfigPins is not null)
+        {
+            foreach (var (key, value) in intent.ConfigPins)
+            {
+                argv.Add("-c");
+                argv.Add($"{key}={value}");
+            }
+        }
+
         foreach (var (key, value) in FixedConfig)
         {
             argv.Add("-c");
             argv.Add($"{key}={value}");
+        }
+
+        if (filterDrivers is not null)
+        {
+            foreach (var driver in filterDrivers)
+            {
+                foreach (var (key, value) in FilterDriverPins.PinsFor(driver))
+                {
+                    argv.Add("-c");
+                    provenance[argv.Count] = "filter_driver";
+                    argv.Add($"{key}={value}");
+                }
+            }
         }
 
         // 2. Global flags.
@@ -145,9 +204,16 @@ public static class GitCommandBuilder
             argv.Add("--");
             foreach (var spec in intent.Pathspecs)
             {
-                ArgumentValidation.RejectIfUnsafeValue("path", spec);
-                argv.Add(spec);
-                provenance[argv.Count - 1] = "path";
+                if (string.IsNullOrWhiteSpace(spec.Value))
+                {
+                    throw new RejectedArgumentException(
+                        "pathspec must not be empty",
+                        new Dictionary<string, object> { ["param"] = spec.Param });
+                }
+
+                ArgumentValidation.RejectIfUnsafeValue(spec.Param, spec.Value);
+                argv.Add(Render(spec));
+                provenance[argv.Count - 1] = spec.Param;
             }
         }
 
@@ -161,13 +227,39 @@ public static class GitCommandBuilder
         return (argv, env);
     }
 
-    /// <summary>Return a copy of <paramref name="argv"/> with user-originating tokens replaced by their parameter name.</summary>
+    /// <summary>Render one pathspec token. A bare value must not start with ':' because git reads pathspec magic only from a leading colon.</summary>
+    /// <param name="spec">A pathspec whose value is already known to be non-empty.</param>
+    /// <returns>The argv token: the server's magic prefix followed by the value, or the bare value.</returns>
+    /// <exception cref="RejectedArgumentException">A bare value starts with ':', or the magic was never assigned.</exception>
+    private static string Render(Pathspec spec)
+        => spec.Magic switch
+        {
+            PathspecMagic.Literal => LiteralMagic + spec.Value,
+            PathspecMagic.Exclude => ExcludeMagic + spec.Value,
+            PathspecMagic.None when spec.Value[0] == ':' => throw new RejectedArgumentException(
+                "pathspec must not begin with ':'",
+                new Dictionary<string, object> { ["param"] = spec.Param }),
+            PathspecMagic.None => spec.Value,
+            _ => throw new RejectedArgumentException(
+                "pathspec magic is not set",
+                new Dictionary<string, object> { ["param"] = spec.Param }),
+        };
+
+    /// <summary>
+    /// Return a copy of <paramref name="argv"/> with user-originating tokens replaced by their parameter name, and the
+    /// executable shown as <c>git</c>, never its path.
+    /// </summary>
     public static IList<string> MaskedForLog(IList<string> argv, GitIntent intent)
     {
         ArgumentNullException.ThrowIfNull(argv);
         ArgumentNullException.ThrowIfNull(intent);
 
         var masked = new List<string>(argv);
+        if (masked.Count > 0)
+        {
+            masked[0] = GitExecutableLocator.DisplayName;
+        }
+
         foreach (var (index, paramName) in intent.Provenance)
         {
             if (index < 0 || index >= masked.Count) continue;

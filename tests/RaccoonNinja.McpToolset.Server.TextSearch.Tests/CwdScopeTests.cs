@@ -13,6 +13,11 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Tests;
 /// </summary>
 public sealed class CwdScopeTests
 {
+    private const string PathShapedDenyEntry = "**/.claude/settings*.json";
+    private const string ClaudeDirectory = "proj/.claude";
+    private const string ScopedAgentFile = "agents/a.md";
+    private const string DeniedSettingsFile = "settings.json";
+
     [Fact]
     public async Task Find_OmittedCwd_SearchesWholeBase_WithBaseRelativePaths()
     {
@@ -275,4 +280,85 @@ public sealed class CwdScopeTests
         var hit = Assert.IsType<FileHit>(Assert.Single(envelope.Results));
         Assert.Equal("hit.txt", hit.Path);
     }
+
+    [Fact]
+    public async Task ReadLines_PathShapedExtraDeny_CwdInsideItsDirectory_IsRefusedAndCounted()
+    {
+        // Arrange
+        using var harness = NewHarnessWithClaudeDirectory();
+        var cwd = harness.Dir(ClaudeDirectory);
+
+        // Act
+        var envelope = await harness.ReadLines.InvokeAsync(path: DeniedSettingsFile, cwd: cwd, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.NotFound, envelope.Error.Code);
+        var refusals = (IDictionary<string, object>)harness.Metrics.Summary()["refusals_total"];
+        Assert.Equal(1L, (long)refusals["denylisted"]);
+    }
+
+    [Fact]
+    public async Task Find_PathShapedExtraDeny_CwdInsideItsDirectory_OmitsFile()
+    {
+        // Arrange
+        using var harness = NewHarnessWithClaudeDirectory();
+        var cwd = harness.Dir(ClaudeDirectory);
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(cwd: cwd, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal([ScopedAgentFile], TextSearchHarness.Paths(envelope));
+    }
+
+    [Fact]
+    public async Task Find_PathShapedExtraDeny_CwdIsLinkToItsDirectory_OmitsFile()
+    {
+        // Arrange
+        using var harness = NewHarnessWithClaudeDirectory();
+        var alias = Path.Combine(harness.Root, "alias");
+        if (!TryCreateDirectoryLink(alias, harness.Dir(ClaudeDirectory)))
+        {
+            Assert.Skip("creating a directory symbolic link is not permitted in this environment");
+        }
+
+        // Act
+        var envelope = await harness.Find.InvokeAsync(cwd: alias, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal([ScopedAgentFile], TextSearchHarness.Paths(envelope));
+    }
+
+    #region Test Helpers
+
+    /// <summary>
+    /// A harness whose denylist carries <see cref="PathShapedDenyEntry"/>, with <c>proj/.claude/settings.json</c>
+    /// and <c>proj/.claude/agents/a.md</c> written under the base root.
+    /// </summary>
+    private static TextSearchHarness NewHarnessWithClaudeDirectory()
+    {
+        var harness = new TextSearchHarness(extraDeny: PathShapedDenyEntry);
+        harness.Write($"{ClaudeDirectory}/{DeniedSettingsFile}", "{}");
+        harness.Write($"{ClaudeDirectory}/{ScopedAgentFile}", "x");
+        return harness;
+    }
+
+    /// <summary>Create a directory symbolic link at <paramref name="link"/>; <c>false</c> when the environment forbids it.</summary>
+    private static bool TryCreateDirectoryLink(string link, string target)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(link, target);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    #endregion
 }

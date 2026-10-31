@@ -28,7 +28,7 @@ public sealed class ToolCommon(
     private const string TimestampFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
 
     private static readonly string StoreMissingMessage =
-        "skill usage database not found; install the skill-usage PostToolUse hook first";
+        "skill usage database not found; install the skill-stats-cli hook first";
 
     private static readonly string StoreUnreadableMessage =
         "skill usage database is not readable or has an incompatible schema";

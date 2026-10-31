@@ -9,6 +9,25 @@ Install the `skill-stats-cli` hook first. With no database yet, every tool retur
 error telling you to install it; the server still starts, so once the store appears the tools work
 without a restart.
 
+## Recording usage
+
+The store fills only while the `skill-stats-cli` hook runs. Wire it in `~/.claude/settings.json` on two
+events: `UserPromptExpansion` with `matcher` `.*` for skills and slash commands you type, and `PostToolUse`
+with `matcher` `Skill` for skills the model invokes. The
+[skill-stats-cli README](../RaccoonNinja.McpToolset.Cli.SkillStats/README.md) has the snippet for each
+platform.
+
+Upgrading from skill-stats-cli 1.0.0, which was wired on `PostToolUse` with `matcher` `Skill` only: that
+entry records skills the model invokes but never a typed command. Publish skill-stats-cli 1.1.0 or later
+first (1.0.0 exits `2` on a recording failure, which blocks the prompt on `UserPromptExpansion`), keep the
+`PostToolUse` entry, add the `UserPromptExpansion` entry next to it, and restart Claude Code.
+
+To check that it records, ask the agent to call `usage_summary` and note `total_records`, type any skill
+(`/csharp x`), then call `usage_summary` again: `total_records` is one higher and `last_used` is within the
+last minute. Before the first row lands, `usage_summary` returns `StoreUnavailable` instead. If that error
+persists after a typed skill, or the count does not move, the CLI README's "Nothing is being recorded?"
+section explains each outcome.
+
 ## Tools
 
 - **`top_skills(days_back?, limit?)`**: the most-used skills, most first. `days_back` restricts to the
@@ -42,7 +61,11 @@ unknown argument (with a `did you mean` when a schema name is close) and lists t
 
 The store defaults to `~/.skill-stats/skill-stats.db`; set `SKILL_STATS_HOME` to relocate it, and
 point the hook and this server at the same home. `MCP_SKILLSTATS_LOG_FILE` and
-`MCP_SKILLSTATS_LOG_LEVEL` control the server's own log; it never writes to stdout.
+`MCP_SKILLSTATS_LOG_LEVEL` control the server's own log; it never writes to stdout. A logged exception is
+recorded only as its type chain, never its message or stack trace; a startup failure's reason is printed to
+stderr as `skill-stats: fatal error: ...`. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of
+which names the working directory) are not logged. The MCP SDK's own lines (categories under `ModelContextProtocol`)
+are never logged below Information, so its Trace-level copy of every JSON-RPC frame is not logged.
 
 ## Adding it to Claude Code
 

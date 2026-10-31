@@ -19,12 +19,18 @@ public static class LogFields
     public const string Truncated = "truncated";
     public const string Message = "message";
 
-    // Permitted-with-scrubber fields.
-    public const string DriverName = "driver_name";
+    /// <summary>
+    /// On <c>subprocess_exit</c>, the last 512 bytes of git's stderr with control characters stripped. On an event that
+    /// carries an exception, the exception's type chain, outer to inner; never its message or stack trace, which can carry
+    /// an absolute path.
+    /// </summary>
     public const string StderrTail = "stderr_tail";
 
     // Server-controlled session metrics. Emitted only on shutdown.
     public const string MetricsSummary = "metrics_summary";
+
+    // The text after "git version " in git's own output, allowlisted by GitVersionReader. Emitted only at startup.
+    public const string GitVersion = "git_version";
 
     /// <summary>Service name property attached to every log line for downstream filtering.</summary>
     public const string Service = "service";
@@ -35,6 +41,6 @@ public static class LogFields
     {
         Ts, Level, Event, Tool, CallId, ErrorCode, DurationMs,
         GitExitCode, ArgvLen, CacheHit, Truncated, Message,
-        DriverName, StderrTail, MetricsSummary, Service,
+        StderrTail, MetricsSummary, GitVersion, Service,
     };
 }

@@ -1,3 +1,25 @@
+## v1.3.0
+- Fixed: the generic host logged `Content root path: <working directory>` at Information on every startup; the
+  host's lifetime category is now held at Warning. Log change: the host's four status lines (`Application started`,
+  `Hosting environment`, `Content root path`, `Application is shutting down`) are gone.
+- Fixed: at a `TRACE` log level the MCP SDK wrote every JSON-RPC frame verbatim (skill names, recorded invocation
+  args, session ids, workspace directories) to the log; the SDK's categories are now held at Information or the
+  configured level, whichever is higher. Log change: at `DEBUG` and `TRACE`, the SDK's own lines below Information
+  are gone.
+
+## v1.2.0
+- Fixed: the `exception_tail` log field, written when startup fails or when the host or the MCP SDK logs an
+  exception, carried the exception's message and stack trace, which can name a file by its absolute path. It
+  now carries the exception's type chain only, outer to inner, at most eight entries. Log change: the
+  content of `exception_tail`; the `server_start_failed` line no longer carries the reason text, which stays
+  on stderr.
+
+## v1.1.2
+- The `StoreUnavailable` message for a missing store now reads "install the skill-stats-cli hook first"; it
+  named only the `PostToolUse` event, which misses skills you type. The README gains a "Recording usage"
+  section with the two-event wiring (`UserPromptExpansion` plus `PostToolUse`), the upgrade from a
+  `PostToolUse`-only setup, and a check that recording works. No log change.
+
 ## v1.1.1
 - Internal: removed every `ConfigureAwait(false)` call. The stdio host has no synchronization context, so
   continuations run on the same threads as before. No wire or behavior change.

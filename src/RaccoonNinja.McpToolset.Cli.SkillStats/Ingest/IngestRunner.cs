@@ -7,15 +7,21 @@ using RaccoonNinja.McpToolset.Common.SkillStats.Storage;
 namespace RaccoonNinja.McpToolset.Cli.SkillStats.Ingest;
 
 /// <summary>
-/// The ingest-pipeline. Reads the hook JSON from stdin, extracts the skill name and args, and appends
+/// The ingest pipeline. Reads the hook JSON from stdin, extracts the skill name and args, and appends
 /// one store row. Every stage runs inside a guarded region, so no expected failure escapes: a failure
-/// logs one line, names the log path on stderr, and exits 2; a benign skip (no skill, oversize input)
-/// exits 0. It is exercised in-process with injected streams and config loader.
+/// logs one line, names the log path on stderr, and exits 1, a non-blocking code on both the
+/// <c>UserPromptExpansion</c> and <c>PostToolUse</c> events; a benign skip (no usable skill name, an unrecognized shape,
+/// oversize input) logs one line and exits 0. It is exercised in-process with injected streams and
+/// config loader.
 /// </summary>
 internal static class IngestRunner
 {
-    /// <summary>Exit code for a recording failure; on PostToolUse this surfaces stderr to Claude.</summary>
-    public const int ExitFailure = 2;
+    /// <summary>
+    /// Exit code for a recording failure. The hook runs on <c>UserPromptExpansion</c>, where exit 2 blocks the
+    /// user's prompt, so a failure exits 1: Claude Code lets the prompt through and shows a non-blocking hook
+    /// error notice carrying the stderr line.
+    /// </summary>
+    public const int ExitFailure = 1;
 
     /// <summary>Exit code for a recorded row or a benign skip.</summary>
     private const int ExitSuccess = 0;
@@ -41,7 +47,7 @@ internal static class IngestRunner
         catch (SkillStatsStartupException)
         {
             // No resolved home means there is nowhere to log; name the default path and stop.
-            stderr.WriteLine($"skill-usage: failed to record skill usage; see {DefaultLogHint}");
+            stderr.WriteLine($"skill-stats-cli: failed to record skill usage; see {DefaultLogHint}");
             return ExitFailure;
         }
 
@@ -51,7 +57,7 @@ internal static class IngestRunner
             var (bytes, oversize) = BoundedRead(stdin);
             if (oversize)
             {
-                ErrorLog.AppendSkipped(config.ErrorLogPath, "oversize", null);
+                ErrorLog.AppendSkipped(config.ErrorLogPath, "oversize", null, null);
                 return ExitSuccess;
             }
 
@@ -62,7 +68,8 @@ internal static class IngestRunner
             var payload = HookPayload.Extract(document.RootElement);
             if (!SkillName.TryNormalize(payload.RawSkill, out var skill))
             {
-                ErrorLog.AppendSkipped(config.ErrorLogPath, "no_skill", payload.ToolInputKeys);
+                var reason = payload.RawSkill is null ? "unrecognized_shape" : "no_skill";
+                ErrorLog.AppendSkipped(config.ErrorLogPath, reason, payload.ToolInputKeys, payload.RootKeys);
                 return ExitSuccess;
             }
 
@@ -87,7 +94,7 @@ internal static class IngestRunner
         catch (Exception ex) when (ex is IOException or JsonException or SkillStatsStartupException or SqliteException or UnauthorizedAccessException)
         {
             ErrorLog.AppendFailure(config.ErrorLogPath, stage, ex);
-            stderr.WriteLine($"skill-usage: failed to record skill usage; see {config.ErrorLogPath}");
+            stderr.WriteLine($"skill-stats-cli: failed to record skill usage; see {config.ErrorLogPath}");
             return ExitFailure;
         }
     }

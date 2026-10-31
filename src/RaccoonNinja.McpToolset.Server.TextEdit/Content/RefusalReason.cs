@@ -4,6 +4,7 @@ namespace RaccoonNinja.McpToolset.Server.TextEdit.Content;
 /// The per-file reasons the write gate declines to rewrite a file. Each is a stable wire string reported
 /// per file in the tool result's <c>refusal_reason</c>. The batch log line carries only the aggregate
 /// refused count, and the session metric <c>refusals_total</c> counts only call-level (<c>cwd</c>) refusals.
+/// A <c>regex_timeout</c> refusal is also logged as its own Warning event, once per file.
 /// </summary>
 public static class RefusalReason
 {

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Server.GitOps.Envelope;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
@@ -35,7 +36,8 @@ public sealed class GitStashShowTool(ToolCommon common)
                 Subcommand = "stash",
                 SubSubcommand = "show",
                 RepoRoot = root,
-                Flags = ["-p"],
+                Flags = ["-p", .. DiffParser.StashPatchShapeFlags],
+                ConfigPins = DiffParser.StashHeaderPrefixConfig,
                 VerifiedRefs = [stashRef],
             };
             var numstatIntent = new GitIntent
@@ -43,13 +45,29 @@ public sealed class GitStashShowTool(ToolCommon common)
                 Subcommand = "stash",
                 SubSubcommand = "show",
                 RepoRoot = root,
-                Flags = ["--numstat", "-z"],
+                Flags = ["--numstat", "-z", .. DiffParser.StashPatchShapeFlags],
+                ConfigPins = DiffParser.StashHeaderPrefixConfig,
                 VerifiedRefs = [stashRef],
             };
             var unified = await common.ExecuteAsync(unifiedIntent, ctx, cancellationToken: cancellationToken);
             var numstatResult = await common.ExecuteAsync(numstatIntent, ctx, cancellationToken: cancellationToken);
             var files = DiffParser.ParseUnified(unified.Stdout);
             var numstat = DiffParser.ParseNumstatZ(numstatResult.Stdout);
+            // The numstat pass is never colored or reformatted, so files there and none from the patch means the
+            // patch was in a shape the reader does not recognize; an empty success would hide that.
+            if (numstat.Count > 0 && files.Count == 0)
+            {
+                ctx.Log(LogLevel.Warning, "patch_parse_empty");
+            }
+
+            // A patch cut by the output cap can end inside its last file's header, so that file is left out, and a cut
+            // numstat pass lists too few paths to check against.
+            var checkedFiles = unified.Truncated ? files.SkipLast(1) : files;
+            if (!numstatResult.Truncated && DiffParser.HasPathMissingFromNumstat(checkedFiles, numstat))
+            {
+                ctx.Log(LogLevel.Warning, "patch_path_unmatched");
+            }
+
             var diff = DiffParser.AssembleDiffResult(files, "ref_to_ref",
                 unified.Truncated || numstatResult.Truncated, numstat);
 

@@ -25,6 +25,14 @@ public sealed record FileAtRef
     [JsonPropertyName("size")]
     public long? Size { get; init; }
 
+    /// <summary>The line count of the whole blob (a lower bound when the output cap truncated it); <c>null</c> when <see cref="IsBinary"/> is <c>true</c>.</summary>
+    [JsonPropertyName("total_lines")]
+    public int? TotalLines { get; init; }
+
+    /// <summary>Where to continue when <c>maxBytes</c> cut the content: the offset of the first byte left out, to pass back as <c>byteOffset</c>; <c>null</c> when nothing was cut or the blob is binary.</summary>
+    [JsonPropertyName("next_byte_offset")]
+    public int? NextByteOffset { get; init; }
+
     /// <summary>Whether the content has a NUL byte in its first 8000 bytes (git's binary heuristic).</summary>
     [JsonPropertyName("is_binary")]
     public bool IsBinary { get; init; }

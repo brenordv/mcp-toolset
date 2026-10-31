@@ -5,6 +5,11 @@ namespace RaccoonNinja.McpToolset.Common.Files.Tests.Selection;
 
 public sealed class FileSelectionTests : IDisposable
 {
+    private const string PathShapedDenyEntry = "**/.claude/settings*.json";
+    private const string ScopedDirectory = "proj/.claude";
+    private const string ScopedAgentFile = "agents/a.md";
+    private const string DeniedSettingsFile = "settings.json";
+
     private readonly string _rootDir;
     private readonly FileSelection _selection;
     private readonly List<string> _cleanup = [];
@@ -306,8 +311,50 @@ public sealed class FileSelectionTests : IDisposable
         Assert.True(result.Truncated);
     }
 
+    [Fact]
+    public void Select_ScopedWalk_PathShapedExtraDeny_OmitsFileDeniedByBaseRelativePath()
+    {
+        // Arrange
+        var scoped = ScopedAtClaudeDirectory();
+
+        // Act
+        var result = scoped.Select(FileSelector.Create());
+
+        // Assert
+        Assert.Equal([ScopedAgentFile], Paths(result));
+    }
+
+    [Fact]
+    public void Select_ScopedPaths_PathShapedExtraDeny_OmitsFileDeniedByBaseRelativePath()
+    {
+        // Arrange
+        var scoped = ScopedAtClaudeDirectory();
+
+        // Act
+        var result = scoped.Select(FileSelector.Create(paths: [DeniedSettingsFile, ScopedAgentFile]));
+
+        // Assert
+        Assert.Equal([ScopedAgentFile], Paths(result));
+    }
+
     private static string[] Paths(WalkResult result)
         => result.Entries.Select(entry => entry.RelativePath).ToArray();
+
+    /// <summary>
+    /// Write <c>proj/.claude/settings.json</c> and <c>proj/.claude/agents/a.md</c>, then build a selection scoped
+    /// at <c>proj/.claude</c> under the base root whose denylist carries <see cref="PathShapedDenyEntry"/>.
+    /// </summary>
+    private FileSelection ScopedAtClaudeDirectory()
+    {
+        Write($"{ScopedDirectory}/{DeniedSettingsFile}", "{}");
+        Write($"{ScopedDirectory}/{ScopedAgentFile}", "x");
+        return new FileSelection(
+            new RootConfinement(Path.Combine(_rootDir, "proj", ".claude")),
+            new SecretDenylist([PathShapedDenyEntry]),
+            defaultIgnore: null,
+            anchor: new RootConfinement(_rootDir),
+            prefix: ScopedDirectory);
+    }
 
     private void Write(string relativePath, string content)
     {

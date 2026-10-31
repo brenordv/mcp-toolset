@@ -12,9 +12,11 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tools;
 
 /// <summary>
 /// Returns one tracked file's content as of a ref. Two passes: <c>ls-tree -z -l</c> locates the blob
-/// (and proves the path names a file at that ref), then <c>show --format=</c> prints the blob. The
-/// path stays a confined pathspec behind <c>--</c> and never enters a revision expression; only
-/// object names checked by <see cref="RefVerifier"/> become positionals.
+/// (and proves the path names a file at that ref), then <c>show --format=</c> prints the blob. A text
+/// blob is then cut by the optional line range, byte offset, and byte cap through
+/// <see cref="BlobSlicer"/>, on raw bytes before decoding. The path stays a confined pathspec behind
+/// <c>--</c> and never enters a revision expression; only object names checked by
+/// <see cref="RefVerifier"/> become positionals.
 /// </summary>
 [McpServerToolType]
 public sealed class GitFileAtRefTool(ToolCommon common, IRefVerifier refVerifier)
@@ -28,6 +30,14 @@ public sealed class GitFileAtRefTool(ToolCommon common, IRefVerifier refVerifier
         string path,
         [Description("Commit-ish to read from (branch, tag, SHA, HEAD~n, ...). Default HEAD. Do not put the path here; use the path argument.")]
         string @ref = null,
+        [Description("First line to return (1-based, inclusive). Give lineStart and lineEnd together.")]
+        int? lineStart = null,
+        [Description("Last line to return (1-based, inclusive; clamped to the last line). Must be >= lineStart.")]
+        int? lineEnd = null,
+        [Description("Bytes to skip before returning content (0-based, applied after the line range). To page through a large or single-line file, pass the previous result's next_byte_offset.")]
+        int? byteOffset = null,
+        [Description("Cap on the returned content in UTF-8 bytes; a cut sets truncated: true, never splits a character when the cap is 4 or more, and reports where to continue in next_byte_offset. Use it for large or single-line files that exceed the client's result cap.")]
+        int? maxBytes = null,
         CancellationToken cancellationToken = default)
     {
         var ctx = common.MakeContext("git_file_at_ref");
@@ -36,6 +46,7 @@ public sealed class GitFileAtRefTool(ToolCommon common, IRefVerifier refVerifier
         {
             var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
             var confined = ValidateAndConfine(root, path, @ref);
+            BlobSlicer.ValidateArguments(lineStart, lineEnd, byteOffset, maxBytes);
             var sha = await refVerifier
                 .VerifyRequiredRefAsync(root, string.IsNullOrWhiteSpace(@ref) ? "HEAD" : @ref, cancellationToken);
 
@@ -45,7 +56,7 @@ public sealed class GitFileAtRefTool(ToolCommon common, IRefVerifier refVerifier
                 RepoRoot = root,
                 Flags = ["-z", "-l"],
                 VerifiedRefs = [sha],
-                Pathspecs = [confined],
+                Pathspecs = [Pathspec.Literal(confined)],
             };
             var treeResult = await common.ExecuteAsync(
                 treeIntent,
@@ -65,6 +76,7 @@ public sealed class GitFileAtRefTool(ToolCommon common, IRefVerifier refVerifier
 
             var bytes = showResult.Stdout;
             var isBinary = TextDecoding.IsLikelyBinary(bytes);
+            var slice = isBinary ? null : BlobSlicer.Slice(bytes, lineStart, lineEnd, byteOffset, maxBytes);
             var payload = new FileAtRef
             {
                 Path = confined,
@@ -72,18 +84,23 @@ public sealed class GitFileAtRefTool(ToolCommon common, IRefVerifier refVerifier
                 Mode = entry.Mode,
                 ObjectId = entry.ObjectId,
                 Size = entry.Size,
+                TotalLines = slice?.TotalLines,
+                NextByteOffset = slice?.NextByteOffset,
                 IsBinary = isBinary,
-                Content = isBinary ? null : TextDecoding.Decode(bytes),
+                Content = isBinary ? null : TextDecoding.Decode(slice.Bytes),
             };
             var filtersApplied = FiltersAppliedBuilder.Create()
                 .Redact("ref", @ref)
                 .Redact("path", path)
+                .Optional("line_range", lineStart.HasValue ? new[] { lineStart.Value, lineEnd.Value } : null)
+                .Optional("byte_offset", byteOffset)
+                .Optional("max_bytes", maxBytes)
                 .Build();
             return ToolCommon.SingleSuccess(
                 payload,
                 root,
                 filtersApplied: filtersApplied,
-                truncated: showResult.Truncated || treeResult.Truncated);
+                truncated: showResult.Truncated || treeResult.Truncated || (slice?.Truncated ?? false));
         });
     }
 

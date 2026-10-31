@@ -6,7 +6,8 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
 /// <summary>
 /// The one open-boundary read gate for file content. Every content read (inspect, search, read_lines)
 /// goes through it, so confinement and the denylist hold even when enumeration is skipped (a
-/// <c>paths[]</c> or a single-path read). The size is checked before any bytes are read (an oversized
+/// <c>paths[]</c> or a single-path read), and a scoped read tests the denylist against the anchor-relative
+/// path as well. The size is checked before any bytes are read (an oversized
 /// file is refused unread) and the read is bounded to the cap, and every filesystem exception is caught
 /// and mapped to a typed outcome so no absolute path from a .NET exception message can escape into
 /// model context.
@@ -41,7 +42,7 @@ public sealed class GatedFileReader(IRootResolver root, ISecretDenylist denylist
             return ReadOutcome.NotFound();
         }
 
-        if (_denylist.IsDeniedFile(confined.RelativePath))
+        if (IsDenied(confined.RelativePath))
         {
             return ReadOutcome.Denied(confined.RelativePath);
         }
@@ -64,6 +65,15 @@ public sealed class GatedFileReader(IRootResolver root, ISecretDenylist denylist
 
         return outcome;
     }
+
+    /// <summary>
+    /// Whether <paramref name="relativePath"/> (relative to this reader's root) is on the denylist, tested as given
+    /// and, for a scoped read, as its anchor-relative form too, so an extra deny entry anchored with a <c>/</c>
+    /// covers a call scoped at or inside the directory it names.
+    /// </summary>
+    private bool IsDenied(string relativePath)
+        => _denylist.IsDeniedFile(relativePath)
+            || (_prefix.Length > 0 && _denylist.IsDeniedFile(ToBaseRelative(relativePath)));
 
     /// <summary>Rebase a scope-relative path onto the base anchor for ignore evaluation.</summary>
     private string ToBaseRelative(string relativePath)

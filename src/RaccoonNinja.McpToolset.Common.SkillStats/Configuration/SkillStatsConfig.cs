@@ -9,8 +9,20 @@ namespace RaccoonNinja.McpToolset.Common.SkillStats.Configuration;
 /// </summary>
 public sealed record SkillStatsConfig
 {
-    /// <summary>SQLite busy timeout, in milliseconds. A locked write waits this long before failing.</summary>
+    /// <summary>SQLite busy timeout for the read-only server, in milliseconds.</summary>
     public const int BusyTimeoutMs = 5_000;
+
+    /// <summary>
+    /// SQLite busy timeout for the ingest writer, in milliseconds. The hook runs while the user's prompt
+    /// waits, so a locked store is given up on quickly rather than waited out.
+    /// </summary>
+    public const int WriterBusyTimeoutMs = 1_000;
+
+    /// <summary>
+    /// Microsoft.Data.Sqlite command timeout for the ingest writer, in seconds. The library retries a busy or
+    /// locked command until this runs out, on top of the SQLite busy timeout, so it stays as short.
+    /// </summary>
+    public const int WriterCommandTimeoutSeconds = 1;
 
     private const string HomeEnvVar = "SKILL_STATS_HOME";
     private const string HomeDirectoryName = ".skill-stats";

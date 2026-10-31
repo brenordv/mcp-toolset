@@ -36,7 +36,10 @@ share one selector: give exactly one of `glob` (primary), `regex`, or `paths`, o
 in the scope", optionally narrowed by `extensions`. A glob with no `/` matches the basename at any depth, so
 `*.cs` is recursive. Ignore rules (`.gitignore`, the agent-ignore files, `.mcpignore`) always apply; there is no `include_ignored` on
 the write path. The ignore files themselves are never written: a selected `.gitignore`, agent-ignore
-file, or `.mcpignore` is refused with `ignore_file`.
+file, or `.mcpignore` is refused with `ignore_file`. An ignore file the server sees but cannot read fails
+the call, and so does a directory it cannot list on the way to a requested path or to a scoped `cwd`, since
+it cannot know whether that directory holds an ignore file. A selection skips a subdirectory it cannot
+list; a subdirectory it can list but whose ignore file it cannot open fails the selection.
 
 **Scoping a call.** The optional `cwd` argument is an absolute working directory inside the base root. Pass
 it to scope an edit to one project: the selector and every write are confined to that `cwd`, so a scoped
@@ -154,8 +157,8 @@ Only argument names are echoed back, never values.
   can register MCP servers, set their environment, and add hooks. That is deliberate: installing a
   server or a hook means editing them, and approving each write call is the control. To make them
   unwritable, set `MCP_TEXTEDIT_EXTRA_DENY=.mcp.json;.claude.json;**/.claude/settings*.json`:
-  text-edit then never writes them. A selection drops them, the write gate refuses as `denied` any
-  that a `cwd`-scoped selection lets through, and undo never restores them. The patterns match
+  text-edit then never writes them. A selection drops them whatever `cwd` the call passes, the write
+  gate refuses as `denied` any that still reaches it, and undo never restores them. The patterns match
   paths relative to the base root, so if the base root is itself a `.claude` directory, add
   `settings*.json` too. The opt-out covers only the files it names; a script a hook runs, or another
   client's configuration file, stays writable unless you add it as well.
@@ -212,7 +215,13 @@ Structured single-line JSON to a rolling file (`MCP_TEXTEDIT_LOG_FILE`, default 
 the executable), or stderr if the file cannot be opened. Set the level with `MCP_TEXTEDIT_LOG_LEVEL`
 (`TRACE`..`FATAL`, default `INFO`). Never to stdout, which the stdio transport owns. Fields pass through a
 fixed allowlist; the root is logged only as an 8-character hash, and a replacement or pattern is logged only
-as a length and a hash, never verbatim.
+as a length and a hash, never verbatim. A regex that hits its per-match timeout on a file is a counted
+Warning event (`regex_timeout`) as well as that file's `refusal_reason`, and it is counted even when the call
+then fails (an `expected_match_count` mismatch, or the operation budget). A logged exception is recorded only
+as its type chain, never its message or stack trace; a startup failure's reason is printed to stderr as
+`text-edit: fatal error: ...`. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of which names the
+working directory) are not logged. The MCP SDK's own lines (categories under `ModelContextProtocol`) are never logged
+below Information, so its Trace-level copy of every JSON-RPC frame is not logged.
 
 ## Requirements
 

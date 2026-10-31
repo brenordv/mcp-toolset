@@ -11,7 +11,9 @@ namespace RaccoonNinja.McpToolset.Common.Files.Selection;
 /// just because enumeration was skipped, so the gate runs on every path however it arrives. The
 /// project ignore boundary (<c>.gitignore</c>, the agent-ignore files, <c>.mcpignore</c>) is evaluated through <see cref="PathIgnoreEvaluator"/>
 /// anchored at the base root, so it holds even for a scoped call and cannot be reached past by
-/// <c>include_ignored</c> (which only ever re-includes the built-in default tier).
+/// <c>include_ignored</c> (which only ever re-includes the built-in default tier). The secret denylist is
+/// tested the same way for a scoped selection: against the scope-relative path and against the
+/// anchor-relative path.
 /// </summary>
 public sealed class FileSelection
 {
@@ -60,6 +62,14 @@ public sealed class FileSelection
     private WalkResult Walk(FileSelector selector, SafeRegexOptions regexOptions, CancellationToken cancellationToken)
     {
         var match = BuildMatch(selector, regexOptions);
+
+        // The walker tests the denylist against scope-relative paths. A scoped selection also tests the
+        // anchor-relative form, so a path-shaped extra deny entry holds whatever cwd the call passed.
+        if (_prefix.Length > 0)
+        {
+            var scopeMatch = match;
+            match = path => (scopeMatch is null || scopeMatch(path)) && !_denylist.IsDeniedFile(ToBaseRelative(path));
+        }
 
         // A walk prunes with rules loaded from its own root down, and inside a subtree that include_ignored
         // re-included it applies no project rules at all. A scoped call or an include_ignored call can
@@ -180,7 +190,7 @@ public sealed class FileSelection
             return false;
         }
 
-        if (!confined.Exists || _denylist.IsDeniedFile(confined.RelativePath) || IsProjectIgnored(confined.RelativePath))
+        if (!confined.Exists || IsDenied(confined.RelativePath) || IsProjectIgnored(confined.RelativePath))
         {
             return false;
         }
@@ -209,6 +219,15 @@ public sealed class FileSelection
     /// </summary>
     private bool IsProjectIgnored(string relativePath)
         => PathIgnoreEvaluator.IsIgnored(_anchor.CanonicalRoot, ToBaseRelative(relativePath));
+
+    /// <summary>
+    /// Whether <paramref name="relativePath"/> (relative to this selection's root) is on the denylist, tested as
+    /// given and, for a scoped selection, as its anchor-relative form too, so an extra deny entry anchored with a
+    /// <c>/</c> covers a call scoped at or inside the directory it names.
+    /// </summary>
+    private bool IsDenied(string relativePath)
+        => _denylist.IsDeniedFile(relativePath)
+            || (_prefix.Length > 0 && _denylist.IsDeniedFile(ToBaseRelative(relativePath)));
 
     /// <summary>Rebase a selection-relative path onto the base anchor for ignore evaluation.</summary>
     private string ToBaseRelative(string relativePath)

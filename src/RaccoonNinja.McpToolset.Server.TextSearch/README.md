@@ -64,7 +64,7 @@ refused with a path-free error; the same denylist and ignore tiers apply as unde
 | `describe_scope` | Report the base root, scope model, package roots, ignore tiers, denylist, content-scan status, and caps. | (none)                                                                                                           |
 | `find_files`     | List scope-relative files with size and last-modified.                                                   | `glob` / `regex` / `paths`, `cwd`, `extensions`, `include_ignored`, `case_sensitive`, `max_files`, `cursor`      |
 | `inspect_files`  | Report encoding, BOM, line endings, final newline, and counts per file.                                  | same selector                                                                                                    |
-| `search_text`    | Grep file contents line by line (literal or regex).                                                      | selector + `pattern`, `is_regex`, `context_lines`, `max_matches_per_file`, `max_results`, `files_only`, `cursor` |
+| `search_text`    | Grep file contents line by line (literal or regex).                                                      | selector + `pattern`, `is_regex`, `context_lines`, `max_matches_per_file`, `max_results`, `files_only`, `count_only`, `cursor` |
 | `read_lines`     | Return a numbered, span-capped slice of one file.                                                        | `path`, `cwd`, `start_line`, `end_line`                                                                          |
 | `read_json`      | Parse one JSON file and return the whole document or the value at a property path.                       | `path`, `cwd`, `json_path`                                                                                       |
 
@@ -74,6 +74,11 @@ refused with a path-free error; the same denylist and ignore tiers apply as unde
   match counts as two units.
 - **`search_text` matches per line.** A pattern that spans a newline will not match; `match_start`/
   `match_end` are offsets into the line.
+- **`count_only` returns per-file counts.** Each entry is `{path, match_count}`, where `match_count` counts
+  matching lines (a line with two matches counts once) and is exact: `max_matches_per_file` does not apply.
+  The envelope carries `total_match_count`, the sum over every matching file, the same on every page. When
+  the selection hits its ceiling (`truncated` with no `cursor`), the total covers only the files walked. It
+  pages like `files_only`, every page re-scans the selection, and the two cannot be combined.
 - **`include_ignored` takes globs, not a boolean.** Pass globs (for example `["build/**"]` for a tracked
   build directory) to re-include otherwise-ignored paths for one call; omit or pass an empty list to keep
   every ignore tier in force. It only ever re-includes the built-in default tier: a `.gitignore`,
@@ -105,6 +110,7 @@ base root when `cwd` is omitted).
   "truncated": false,
   "cursor": null,               // opaque; pass back to fetch the next page
   "skipped_symlinks": 0,        // on list tools: symlinked entries that were pruned
+  "total_match_count": 6,       // search_text count_only only: matching lines across every file, before paging
   "filters_applied": { "cwd": ".", "glob": "<provided>", "case_sensitive": false },
   "error": null                 // set instead of results on failure
 }
@@ -221,6 +227,11 @@ remain: a backslash inside brackets is a literal character, POSIX classes such a
 such a line). A line the server cannot compile is skipped; every other line
 applies, and the secret denylist and content scan are unaffected.
 
+An ignore file the server sees but cannot read fails the call, and so does a directory it cannot list on
+the way to a requested path or to a scoped `cwd`, since it cannot know whether that directory holds an
+ignore file. A walk skips a subdirectory it cannot list; a subdirectory it can list but whose ignore file
+it cannot open fails the walk.
+
 ## Package roots
 
 Package roots let one instance also search out-of-tree dependency caches (the NuGet, Cargo, or npm stores,
@@ -268,7 +279,7 @@ All configurations are environment variables. Only the base root is required; ev
 | `MCP_TEXTSEARCH_BASE_ROOT`            | (required) | The single confinement root: a bare absolute path to the directory that holds your projects. Fatal if unset, not an existing directory, or dangerously broad.                                                                                          |
 | `MCP_TEXTSEARCH_PACKAGE_ROOTS`        | (none)     | `;`-separated `name=path` (or bare path) read-only dependency caches, addressed with a `cwd` of `@name` or `@name/<subpath>`. Each must be an existing directory, pass the broad-root guard, have a valid unique name, and not overlap any other root. Fatal on any bad entry. |
 | `MCP_TEXTSEARCH_DEFAULT_IGNORE`       | (built-in) | `off` disables the built-in default ignore set; a file path replaces it with that file's patterns (a missing path is fatal); unset keeps the built-ins.                                                                                                |
-| `MCP_TEXTSEARCH_EXTRA_DENY`           | (none)     | `;`-separated additive deny patterns. A trailing `/` denies a bare directory segment at any depth. Any other entry is a glob: without a `/` it matches the file name at any depth; with a `/` it matches the path relative to the call's scope (the base root, or the `cwd` when one is passed), so a call scoped at or inside a directory the pattern names is not covered. Prefer entries without a `/`. It can only tighten the built-in denylist, never remove from it; absolute-looking or malformed entries are fatal. |
+| `MCP_TEXTSEARCH_EXTRA_DENY`           | (none)     | `;`-separated additive deny patterns. A trailing `/` denies a bare directory segment at any depth. Any other entry is a glob: without a `/` it matches the file name at any depth; with a `/` it is matched against the path relative to the root the call resolved under (the base root, or the package root) and, for a scoped call, against the path relative to the `cwd` as well, so `**/.claude/settings*.json` covers a call scoped at or inside `.claude`. It can only tighten the built-in denylist, never remove from it; absolute-looking or malformed entries are fatal. |
 | `MCP_TEXTSEARCH_SECRET_SCAN`          | on         | Content-based secret withholding. `on` (default) withholds a file whose content matches a known secret shape from `read_lines`, `search_text`, and `inspect_files` while still listing it in `find_files`; `off` disables it; `aggressive` adds higher-false-positive detectors (JWTs, generic password assignments). Any other value is fatal. |
 | `MCP_TEXTSEARCH_MAX_FILES`            | 1000       | Default files returned per page.                                                                                                                                                                                                                       |
 | `MCP_TEXTSEARCH_MAX_FILES_CEILING`    | 10000      | Hard ceiling the page size is clamped to.                                                                                                                                                                                                              |
@@ -292,7 +303,11 @@ Structured single-line JSON to a rolling file (`MCP_TEXTSEARCH_LOG_FILE`, defaul
 next to the executable), or stderr if the file cannot be opened. Set the level with
 `MCP_TEXTSEARCH_LOG_LEVEL` (`TRACE`..`FATAL`, default `INFO`). Never to stdout, which the stdio transport
 owns. Log fields pass through a fixed allowlist, so a value can never leak through an unexpected key; the
-base root is logged only as an 8-character hash, never as a path. A refusal (denylist hit, out-of-base
+base root is logged only as an 8-character hash, never as a path. A logged exception is recorded only as its
+type chain, never its message or stack trace; a startup failure's reason is printed to stderr as
+`text-search: fatal error: ...`. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of which names the
+working directory) are not logged. The MCP SDK's own lines (categories under `ModelContextProtocol`) are never logged
+below Information, so its Trace-level copy of every JSON-RPC frame is not logged. A refusal (denylist hit, out-of-base
 `cwd`, regex timeout) is a first-class, counted event, and a shutdown line carries the session metrics.
 
 ## Requirements

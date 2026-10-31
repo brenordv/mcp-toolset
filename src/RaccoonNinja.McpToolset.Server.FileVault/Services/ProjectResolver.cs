@@ -205,7 +205,7 @@ public sealed class ProjectResolver(VaultConfig config, string cwd)
     {
         // Resolve git from PATH explicitly so the CreateProcess search order can never pick
         // up a git binary planted in the (untrusted) working directory.
-        var gitPath = ResolveGitFromPath();
+        var gitPath = GitExecutableLocator.Find(Environment.GetEnvironmentVariable("PATH"));
         if (gitPath is null)
         {
             return null;
@@ -260,29 +260,5 @@ public sealed class ProjectResolver(VaultConfig config, string cwd)
         {
             return null;
         }
-    }
-
-    /// <summary>Locate the git executable by scanning PATH directories only (never the cwd).</summary>
-    private static string ResolveGitFromPath()
-    {
-        var fileName = OperatingSystem.IsWindows() ? "git.exe" : "git";
-        var searchPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-        foreach (var directory in searchPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            try
-            {
-                var candidate = Path.Combine(directory.Trim(), fileName);
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
-            }
-            catch (ArgumentException)
-            {
-                // A malformed PATH entry is skipped, matching how the OS loader treats it.
-            }
-        }
-
-        return null;
     }
 }

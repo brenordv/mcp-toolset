@@ -71,7 +71,7 @@ public static class LogFields
 
     public const string Message = "message";
 
-    /// <summary>Exception text captured for non-domain failures (server-emitted, control-stripped).</summary>
+    /// <summary>The type chain of a logged exception, outer to inner; never its message or stack trace, which can carry note content or an absolute path.</summary>
     public const string StderrTail = "stderr_tail";
 
     /// <summary>Server-controlled session metrics. Emitted only on shutdown.</summary>

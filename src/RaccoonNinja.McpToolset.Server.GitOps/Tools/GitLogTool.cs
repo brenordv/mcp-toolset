@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Server.GitOps.Envelope;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
 using RaccoonNinja.McpToolset.Server.GitOps.Extensions;
 using RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 using RaccoonNinja.McpToolset.Server.GitOps.Repo;
@@ -20,11 +21,13 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
         [Description("Filter by author substring (regex per git --author).")] string author = null,
         [Description("Only commits more recent than this (git --since spec).")] string since = null,
         [Description("Only commits older than this (git --until spec).")] string until = null,
-        [Description("Filter to commits whose message matches this pattern (regex, git --grep).")] string grep = null,
+        [Description("Filter to commits whose message matches this pattern. A basic regular expression by default (git --grep), so '|' is a literal and '\\d' is a 'd'; set perlRegex for alternation and Perl escapes.")] string grep = null,
         [Description("Pickaxe search: when this string was added or removed (git -S).")] string pickaxe = null,
         [Description("Cap the number of commits returned. Default 50.")] int maxCount = 50,
         [Description("Search from this ref, or a range A..B / A...B (branch, tag, SHA, HEAD~n, ...).")] string @ref = null,
         [Description("Follow renames when scoping to a single path.")] bool follow = false,
+        [Description("Match grep (and author) as Perl-compatible regular expressions (git -P), the dialect git_grep uses for fixedString: false: alternation 'a|b', '\\d', '\\s', '+', '?', and grouping work. Default false, which is git's basic regular expression where '|' is a literal character. A git built without PCRE reports PcreUnavailable.")] bool perlRegex = false,
+        [Description("Walk every ref under refs/ plus HEAD (git --all): local branches, remote-tracking branches, tags, and the stash. Cannot be combined with ref.")] bool allRefs = false,
         CancellationToken cancellationToken = default)
     {
         var ctx = common.MakeContext("git_log");
@@ -32,18 +35,25 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
         return common.WrapAsync(ctx, holder, async () =>
         {
             var root = await common.ResolveAndLogAsync(cwd, ctx, holder, cancellationToken);
+            if (allRefs && !string.IsNullOrWhiteSpace(@ref))
+            {
+                throw new RejectedArgumentException(
+                    "allRefs cannot be combined with ref",
+                    new Dictionary<string, object> { ["param"] = "all_refs" });
+            }
+
             var verifiedRefs = await refVerifier.VerifyOptionalRefsOrRangesAsync(root, [@ref], cancellationToken);
 
             var intent = new GitIntent
             {
                 Subcommand = "log",
                 RepoRoot = root,
-                Flags = BuildFlags(follow, paths),
+                Flags = BuildFlags(follow, paths, perlRegex, allRefs),
                 AttachedOptions = BuildAttachedOptions(author, since, until, grep, pickaxe, maxCount),
                 VerifiedRefs = verifiedRefs,
                 Pathspecs = ToolCommon.ConfinePaths(root, paths),
             };
-            var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
+            var result = await common.ExecuteAsync(intent, ctx, stderrClassifier: GitGrepTool.ClassifyPcreStderr, cancellationToken: cancellationToken);
             var commits = LogParser.Parse(result.Stdout);
 
             var filtersApplied = FiltersAppliedBuilder.Create()
@@ -53,6 +63,8 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
                 .Redact("grep", grep)
                 .Redact("pickaxe", pickaxe)
                 .Redact("ref", @ref)
+                .Flag("perl_regex", perlRegex)
+                .Flag("all_refs", allRefs)
                 .Number("paths_count", paths?.Length ?? 0)
                 .Number("max_count", maxCount)
                 .Build();
@@ -61,13 +73,24 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
     }
 
     /// <summary>
-    /// Server-built log flags: <c>--follow</c> when scoping renames to a single path, then the
-    /// pretty-format directive that <see cref="LogParser"/> expects.
+    /// Server-built log flags: <c>--follow</c> when scoping renames to a single path, exactly one
+    /// dialect for the limiting patterns (<c>--grep</c>, <c>--author</c>), <c>--all</c> to walk every
+    /// ref under <c>refs/</c> plus <c>HEAD</c>, <c>--ignore-submodules=dirty</c>, then the pretty-format directive that
+    /// <see cref="LogParser"/> expects. The dialect is <c>--perl-regexp</c> or <c>--basic-regexp</c>,
+    /// always emitted: <c>git log</c> reads <c>grep.patternType</c> from the user's and the
+    /// repository's config, and a command-line dialect overrides it. <c>--follow</c> comes only from here, since
+    /// <see cref="GitCommandBuilder"/> pins <c>log.follow</c> to false. With <c>-S</c> or <c>--follow</c>, git keeps only the
+    /// commits whose diff matches, and the <c>--ignore-submodules</c> value, the one <see cref="DiffParser.PatchShapeFlags"/>
+    /// carries, stops a <c>submodule.&lt;name&gt;.ignore</c> or <c>diff.ignoreSubmodules</c> setting from dropping a
+    /// submodule's commit change from that diff.
     /// </summary>
-    private static List<string> BuildFlags(bool follow, string[] paths)
+    private static List<string> BuildFlags(bool follow, string[] paths, bool perlRegex, bool allRefs)
     {
         var flags = new List<string>();
         if (follow && paths is { Length: 1 }) flags.Add("--follow");
+        flags.Add(perlRegex ? "--perl-regexp" : "--basic-regexp");
+        if (allRefs) flags.Add("--all");
+        flags.Add("--ignore-submodules=dirty");
         flags.Add($"--pretty=format:{LogParser.LogPrettyFormat}");
         return flags;
     }

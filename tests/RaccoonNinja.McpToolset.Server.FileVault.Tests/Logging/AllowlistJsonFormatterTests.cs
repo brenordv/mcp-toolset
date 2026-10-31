@@ -10,6 +10,8 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Tests.Logging;
 /// <summary>Tests for <see cref="AllowlistJsonFormatter"/>: field allowlisting and the client-visible-exception redaction rule.</summary>
 public class AllowlistJsonFormatterTests
 {
+    private const string LeakProbeSegment = "leak-probe";
+
     [Fact]
     public void Format_AllowlistedProperties_PassThroughAndUnknownAreDropped()
     {
@@ -96,7 +98,7 @@ public class AllowlistJsonFormatterTests
 
         // Assert
         using var body = JsonDocument.Parse(line);
-        Assert.Equal(nameof(VaultException), body.RootElement.GetProperty(LogFields.StderrTail).GetString());
+        Assert.Equal(typeof(VaultException).FullName, body.RootElement.GetProperty(LogFields.StderrTail).GetString());
         Assert.DoesNotContain("version conflict", line);
         Assert.DoesNotContain("-secret line", line);
     }
@@ -112,23 +114,29 @@ public class AllowlistJsonFormatterTests
 
         // Assert
         using var body = JsonDocument.Parse(line);
-        Assert.Equal(nameof(McpException), body.RootElement.GetProperty(LogFields.StderrTail).GetString());
+        Assert.Equal(typeof(McpException).FullName, body.RootElement.GetProperty(LogFields.StderrTail).GetString());
         Assert.DoesNotContain("-secret", line);
         Assert.DoesNotContain("conflict", line);
     }
 
     [Fact]
-    public void Format_InternalException_KeepsScrubbedFullText()
+    public void Format_InternalExceptionWithPathInMessage_WritesTypeChainWithoutPath()
     {
         // Arrange
-        var exception = new InvalidOperationException("boom at C:\\path");
+        var leakedPath = Path.Combine(Path.GetTempPath(), LeakProbeSegment, "secret.txt");
+        var exception = new DirectoryNotFoundException(
+            $"Could not find '{leakedPath}'",
+            new IOException("inner", new InvalidOperationException("root cause")));
 
         // Act
         var line = FormatLine(Event(exception));
 
         // Assert
-        using var body = JsonDocument.Parse(line);
-        Assert.Contains("boom", body.RootElement.GetProperty(LogFields.StderrTail).GetString());
+        using var document = JsonDocument.Parse(line);
+        Assert.Equal(
+            "System.IO.DirectoryNotFoundException -> System.IO.IOException -> System.InvalidOperationException",
+            document.RootElement.GetProperty(LogFields.StderrTail).GetString());
+        Assert.DoesNotContain(LeakProbeSegment, line, StringComparison.Ordinal);
     }
 
     [Fact]

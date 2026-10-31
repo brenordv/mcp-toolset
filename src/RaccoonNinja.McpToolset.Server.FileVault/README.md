@@ -168,12 +168,17 @@ stale-`base_version` `conflict` for one, is never rewritten. Only argument names
 - **FTS queries are neutralized**: every whitespace token is quoted, so user punctuation cannot become FTS5 syntax.
 - **Purge is gated** behind `confirm: true`, checked before any deletion, and defaults to retaining bytes on disk.
 - **The git probe is hardened**: project inference may run `git rev-parse --show-toplevel` once per process (the
-  derivation is computed on first use and cached), with the git binary resolved from PATH explicitly (never the
-  working directory), an allowlisted environment, no shell, asynchronously drained pipes, and a kill-on-timeout
-  guard.
+  derivation is computed on first use and cached), with the git binary taken from the first fully qualified `PATH`
+  entry that holds it (`git.exe` on Windows, elsewhere a file with an execute bit; empty and relative entries, which
+  resolve against the working directory, are skipped), an allowlisted environment, no shell, asynchronously drained
+  pipes, and a kill-on-timeout guard. An absolute `PATH` entry that points inside the project is still trusted, as it
+  is in your own shell.
 - **Logs never contain content**: an allowlist formatter admits only validated identifiers and system data
   (project, name, versions, sizes, durations, error codes). Summaries, tags, content, diffs, headings, and queries
-  are never logged; search terms appear only as hashes.
+  are never logged; search terms appear only as hashes. A logged exception is recorded only as its type chain, never
+  its message or stack trace, which can carry note content or an absolute path; a startup failure's reason is printed
+  to stderr as `vault-mcp: fatal error: ...`. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of
+  which names the working directory) are not logged.
 
 > **Plaintext store caveat:** the vault stores content as plain text on disk. It is not a secret store; do not save
 > credentials or other secrets in it.
@@ -183,9 +188,10 @@ stale-`base_version` `conflict` for one, is never rewritten. Only argument names
 - **No external runtime dependencies** for the released binaries. Each release ships a self-contained, single-file
   executable per platform ([Releases and verification](../../README.md#releases-and-verification)); SQLite is bundled
   in, so there's nothing extra to install to run it.
-- **`git`**: *optional*. When present on `PATH`, it's invoked once per process to derive the default `project` from
-  the enclosing repository (see [Project resolution](#project-resolution)). Without it, project inference falls back
-  to the working-directory folder name; nothing fails.
+- **`git`**: *optional*. When present in a directory your `PATH` names by an absolute path (`.` and other relative
+  entries are skipped), it's invoked once per process to derive the default `project` from the enclosing repository
+  (see [Project resolution](#project-resolution)). Without it, project inference falls back to the working-directory
+  folder name; nothing fails.
 - **Filesystem access** to the store root (`~/.vault-mcp` by default, override with `VAULT_MCP_HOME`); the server
   creates it on first run.
 - **Building from source**: the [.NET 10 SDK](https://dotnet.microsoft.com/download).

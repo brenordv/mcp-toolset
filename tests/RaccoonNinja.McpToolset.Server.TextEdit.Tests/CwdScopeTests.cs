@@ -12,6 +12,9 @@ namespace RaccoonNinja.McpToolset.Server.TextEdit.Tests;
 /// </summary>
 public sealed class CwdScopeTests
 {
+    private const string ClaudeSettingsFile = "proj/.claude/settings.json";
+    private const string EmptyJsonObject = "{}";
+
     [Fact]
     public async Task Replace_ScopedCwd_ReportsBaseRelativePaths_AndNoWholeBaseMetric()
     {
@@ -182,4 +185,87 @@ public sealed class CwdScopeTests
         Assert.Equal("proj", envelope.FiltersApplied["cwd"]);
         Assert.DoesNotContain(harness.Root, (string)envelope.FiltersApplied["cwd"], StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Replace_PathShapedExtraDeny_CwdInsideItsDirectory_DropsFileFromSelection()
+    {
+        // Arrange
+        using var harness = new TextEditHarness(extraDeny: "**/.claude/settings*.json");
+        harness.WriteText(ClaudeSettingsFile, EmptyJsonObject);
+        var cwd = harness.Dir("proj/.claude");
+
+        // Act
+        var envelope = await harness.Replace.InvokeAsync(EmptyJsonObject, "{ }", cwd: cwd, glob: "*.json", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var result = Assert.IsType<MutationResult>(Assert.Single(envelope.Results));
+        Assert.Equal(0, result.Attempted);
+        Assert.Equal(EmptyJsonObject, harness.ReadText(ClaudeSettingsFile));
+    }
+
+    [Fact]
+    public async Task Replace_PathInUnlistableDirectory_FailsClosedWithoutWriting()
+    {
+        SkipUnlessUnixModesApply();
+
+        // Arrange
+        const string secretFile = "proj/secret.json";
+        const string original = "hello world";
+        using var harness = new TextEditHarness();
+        harness.WriteText("proj/.gitignore", "secret.json\n");
+        harness.WriteText(secretFile, original);
+        var proj = Path.Combine(harness.Root, "proj");
+        MakeUnlistable(proj);
+        try
+        {
+            // Act
+            var envelope = await harness.Replace.InvokeAsync("world", "text", paths: [secretFile]);
+
+            // Assert
+            Assert.Equal(ErrorCodes.InternalError, envelope.Error.Code);
+            Assert.Equal(original, harness.ReadText(secretFile));
+        }
+        finally
+        {
+            MakeListable(proj);
+        }
+    }
+
+    #region Test Helpers
+
+    private static void SkipUnlessUnixModesApply()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Unix file modes do not apply on Windows.");
+        }
+
+        if (Environment.IsPrivilegedProcess)
+        {
+            Assert.Skip("A privileged process bypasses directory mode bits.");
+        }
+    }
+
+    private static void MakeUnlistable(string directory)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        File.SetUnixFileMode(directory, UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    private static void MakeListable(string directory)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    #endregion
 }

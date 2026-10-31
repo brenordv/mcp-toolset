@@ -37,11 +37,11 @@ public sealed class GitDiffRangeSemanticsTests : IDisposable
         _repo.Run("add", "base.txt");
         _repo.Run("commit", "-m", "advance main past fork");
 
-        var resolver = new RepoRootResolver();
+        var resolver = new RepoRootResolver(TestGit.Executable);
         var runner = new GitProcessRunner(NullLogger<GitProcessRunner>.Instance);
         var metrics = new SessionMetrics();
-        _common = new ToolCommon(resolver, runner, metrics, NullLoggerFactory.Instance);
-        _refVerifier = new RefVerifier();
+        _common = new ToolCommon(resolver, runner, metrics, NullLoggerFactory.Instance, TestGit.Executable);
+        _refVerifier = new RefVerifier(TestGit.Executable);
     }
 
     public void Dispose() => _repo.Dispose();

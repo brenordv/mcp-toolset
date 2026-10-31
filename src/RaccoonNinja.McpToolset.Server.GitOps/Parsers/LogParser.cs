@@ -22,7 +22,11 @@ public static class LogParser
         "body" // %b
     ];
 
-    /// <summary>The git pretty-format spec corresponding to <see cref="LogFieldOrder"/>.</summary>
+    /// <summary>
+    /// The git pretty-format spec corresponding to <see cref="LogFieldOrder"/>. It carries no <c>%G</c> placeholder: those
+    /// verify the commit's signature by running the program <c>gpg.program</c> names, whatever <c>log.showSignature</c>
+    /// says, and a repository's own config can name that program.
+    /// </summary>
     public const string LogPrettyFormat = "%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%ct%x1f%s%x1f%b%x1e";
 
     private const char UnitSeparator = '\x1f';

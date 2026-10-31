@@ -23,6 +23,8 @@ internal static class BootstrapGitRunner
         Action onTimeout,
         CancellationToken cancellationToken)
     {
+        GitNotInstalledException.ThrowIfNotFullyQualified(gitExecutable);
+
         var argv = BuildArgv(gitExecutable, cwd, tail);
         var process = StartProcess(argv);
 
@@ -71,13 +73,13 @@ internal static class BootstrapGitRunner
         catch (Exception ex) when (ex is Win32Exception or FileNotFoundException)
         {
             throw new GitNotInstalledException(
-                "git executable not found on PATH",
-                new Dictionary<string, object> { ["executable"] = argv[0] });
+                "git executable could not be started",
+                new Dictionary<string, object> { ["executable"] = GitExecutableLocator.DisplayName });
         }
 
         return process ?? throw new GitNotInstalledException(
             "failed to start git bootstrap process",
-            new Dictionary<string, object> { ["executable"] = argv[0] });
+            new Dictionary<string, object> { ["executable"] = GitExecutableLocator.DisplayName });
     }
 
     /// <summary>

@@ -221,6 +221,26 @@ public sealed class GatedFileWriterTests : IDisposable
     }
 
     [Fact]
+    public void Apply_CancelledBudget_ThrowsOperationBudgetExceededWithoutWriting()
+    {
+        // Arrange
+        const string path = "a.txt";
+        const string original = "hello world";
+        _harness.WriteText(path, original);
+        var replacer = Replace("world", "x");
+        using var budget = new CancellationTokenSource();
+        budget.Cancel();
+
+        // Act
+        var act = () => _harness.Writer.Apply("replace_text", [path], replacer, "t", expectedMatchCount: null, dryRun: false, sourceEncoding: null, skippedSymlinks: 0, truncated: false, _harness.Confinement, budget.Token);
+
+        // Assert
+        var exception = Assert.Throws<TextEditException>(act);
+        Assert.Equal(ErrorCodes.OperationBudgetExceeded, exception.Code);
+        Assert.Equal(original, _harness.ReadText(path));
+    }
+
+    [Fact]
     public void Apply_DryRun_WritesNothingAndReturnsDiff()
     {
         // Arrange

@@ -1,3 +1,49 @@
+## v1.9.0
+- Fixed: the generic host logged `Content root path: <working directory>` at Information on every startup; the
+  host's lifetime category is now held at Warning. Log change: the host's four status lines (`Application started`,
+  `Hosting environment`, `Content root path`, `Application is shutting down`) are gone.
+- Fixed: at a `TRACE` log level the MCP SDK wrote every JSON-RPC frame verbatim (the `cwd`, paths, patterns, file
+  content) to the log; the SDK's categories are now held at Information or the configured level, whichever is
+  higher. Log change: at `DEBUG` and `TRACE`, the SDK's own lines below Information are gone.
+
+## v1.8.0
+- Fixed: which ignore files a directory holds was decided by `File.Exists` per name, which reports an
+  existing file as absent when the server cannot read its attributes or list its directory, so such a
+  file's rules were silently not applied. Presence now comes from the directory listing, and ignore-file
+  names match case-insensitively on every platform. Behavior change: a `read_lines`, `read_json`,
+  `inspect_files`, or `search_text` call that names a path inside a directory the server can enter but not
+  list now fails with `InternalError`, as does a walk whose `cwd` is such a directory or lies under one; a
+  walk still skips such a subdirectory, and a subdirectory the server can list but whose ignore file it
+  cannot open now fails the walk. The `tool_error` log line for the failed call names the directory by its
+  root-relative path (`.` for the root) and the filesystem exception type; no new log field. Both servers
+  share the fix through `Common.Files`.
+
+## v1.7.0
+- Fixed: an extra deny entry containing a `/` (`MCP_TEXTSEARCH_EXTRA_DENY=**/.claude/settings*.json`) did
+  not cover a call whose `cwd` was at or inside the directory it names, because the denylist was tested
+  against the scope-relative path only. The path relative to the base root (or the package root) is now
+  tested too, in the walk, in explicit `paths`, and in the read gate. Scoped calls only; an unscoped call
+  is unchanged. No log shape change: a scoped `read_lines` or `read_json` of such a file now emits the
+  existing `refusal` line (`refusal_reason=denylisted`) and counts in `refusals_total.denylisted`, where it
+  used to succeed.
+
+## v1.6.0
+- Fixed: the `exception_tail` log field, written when startup fails or when the host or the MCP SDK logs an
+  exception, carried the exception's message and stack trace, which can name a file by its absolute path. It
+  now carries the exception's type chain only, outer to inner, at most eight entries. Log change: the
+  content of `exception_tail`; the `server_start_failed` line no longer carries the reason text, which stays
+  on stderr.
+
+## v1.5.0
+- Added: `search_text` `count_only`. It returns one `{path, match_count}` entry per file with at least one
+  matching line instead of every match. `match_count` counts matching lines, so a line with two matches
+  counts once, and it is exact: `max_matches_per_file` and `context_lines` do not apply. Count results page
+  by path like `files_only`, and each page re-reads every selected file to the end. `count_only` together
+  with `files_only` is `InvalidArgument`. `filters_applied` reports `count_only`.
+- Added: the result envelope's `total_match_count`, the sum of `match_count` over every matching file before
+  paging, the same value on every page. It is present only in count mode; every other result omits it.
+- No log change.
+
 ## v1.4.6
 - Fixed: when an ignore file existed but could not be read (locked by another process, or permission
   denied), the server log line for the failed call carried its absolute path. The line now names the

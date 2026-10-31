@@ -65,7 +65,9 @@ A few rules apply to every call regardless of tool:
 - **Timeout**: 30 s wall-clock. If the subprocess runs longer, the process tree is killed and a `GitTimeout` error is
   returned.
 - **Output cap**: 8 MB per stream, truncate-then-flag. Oversized output sets `truncated: true` on the envelope instead
-  of blowing up memory.
+  of blowing up memory. The one exception is the filter-driver listing that runs before `git status`, `git diff`, and
+  `git blame` (see [Security model (long version)](#security-model-long-version)): a listing that hits the cap fails
+  the call with `GitCommandError`, since a driver past the cap would go unpinned.
 - **stdout protection**: a sentinel guards the stdio transport so stray writes can't corrupt the MCP protocol stream.
   All logging goes to a file or stderr.
 
@@ -73,20 +75,20 @@ A few rules apply to every call regardless of tool:
 
 ## Tool catalog
 
-| Tool                                  | Purpose                                                   | Key parameters                                                                             |
-|---------------------------------------|-----------------------------------------------------------|--------------------------------------------------------------------------------------------|
-| [`git_status`](#git_status)           | Working-tree status snapshot                              | `cwd`                                                                                      |
-| [`git_diff`](#git_diff)               | Unified diff (staged / ref-to-ref / worktree / stat-only) | `cwd`, `staged`, `fromRef`, `toRef`, `paths`, `contextLines`, `statOnly`                   |
-| [`git_log`](#git_log)                 | Commit history with filters                               | `cwd`, `paths`, `author`, `since`, `until`, `grep`, `pickaxe`, `maxCount`, `ref`, `follow` |
-| [`git_show`](#git_show)               | Inspect one commit/tag/tree + its diffs                   | `cwd`, `ref`, `paths`                                                                      |
-| [`git_file_at_ref`](#git_file_at_ref) | One file's content, mode, and blob id at a ref            | `cwd`, `path`, `ref`                                                                       |
-| [`git_blame`](#git_blame)             | Per-line author/commit/time for a file                    | `cwd`, `path`, `lineStart`, `lineEnd`, `ref`                                               |
-| [`git_grep`](#git_grep)               | Search tracked content (optionally at a ref)              | `cwd`, `pattern`, `paths`, `ref`, `ignoreCase`, `fixedString`, `maxCount`                  |
-| [`git_ls_files`](#git_ls_files)       | List tracked paths (optionally with mode and blob id)     | `cwd`, `paths`, `stage`                                                                    |
-| [`git_branch_list`](#git_branch_list) | List local (and optionally remote) branches               | `cwd`, `includeRemote`                                                                     |
-| [`git_reflog`](#git_reflog)           | Recent reflog entries                                     | `cwd`, `maxCount`                                                                          |
-| [`git_stash_list`](#git_stash_list)   | List stash entries                                        | `cwd`                                                                                      |
-| [`git_stash_show`](#git_stash_show)   | Diff for a single stash entry                             | `cwd`, `index`                                                                             |
+| Tool                                  | Purpose                                                   | Key parameters                                                                                     |
+|---------------------------------------|-----------------------------------------------------------|----------------------------------------------------------------------------------------------------|
+| [`git_status`](#git_status)           | Working-tree status snapshot                              | `cwd`                                                                                              |
+| [`git_diff`](#git_diff)               | Unified diff (staged / ref-to-ref / worktree / stat-only) | `cwd`, `staged`, `fromRef`, `toRef`, `paths`, `contextLines`, `statOnly`                           |
+| [`git_log`](#git_log)                 | Commit history with filters                               | `cwd`, `paths`, `author`, `since`, `until`, `grep`, `pickaxe`, `maxCount`, `ref`, `follow`, `perlRegex`, `allRefs` |
+| [`git_show`](#git_show)               | Inspect one commit (or a tag's commit) + its diffs        | `cwd`, `ref`, `paths`                                                                              |
+| [`git_file_at_ref`](#git_file_at_ref) | One file's content, mode, and blob id at a ref            | `cwd`, `path`, `ref`, `lineStart`, `lineEnd`, `byteOffset`, `maxBytes`                             |
+| [`git_blame`](#git_blame)             | Per-line author/commit/time for a file                    | `cwd`, `path`, `lineStart`, `lineEnd`, `ref`                                                       |
+| [`git_grep`](#git_grep)               | Search tracked content (optionally at a ref)              | `cwd`, `pattern`, `paths`, `globs`, `excludePaths`, `ref`, `ignoreCase`, `fixedString`, `maxCount`, `countOnly` |
+| [`git_ls_files`](#git_ls_files)       | List tracked paths (optionally with mode and blob id)     | `cwd`, `paths`, `globs`, `excludePaths`, `stage`                                                   |
+| [`git_branch_list`](#git_branch_list) | List local (and optionally remote) branches               | `cwd`, `includeRemote`                                                                             |
+| [`git_reflog`](#git_reflog)           | Recent reflog entries                                     | `cwd`, `maxCount`                                                                                  |
+| [`git_stash_list`](#git_stash_list)   | List stash entries                                        | `cwd`                                                                                              |
+| [`git_stash_show`](#git_stash_show)   | Diff for a single stash entry                             | `cwd`, `index`                                                                                     |
 
 ---
 
@@ -100,10 +102,13 @@ information. The result is parsed from a known format rather than scraped from h
 The payload groups changes into `staged`, `unstaged`, and `untracked` lists and includes `branch`, `upstream`, `ahead`,
 `behind`, and an `is_clean` flag.
 
+A submodule with only uncommitted changes inside it is not listed, and a file under git-lfs or another filter driver
+is compared as its raw worktree bytes; see [Security model (long version)](#security-model-long-version).
+
 ```mermaid
 flowchart LR
     A[git_status: cwd] --> B[Resolve repo root]
-    B --> C["git status --porcelain=v2 -z --branch --ahead-behind"]
+    B --> C["git status --porcelain=v2 -z --branch --ahead-behind<br/>--ignore-submodules=dirty"]
     C --> D[StatusParser: split NUL records]
     D --> E[StatusResult<br/>branch · upstream · ahead/behind<br/>staged · unstaged · untracked · is_clean]
     E --> F[ResultEnvelope]
@@ -128,7 +133,48 @@ SHA before use, exactly like a plain ref.
 
 Each diff runs two passes: the patch itself (or `--name-status` for stat-only) and a companion `--numstat -z` pass.
 The two are merged into one `DiffResult` so every file carries both its hunks and its line counts. `contextLines`
-maps to git's `-U<n>`.
+maps to git's `-U<n>`. Every pass runs with `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your
+git config cannot put escape codes in the patch. Every pass also runs with
+`--src-prefix=a/ --dst-prefix=b/ --submodule=short`, so `diff.noprefix`, `diff.mnemonicPrefix`, `diff.srcPrefix`,
+`diff.dstPrefix`, or `diff.submodule` in your git config cannot change the `diff --git a/<path> b/<path>` header each
+file is read from. Every pass also runs with `--ignore-submodules=dirty`, so a submodule ignore setting cannot hide a
+submodule whose recorded commit changed, and a diff against the working tree (worktree mode, or `fromRef` or `toRef`
+alone) does not list a submodule with only uncommitted changes inside it; see
+[Security model (long version)](#security-model-long-version).
+
+Each file entry carries `old_mode` and `new_mode`, the file modes git prints in the patch header: six octal digits,
+such as `100644` (a regular file), `100755` (an executable one), `120000` (a symlink), or `160000` (a submodule). A
+mode-only change, such as `git update-index --chmod=+x` with no content edit, is an entry with both modes and no
+hunks. An added file has no `old_mode` and a deleted one no `new_mode`. A change of file type, such as a regular file
+to a symlink or a submodule, is two entries for the same path, as git prints it: a deleted one with the old mode and
+an added one with the new mode. A rename or copy whose content and mode are both unchanged has neither field, since
+git prints no mode for it; `git_ls_files` with `stage: true` or `git_file_at_ref` reads it. `stat_only` entries have
+neither. When the repository's `core.fileMode` (or `core.symlinks`) is `false`, a worktree diff reports the
+working-tree side's mode as the one in the index, not the one on disk, so a `chmod` there is not reported until the
+index has it.
+
+On Linux and macOS, a worktree or staged `git_diff` fails with `GitCommandError` when the patch carries a
+`* Unmerged path <name>` line and any path the `--numstat` pass lists, a binary file whose timestamps alone changed
+included, has a line break in its name: git writes that line's name raw, where it could pass for patch text. A
+staged diff writes the line for every unmerged path; a worktree diff writes it only for a path that one side of the
+merge does not have (a modify/delete conflict, for one), and shows other conflicts as combined sections, which
+`git_diff` leaves out. On any OS the call also fails this way when the `--numstat` pass hits the 8 MB output cap
+and the patch has such a line, since the cut list cannot show which names hold a line break. Narrow the call with
+`paths` to bring the `--numstat` pass under the cap; `statOnly: true` runs no patch pass and is not affected.
+
+A diff against the working tree (worktree mode, or `fromRef` or `toRef` alone) never writes `.git/index`. When a
+file's content matches the index but its timestamps do not (a touched file, an edit undone, every file in a copied
+repository), git's own `git diff` refreshes the timestamps in the index and leaves the file out; the server runs git
+with `-c diff.autoRefreshIndex=false` instead. The patch modes still leave such a file out, since it has no changed
+line, and so does `statOnly: true` for a text file, since git's `--numstat` omits a modified text file with no
+changed line. `statOnly: true` lists a binary one as `modified` with 0 additions and 0 deletions, as it lists a
+mode-only or binary change. To tell them apart, call `git_diff` for those paths without `statOnly`: a mode or binary
+change has an entry there, a binary file whose timestamps alone changed does not. Every call compares such files'
+content again, so in a large copied repository a call can hit the 30 s timeout, or a pass that lists them
+(`--numstat` lists the binary ones, the `statOnly` `--name-status` pass lists all of them) can reach the 8 MB cap
+and return `truncated: true`; passing `paths` narrows every pass. In a repository you trust, a `git status` or
+`git update-index -q --refresh` in your own shell refreshes the timestamps and clears them; both can run commands the
+repository's config names (filter drivers, `core.fsmonitor`), which the server pins off.
 
 ```mermaid
 flowchart TD
@@ -136,8 +182,8 @@ flowchart TD
     B --> C[Verify fromRef / toRef → SHAs]
     C --> D[Confine paths]
     D --> E{statOnly?}
-    E -- yes --> F["diff --numstat -z<br/>(+ diff --name-status -z)"]
-    E -- no --> G["diff [--cached] [-U n] refs -- paths<br/>(+ diff --numstat -z)"]
+    E -- yes --> F["diff --no-color --src-prefix=a/ --dst-prefix=b/<br/>--submodule=short [--cached] --ignore-submodules=dirty<br/>--numstat -z<br/>(+ the same with --name-status -z)"]
+    E -- no --> G["diff --no-color --src-prefix=a/ --dst-prefix=b/<br/>--submodule=short --ignore-submodules=dirty<br/>[--cached] [-U n] refs -- pathspecs<br/>(+ the same with --numstat -z)"]
     F --> H[DiffParser: merge counts + change kinds]
     G --> H
     H --> I[DiffResult: per-file hunks + additions/deletions + mode]
@@ -151,16 +197,24 @@ flowchart TD
 Returns commits matching the given filters, parsed from a fixed `--pretty=format` directive into `Commit` records
 (hash, short hash, author, authored/committed timestamps, relative time, subject, body, parents).
 
-Filters: `author`, `since`, `until`, `grep` (message match), `pickaxe` (`-S`, find when a string was added or
-removed), `paths`, `ref` (start point, or a range `A..B` / `A...B` to list the commits one ref adds over
-another), `follow` (track renames, only when scoped to a single path), and `maxCount` (default 50).
+Filters: `author`, `since`, `until`, `grep` (message match; a basic regular expression by default, passed as
+`--basic-regexp` so a `grep.patternType` in the user's or the repository's git config does not change it;
+`perlRegex: true` switches `grep` and `author` to Perl-compatible regular expressions, the dialect `git_grep`
+uses, so `A|B` alternation and `\d` work; a git without PCRE2 returns `PcreUnavailable`, as for `git_grep`),
+`pickaxe` (`-S`, find when a string was added or removed), `paths`, `ref` (start point, or a range `A..B` /
+`A...B` to list the commits one ref adds over another), `allRefs` (walk every ref under `refs/` plus `HEAD`;
+cannot be combined with `ref`), `follow` (track renames, only when scoped to a single path; a `log.follow` setting in
+git config does not turn it on), and `maxCount` (default 50).
+
+Every call also passes `--ignore-submodules=dirty`, so a submodule ignore setting cannot drop a submodule's commit change
+from the diff git builds for `pickaxe` or `follow`; see [Security model (long version)](#security-model-long-version).
 
 ```mermaid
 flowchart LR
     A[git_log: cwd + filters] --> B[Resolve root]
     B --> C[Verify ref → SHA if provided]
     C --> D[Confine paths]
-    D --> E["git log --pretty=format:… <br/>--author --since --until --grep -S<br/>--max-count [--follow] ref -- paths"]
+    D --> E["git log --pretty=format:… <br/>--author --since --until --grep -S<br/>--basic-regexp or -P [--all]<br/>--ignore-submodules=dirty<br/>--max-count [--follow] ref -- pathspecs"]
     E --> F[LogParser → Commit records]
     F --> G[ResultEnvelope · filters_applied]
 ```
@@ -169,11 +223,18 @@ flowchart LR
 
 ### `git_show`
 
-Inspects a single ref (commit, tag, or tree) and returns its metadata along with per-file diffs. The ref is required
-and is verified to a SHA before use.
+Inspects one commit, or the commit an annotated tag points to, and returns its metadata along with per-file diffs. The
+ref is required and is verified to a SHA before use. A ref naming a tree or a blob, or a tag of one, is rejected with a
+`RejectedArgument` that points at `git_file_at_ref`.
 
-Runs two passes: a one-commit `git log` for metadata (same format as `git_log`), and `git show --format=` for the
-patch, parsed into the same `FileDiff` shape as `git_diff`. `paths` restricts the diff section.
+Runs two passes in order: a one-commit `git log` for metadata (same format as `git_log`), which also resolves a tag to
+its commit, then `git show --format=` on that commit's id for the patch, parsed into the same `FileDiff` shape as
+`git_diff`, so a tag's message never reaches the patch reader. `paths` restricts the diff section. The patch pass runs
+with `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your git config cannot put escape codes in
+the patch. The patch pass also runs with `--src-prefix=a/ --dst-prefix=b/ --submodule=short`, so the diff prefix and
+submodule keys in your git config cannot change the header each file is read from. It also runs with
+`--ignore-submodules=dirty`, so a submodule ignore setting cannot hide a submodule whose recorded commit changed; see
+[Security model (long version)](#security-model-long-version).
 
 A `ref` in `<rev>:<path>` form (`HEAD:README.md`, `:README.md`, or `HEAD:` for the root tree) names a file or tree,
 not a commit, and is rejected with a
@@ -187,7 +248,9 @@ flowchart TD
     R -- yes --> X[RejectedArgument → use git_file_at_ref]
     R -- no --> C[Verify ref → SHA<br/>required]
     C --> D["git log -1 --pretty=format:… SHA<br/>(metadata)"]
-    C --> E["git show --format= SHA -- paths<br/>(patch)"]
+    D --> N{commit listed?}
+    N -- no --> Y[RejectedArgument: tree or blob]
+    N -- yes --> E["git show --format= --no-color --src-prefix=a/<br/>--dst-prefix=b/ --submodule=short<br/>--ignore-submodules=dirty commit id -- pathspecs<br/>(patch)"]
     D --> F[Commit record]
     E --> G[FileDiff list]
     F --> H["payload { commit, files }"]
@@ -203,28 +266,58 @@ Returns one tracked file's content as of a ref, the equivalent of `git show <ref
 and takes any commit-ish; the file goes in `path`, never inside `ref`. A file deleted since is still readable at an
 earlier ref.
 
-The payload is `{path, ref_sha, mode, object_id, size, is_binary, content}`. `size` is the blob's byte count. A blob
-with a NUL byte in its first 8000 bytes (git's own binary heuristic) comes back with `is_binary: true` and
-`content: null`. A `120000` entry is a symlink, and its content is the link target text.
+The payload is `{path, ref_sha, mode, object_id, size, total_lines, next_byte_offset, is_binary, content}`. `size` is
+the blob's byte count and `total_lines` its line count: the number of `\n` bytes, plus one when the blob is not empty
+and does not end in `\n`. A blob with a NUL byte in its first 8000 bytes (git's own binary heuristic) comes back with
+`is_binary: true` and `content`, `total_lines`, and `next_byte_offset` all `null`. A `120000` entry is a symlink, and
+its content is the link target text.
+
+Three optional parameters cut a large text blob down to what the client can take. They apply in this order, on the
+raw bytes git returned, before decoding:
+
+- `lineStart` and `lineEnd` (1-based, inclusive, both or neither, the same contract as `git_blame`) keep only those
+  lines, each with its `\n`. An end past the last line is clamped to it. A start past the last line is
+  `RejectedArgument` with `param: line_range` and `total_lines` in the detail, so the caller can retry; an empty blob
+  has no lines, so any range on it is rejected.
+- `byteOffset` (0-based) skips that many bytes of what the range kept, or of the whole blob without a range. An
+  offset that lands inside a multi-byte UTF-8 character moves forward to the next character. An offset at or past
+  the end is `RejectedArgument` with `param: byte_offset` and `content_bytes` (the length it was checked against) in
+  the detail. An offset of 0 on empty content returns empty content.
+- `maxBytes` caps the returned content in UTF-8 bytes. A cut that lands inside a character backs off to the start of
+  that character, so a cap of 4 or more never splits one; a smaller cap always keeps at least one byte, so paging
+  with it still advances. A cut sets the envelope's `truncated` to `true` and `next_byte_offset` to the offset of the
+  first byte left out, in the frame `byteOffset` uses: pass it back as `byteOffset`, with the same range and cap, to
+  read the next page. Without a cut, `next_byte_offset` is `null`.
+
+There is no default cap: without these parameters the whole blob comes back, and a file of tens of kilobytes on one
+line can exceed an MCP client's per-result limit. Pass `maxBytes` for a large or single-line file. `\r` stays in the
+content. `total_lines` and the past-the-end checks see only the bytes git returned, so for a blob over the 8 MB output
+cap `total_lines` is a lower bound. A binary blob ignores a valid range, offset, and cap. A half-specified or reversed
+range, a start below 1, a negative offset, or a cap below 1 is `RejectedArgument` before git runs, whatever the blob
+turns out to be.
 
 Committed content is returned as-is: git-ops has no secret denylist or content scan, the same trust class as the
 hunks `git_show` returns and the lines `git_grep` returns.
 
 Errors: `PathNotFound` when the path does not exist at that ref, `RejectedArgument` (with `param`) when `path` is
-empty, names a directory or the repository root, or when `ref` is a `<rev>:<path>` expression or a blob id.
+empty, names a directory or the repository root, when `ref` is a `<rev>:<path>` expression or a blob id, or for the
+range, offset, and cap cases above (`line_range`, `byte_offset`, `max_bytes`).
 
 ```mermaid
 flowchart TD
-    A[git_file_at_ref: cwd, path, ref] --> B[Resolve root]
+    A[git_file_at_ref: cwd, path, ref,<br/>lineStart, lineEnd, byteOffset, maxBytes] --> B[Resolve root]
     B --> C[Guards: non-empty file path,<br/>no rev:path in ref, confine path]
-    C --> D[Verify ref → SHA<br/>default HEAD]
+    C --> V[Validate range, offset, and cap]
+    V --> D[Verify ref → SHA<br/>default HEAD]
     D --> E["git ls-tree -z -l SHA -- path"]
     E --> F{exact path is a blob?}
     F -- no entry --> G[PathNotFound]
     F -- tree / submodule --> H[RejectedArgument]
     F -- blob --> I["git show --format= BLOB"]
-    I --> J[Binary check: NUL in first 8000 bytes]
-    J --> K["payload { path, ref_sha, mode, object_id, size, is_binary, content }"]
+    I --> J{Binary check:<br/>NUL in first 8000 bytes}
+    J -- binary --> K
+    J -- text --> S[Slice by line range, byte offset,<br/>and byte cap on raw bytes]
+    S --> K["payload { path, ref_sha, mode, object_id, size,<br/>total_lines, next_byte_offset, is_binary, content }"]
     K --> L[ResultEnvelope]
 ```
 
@@ -255,7 +348,8 @@ flowchart LR
 ### `git_grep`
 
 Searches tracked content, optionally at a historical `ref`, so you can grep a past revision without checking it out.
-Always uses `-n -z` (line numbers, NUL-delimited).
+Uses `-n -z` (line numbers, NUL-delimited), or `-c -z` in count mode, plus `--no-color`, so a `color.ui` or
+`color.grep` setting of `always` in your git config cannot put escape codes in paths and line numbers.
 
 - `fixedString` (default `true`) → literal search (`-F`).
 - `fixedString: false` → Perl-compatible regex (`-P`), so `\s`, `\w`, `\d`, and bare quantifiers work the way callers
@@ -265,19 +359,38 @@ Always uses `-n -z` (line numbers, NUL-delimited).
 Exit code 1 ("no matches") is treated as success. If git was built without PCRE2, asking for regex returns a
 `PcreUnavailable` error rather than silently looking like "no results".
 
+`countOnly: true` (git's `-c`) returns one `{path, match_count}` entry per file instead of every matching line, so a
+broad pattern comes back as a short list. `match_count` counts matching lines, not occurrences: a line with the
+pattern twice counts once. Files with no matching line are left out, so `count` on the envelope is the number of
+files that matched. git applies `-m` before it counts, so `maxCount` together with `countOnly` is `RejectedArgument`
+(`param: max_count`) rather than a capped count.
+
+Three parameters choose which files are searched, and they combine:
+
+- `paths` → literal repo-relative paths. A file matches itself; a directory matches its whole subtree.
+- `globs` → wildcard patterns. Wildcards follow git's default pathspec matching: `*` and `?` also match `/`, so
+  `*.cs` matches at any depth and `crates/*/*/Cargo.toml` works.
+- `excludePaths` → paths or wildcard patterns to drop (git's `:(exclude)` magic). A directory drops its subtree. With
+  no `paths` and no `globs`, the search covers every tracked file except the excluded ones.
+
+A file is searched when it matches some `paths` or `globs` entry (or both lists are empty) and no `excludePaths`
+entry. A `paths` entry with `*`, `?`, or a leading `:` is rejected with `RejectedArgument` (`param: paths`); put the
+pattern in `globs` or `excludePaths`. A `globs` or `excludePaths` entry must be repo-relative with `/` separators and
+must not start with `:` or `-` or contain a `..` segment.
+
 ```mermaid
 flowchart TD
     A[git_grep: cwd, pattern, opts] --> B[Resolve root]
     B --> C[Verify ref → SHA if provided]
     C --> D[Confine paths]
-    D --> E["git grep -n -z [-i] (-F | -P)<br/>-e pattern [-m N] [ref] -- paths"]
+    D --> E["git grep (-n | -c) -z --no-color [-i] (-F | -P)<br/>-e pattern [-m N] [ref] -- pathspecs"]
     E --> F{exit code}
     F -- 0 --> G[matches]
     F -- 1 --> H[no matches = success]
     F -- other --> I{stderr says no PCRE2?}
     I -- yes --> J[PcreUnavailable error]
     I -- no --> K[GitCommandError]
-    G --> L[GrepParser → GrepMatch list]
+    G --> L[GrepParser → GrepMatch or GrepFileCount list]
     H --> L
     L --> M[ResultEnvelope]
 ```
@@ -295,11 +408,16 @@ regular file, `100755` for an executable one, `120000` for a symlink, `160000` f
 staged blob, and `stage` is 0 for a normal entry or 1 to 3 for the sides of an unmerged one. That is how to check
 whether a committed script carries the executable bit.
 
+`paths`, `globs`, and `excludePaths` select entries the same way as in [`git_grep`](#git_grep). Wildcards follow
+git's default pathspec matching: `*` and `?` also match `/`, so `globs: ["*.json"]` lists every tracked `.json` file
+at any depth, and `excludePaths: ["docs"]` drops everything under `docs/`. A `paths` entry with `*`, `?`, or a
+leading `:` is rejected with `RejectedArgument`.
+
 ```mermaid
 flowchart LR
     A[git_ls_files: cwd, paths, stage] --> B[Resolve root]
     B --> C[Confine paths]
-    C --> D["git ls-files -z [--stage] -- paths"]
+    C --> D["git ls-files -z [--stage] -- pathspecs"]
     D --> E[LsFilesParser → paths or entries]
     E --> F[ResultEnvelope · pre_filter_count]
 ```
@@ -353,14 +471,22 @@ flowchart LR
 ### `git_stash_show`
 
 Returns the diff for a single stash (`index`, 0 = most recent) as a `DiffResult`, using the same two-pass
-patch + `--numstat -z` assembly as `git_diff`. A negative index returns a `RejectedArgument` error.
+patch + `--numstat -z` assembly as `git_diff`. A negative index returns a `RejectedArgument` error. Every pass runs
+with `--no-color`, so a `color.ui` or `color.diff` setting of `always` in your git config cannot put escape codes in
+the patch. Every pass also runs with `--submodule=short` and with
+`-c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.srcPrefix=a/ -c diff.dstPrefix=b/`, so `diff.noprefix`,
+`diff.mnemonicPrefix`, `diff.srcPrefix`, `diff.dstPrefix`, or `diff.submodule` in your git config cannot change the
+`diff --git a/<path> b/<path>` header each file is read from. The prefixes are pinned through config here, not with
+`--src-prefix=` and `--dst-prefix=` as in `git_diff`, because `git stash show` in git 2.52.0 through 2.55.x garbles a
+prefix given on its command line. Both passes also run with `--ignore-submodules=dirty`, so a submodule ignore setting
+cannot hide a submodule whose recorded commit changed; see [Security model (long version)](#security-model-long-version).
 
 ```mermaid
 flowchart TD
     A["git_stash_show: cwd, index"] --> B[Resolve root]
     B --> C{index >= 0?}
     C -- no --> D[RejectedArgument error]
-    C -- yes --> E["stash show -p stash@{index}<br/>(+ stash show --numstat -z)"]
+    C -- yes --> E["-c diff.noprefix=false -c diff.mnemonicPrefix=false<br/>-c diff.srcPrefix=a/ -c diff.dstPrefix=b/<br/>stash show -p --no-color --submodule=short<br/>--ignore-submodules=dirty stash@{index}<br/>(+ the same with --numstat -z)"]
     E --> F[DiffParser: merge patch + counts]
     F --> G[DiffResult]
     G --> H[ResultEnvelope]
@@ -381,7 +507,7 @@ Every collection-returning tool wraps its payload in this structure:
     "author": "<redacted>",    // user-controlled values are redacted, not echoed
     "max_count": 50
   },
-  "truncated": false,          // true if git output hit the 8 MB cap
+  "truncated": false,          // true if git output hit the 8 MB cap, or a tool-level cap cut the payload (git_file_at_ref maxBytes)
   "repo_root": "/abs/path/to/repo",
   "error": null                // populated only on failure (see below)
 }
@@ -441,9 +567,9 @@ check out. Only argument names are echoed back, never values.
   - **There's no shell to trick.** The assistant never gets a command line. It fills in a form (which tool, which file, which commit), and the server assembles the real `git` command itself. Old tricks like hiding `; rm -rf` inside a filename go nowhere, because nothing interprets them as commands.
   - **It stays inside your repo.** Every file path is pinned to the repository folder. Attempts to climb out of it, reach network shares, or touch hidden file streams are rejected.
   - **Every input is treated as suspect.** Branch and commit names are checked against the real repo before use, and nothing the assistant sends can be mistaken for a secret command-line option.
-  - **Git itself is locked down.** Auto-running scripts (hooks), password prompts, and credential helpers are switched off, and the command runs in a stripped-down environment, so a booby-trapped repo can't hijack it.
+  - **Git itself is locked down.** Auto-running scripts (hooks and filter drivers), password prompts, and credential helpers are switched off, and the command runs in a stripped-down environment, so a booby-trapped repo can't hijack it.
   - **It can't run away.** Each call is capped at 30 seconds and 8 MB of output, then stopped: no runaway processes, no memory blowups.
-  - **It doesn't leak.** Error messages and logs are scrubbed of your file names, search terms, and paths.
+  - **It doesn't leak.** Error messages and logs are scrubbed of your file names, search terms, and paths, except the end of git's own error output when a call fails, which the server log keeps for diagnosis.
 
 As is with all in-house security solutions: This is not perfect, and I might be unknowingly be re-inventing the wheel. But it's a best-effort type of thing. I'll gladly accept feedback and suggestions to improve it.
 
@@ -459,34 +585,130 @@ flowchart TD
     A[Untrusted tool input] --> B[Shape validation<br/>reject NUL, control chars, leading '-']
     B --> C[Ref verification<br/>git rev-parse --verify → SHA<br/>before use as a positional arg]
     B --> D[Path confinement<br/>resolve under repo root<br/>reject UNC / device / drive-relative / ADS / escapes]
+    B --> P["Pattern shape checks<br/>globs / excludePaths: repo-relative,<br/>no leading ':', no '..'"]
     C --> E[Single argv builder]
     D --> E
-    E --> F[Fixed hardening prefix<br/>-c core.hooksPath=… -c credential.helper=…<br/>--no-pager --literal-pathspecs]
+    P --> E
+    E --> F[Fixed hardening prefix<br/>-c core.hooksPath=… -c credential.helper=…<br/>status/diff/blame: -c filter.NAME.clean= … per driver<br/>--no-pager]
     F --> G[--end-of-options before positional refs<br/>omitted for git grep]
-    G --> H[ArgumentList execution<br/>no shell, no string join]
-    H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1]
+    G --> S["Pathspecs after --<br/>paths as :(literal)…, excludes as :(exclude)…,<br/>globs bare"]
+    S --> H[ArgumentList execution<br/>no shell, no string join]
+    H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1<br/>GIT_NO_LAZY_FETCH=1<br/>GIT_ALLOW_PROTOCOL=none]
 ```
 
 - **One argv producer.** Tools declare a typed `GitIntent`; a single `GitCommandBuilder` is the only code that
   serializes it to argv. It prepends fixed `-c` neutralizers (disable hooks, pager, fsmonitor, credential helpers,
-  askpass, auto-gc) and, before any positional ref, inserts `--end-of-options` so no user value can be read
-  as an option (git grep excepted: its pattern is a glued `-e` token and its refs are pre-resolved SHAs).
+  askpass, auto-gc, signature verification, rename following from config, the index refresh in `git diff`) and,
+  before any positional ref, inserts `--end-of-options` so no user value can be read as an option (git grep excepted:
+  its pattern is a glued `-e` token and its refs are pre-resolved SHAs). `log.showSignature=false` is there because
+  verifying a signed commit runs the program `gpg.program`, `gpg.ssh.program`, or `gpg.x509.program` names, and a
+  repository's own config can set both keys; a forged signature is enough. `log.follow=false` is there because
+  `log.follow=true` in config makes `git log` with one path follow renames although `follow` was false.
+  `fetch.bundleURI=` is there for a git that does not check `GIT_NO_LAZY_FETCH` (see the Scrubbed environment bullet
+  below): from git 2.40.0, the `git fetch` that git starts for a lazy fetch first downloads the bundle a repository's
+  `fetch.bundleURI` names, before any protocol check, and git skips an empty bundle URI. `diff.autoRefreshIndex=false`
+  is there because a `git diff` against the working tree otherwise rewrites `.git/index` under its lock, which
+  `GIT_OPTIONAL_LOCKS=0` does not prevent. `log.showRoot=true` is there because `log.showRoot=false` in config makes
+  `git show` print no diff for a root commit and keeps `git log` with `-S` or `--follow` from listing one.
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or
   drive-relative prefix, an NTFS alternate data stream, or otherwise escapes the root. The result is a repo-relative
-  POSIX pathspec placed after `--`.
+  POSIX path placed after `--` as a `:(literal)` pathspec, so wildcards in it are plain characters.
+- **The server chooses all pathspec magic.** Every pathspec carries a prefix the server chose:
+  `:(literal)` for `paths`, `:(exclude)` for `excludePaths`, and none for `globs` (git's default wildcard matching).
+  Git reads magic only up to the server's closing `)`, so a value such as `:(top)../x` inside a literal or exclude
+  item is pattern text. A bare value (a glob, or `git_blame`'s file argument) may not start with `:`, the only place
+  git looks for magic. `globs` and `excludePaths` are shape-checked rather than confined: they must be repo-relative
+  with `/` separators and must not contain a `..` segment. Grep and ls-files match pathspecs only against tracked
+  entries, so a wildcard or exclude changes which tracked files match and nothing else.
+  Pattern matching cost is bounded by the 30 s timeout, the same bound that applies to user regexes.
 - **No shell.** The subprocess is started with an explicit argument list, not a joined string, so shell
   meta-characters can't leak.
+- **git starts from an absolute path.** At startup the server takes the first `git` (`git.exe` on Windows; elsewhere a
+  file with an execute bit) in the absolute directories of its `PATH` and starts every git process from that path, so
+  a `git` or `git.exe` committed at a repository's root does not run when a client starts the server there. Empty and
+  relative `PATH` entries are skipped, and on Windows a `git.cmd` or `git.bat` never matches, since it would start
+  through `cmd.exe`, which re-reads the arguments. An absolute `PATH` entry inside a repository (a virtualenv `bin`, the
+  `node_modules/.bin` that `npm run` adds, a direnv `PATH_add`) is still trusted, as it is in your own shell.
 - **Scrubbed environment.** The child env is built from a small allowlist (`PATH`, locale vars, `HOME`, plus a few
-  Windows essentials) with fixed git neutralizers added. Everything else is dropped.
+  Windows essentials) with fixed git neutralizers added. Everything else is dropped. `PATH` keeps only its fully
+  qualified entries, in order (an empty, relative, or quoted entry is dropped): git looks up on `PATH` a program it
+  starts by name, such as the `git log` that `git stash list` starts, once its own exec path holds no match, and an
+  empty entry (on Linux and macOS) or a relative one resolves against git's current directory, the repository root for
+  a tool call. `GIT_NO_LAZY_FETCH=1` is one of the neutralizers. In a partial clone, or any repository whose config names a promisor remote, reading an object git does not have
+  would otherwise start a fetch from that remote, and the fetch runs the program the repository's config names for the
+  transport (for example `remote.<name>.uploadpack` for a remote at a local path, `core.sshCommand` for ssh, or a
+  remote helper). A missing object fails the call with `GitCommandError` instead (message
+  `git <subcommand> failed (exit 128)`), and the server log's `subprocess_exit` Warning for that call carries git's
+  error in `stderr_tail`. On git 2.45.1 or later, a diff pass (patch, stat, or pickaxe output, or rename detection)
+  shows `lazy fetching disabled` under an English or C locale and any other read shows git's missing-object error
+  alone; on the 2.39.4 to 2.44.1 security releases (the ones listed under Requirements), every read shows it.
+  `GIT_ALLOW_PROTOCOL=none` is the second block, for a git that does not check `GIT_NO_LAZY_FETCH` before it fetches
+  (see [Requirements](#requirements)): with it set, git allows no transport, whatever a repository's
+  `protocol.<name>.allow` config says, so the fetch dies before it starts a transport program or a remote helper. On
+  such a git, a call whose read starts the fetch fails, and `stderr_tail` shows `transport 'file' not allowed` (or
+  `ssh`, `git`, or the helper's name, under an English or C locale). On 2.45.0 only a diff pass starts the fetch
+  (patch, stat, or pickaxe output, or rename detection); other reads fail with git's missing-object error alone. On
+  2.29.0 to 2.38.x, and on 2.45.0, `git_grep` with `ref` leaves out a file whose blob is missing and logs no Warning.
+  In a partial clone you trust, run the same git command in your own shell once to fetch what it needs.
+- **Filter drivers pinned.** `git status`, a `git diff` against the working tree, and `git blame` without a revision
+  hash worktree files, and hashing a file runs the `clean` or `process` command of the filter driver its `filter`
+  attribute selects (from `.gitattributes` or `.git/info/attributes`). The driver is defined in config
+  (`filter.<driver>.clean`, `filter.<driver>.process`), which a repository's own config can carry, and driver names are
+  arbitrary, so no fixed `-c` key covers them. Before each `git status`, `git diff`, and `git blame` it runs, the server
+  lists the drivers the config names (`git config -z --name-only --get-regexp '^filter\.'`, with the same prefix and
+  environment) and adds `-c filter.<driver>.clean= -c filter.<driver>.smudge= -c filter.<driver>.process=
+  -c filter.<driver>.required=false` for each; git runs nothing for a driver with no command. A driver name that
+  contains `=` (a `-c` argument cannot carry one) or is not valid UTF-8, or a listing longer than the 8 MB output cap,
+  fails the call with `GitCommandError`. Drivers from your global config are pinned too, so through the tools a file
+  under git-lfs, git-crypt, or another filter is compared as the raw bytes in your worktree: `git_status` can list such
+  a file as modified when only its timestamp changed, a worktree `git_diff` shows the stored pointer or ciphertext
+  against the raw content, and `git_blame` without `ref` attributes every line of such a file to the uncommitted
+  working-tree version. In a repository you trust, run git in your own shell for those files; running `git status`
+  there once, with the filter installed, writes the refreshed timestamps to the index, and `git_status` and a worktree
+  `git_diff` then leave those files out until their timestamps change again. To see which drivers the server pins and
+  which config file names each one, run `git config --show-origin --name-only --get-regexp '^filter\.'` in the
+  repository (entries whose origin is the system config file are ones the server never reads, since it runs git with
+  `GIT_CONFIG_NOSYSTEM=1`; the rest are the drivers it pins). With `MCP_GITOPS_LOG_LEVEL=DEBUG`, the call's
+  `argv_built` line shows four `-c <filter_driver>` pairs per pinned driver, never the name. The
+  `suspicious_filter_invocation` Warning stays as a tripwire: it fires when git's stderr shows
+  `external filter '<command>' failed`, whatever characters the command holds, and carries the git subcommand in
+  `tool` (`status` where the call's other lines say `git_status`) and the call's `call_id`, never the command, which
+  can hold an absolute path. With the pins in place no tool call should produce it, so one most likely means a filter
+  ran that the server did not pin; a repository's config can also put that text into a git warning, so treat it as a
+  lead, not proof. Its absence proves nothing: a filter that exits 0 prints no message, and under a non-English locale
+  git can print the message translated. No log line names the repository, so find it from your client's record of the
+  tool call made at the Warning's `ts`, then run `git config --show-origin --get-regexp '^filter\.'` there to see each
+  driver's command and the file that sets it.
+- **Submodule worktrees are not entered.** Left to itself, `git status` and a `git diff` against the working tree run
+  `git status` inside every checked-out submodule, and that process reads the submodule's own config, filter drivers
+  included. `git_status` and a worktree `git_diff` pass `--ignore-submodules=dirty`, so a submodule whose commit moved
+  is still listed, but one with only uncommitted changes inside it is not. Call the tool with `cwd` inside the
+  submodule to see those. Every diff pass of `git_diff`, `git_show`, and `git_stash_show` runs with
+  `--submodule=short`, which prints a submodule commit change as one `Subproject commit` line per side, so a
+  `diff.submodule=diff` setting cannot make git start `git diff` inside the submodule, where the submodule's own config
+  could name an external diff command or textconv driver.
+- **Submodule ignore settings are overridden.** `submodule.<name>.ignore=all`, which a committed `.gitmodules` can
+  carry, `diff.ignoreSubmodules=all`, and a `.gitmodules` left unmerged in the index each make git leave a submodule out
+  of a diff even when its recorded commit changed. `git_status`, every `git_diff` and `git_stash_show` pass, the
+  `git_show` patch pass, and every `git_log` call pass `--ignore-submodules=dirty`, and that command-line value
+  overrides all three. For `git_log` it matters with `pickaxe` and with `follow`, since git then keeps only the commits
+  whose diff matches. The override applies to a setting you made yourself to quiet a submodule as well; the tools have
+  no opt-out. To see which settings a repository carries, run `git config --show-origin --get-regexp '\.ignore$'`,
+  `git config --show-origin --get diff.ignoreSubmodules`, and `git config -f .gitmodules --get-regexp '\.ignore$'` in
+  it (entries whose origin is the system config file are ones the server never reads, since it runs git with
+  `GIT_CONFIG_NOSYSTEM=1`); `git ls-files -u .gitmodules` prints lines when `.gitmodules` is unmerged.
 
 ---
 
 ## Logging
 
 Structured JSON logs (allowlisted fields only, no user data) go to a rotating file, falling back to stderr if the file
-can't be opened. stdout is reserved for the MCP protocol.
+can't be opened. stdout is reserved for the MCP protocol. A logged exception is recorded in `stderr_tail` only as its
+type chain, never its message or stack trace. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of
+which names the working directory) are not logged. The MCP SDK's own lines (categories under `ModelContextProtocol`)
+are never logged below Information, so its Trace-level copy of every JSON-RPC frame is not logged.
 
 | Variable               | Purpose                                       | Default                                 |
 |------------------------|-----------------------------------------------|-----------------------------------------|
@@ -495,6 +717,11 @@ can't be opened. stdout is reserved for the MCP protocol.
 
 Files rotate at 10 MB, keeping 5 backups. On shutdown the server writes a `server_stop` summary with session metrics
 (call counts, cache hit rate, truncations, timeouts).
+
+Right after `server_start`, the server logs the version of the git it found: a `git_version` line at Info whose
+`git_version` field holds the text after `git version ` (for example `2.55.0`), or a `git_version_unavailable` Warning
+with `error_code` `GitNotInstalled`, `GitTimeout`, or `GitCommandError` when no git was found on `PATH` or it failed to
+start, takes more than 5 seconds, exits non-zero, or prints something else; `git_exit_code` is set whenever git exited.
 
 ---
 
@@ -506,8 +733,15 @@ TODO: Add instructions to build on Windows, macOS, and Linux.
 
 ## Requirements
 
-- **`git` on `PATH`**: required. This server runs your system `git` for every call; without it, tools fail with a
-  `GitNotInstalled` error. Any reasonably recent `git` works.
+- **`git` on `PATH`**: required. It must sit in a directory your `PATH` names by an absolute path (`.` and other
+  relative entries are skipped). The server looks for it once at startup, so restart the server after installing or
+  moving git. This server runs your system `git` for every call; without it, tools fail with a `GitNotInstalled` error. Any reasonably recent `git` works. The lazy-fetch block in the security model has two parts.
+  `GIT_NO_LAZY_FETCH=1` stops the fetch before it starts on git 2.45.1 or later, or 2.39.4, 2.40.2, 2.41.1, 2.42.2,
+  2.43.4, 2.44.1, or a later release in the same series. git 2.45.0 honors it only in part and an older git ignores it,
+  so there a tool call in a repository with a promisor remote can still start a fetch (a `git fetch` child from 2.29.0
+  on, inside git itself before that); `GIT_ALLOW_PROTOCOL=none` and `-c fetch.bundleURI=` stop that fetch before it
+  starts a transport program or downloads a bundle. Every git from 2.6.1 on reads `GIT_ALLOW_PROTOCOL`, and no git
+  before 2.17.0 fetches a missing object on demand. The server log's `git_version` line shows the version of the git the server runs.
 - **.NET runtime**: *not* needed for the released binaries. Each release ships a self-contained, single-file
   executable per platform ([Releases and verification](../../README.md#releases-and-verification)), so there's nothing
   extra to install to run it.

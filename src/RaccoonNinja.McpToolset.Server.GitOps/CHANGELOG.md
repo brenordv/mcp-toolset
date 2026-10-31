@@ -1,3 +1,317 @@
+## v2.22.0
+- Fixed: with `log.showRoot=false` in the user's or the repository's git config, `git_show` on a root commit (a commit
+  with no parent, which in a shallow clone includes each boundary commit) returned the commit with `files: []`, and
+  `git_log` with `pickaxe`, or with `follow` and one path, never listed a root commit, so what a repository's first
+  commit added was invisible to those calls. Every git call now passes `-c log.showRoot=true`, git's default.
+  Behavior change: if you set `log.showRoot=false` to hide root commits' diffs, `git_show` and `git_log` no longer
+  follow it.
+- Log change: every `argv_built` debug line shows `-c log.showRoot=true`, and its `argv_len` is 2 higher; the bootstrap
+  calls (`git version` at startup and the `rev-parse` calls) carry the same pin but log no argv line.
+
+## v2.21.0
+- Fixed: every git process got the server's `PATH` as it was, empty and relative entries included. git looks up on
+  `PATH` a program it starts by name, such as the `git log` that `git stash list` starts, once its own exec path holds
+  no match, and it reads an empty entry as its current directory on Linux and macOS (a relative entry resolves against
+  that directory on every OS), which for a tool call is the repository root. So on a git whose exec path holds no
+  `git`, `git_stash_list` in a repository that commits a program called `git` could run it. The child's `PATH` now keeps
+  only the fully qualified entries, in their order. Behavior change: a program git would find only through a `PATH`
+  entry that is not fully qualified (empty, relative, or quoted) is not found; none of the server's calls needs one. No
+  log change.
+
+## v2.20.0
+- `git_diff`, `git_show`, and `git_stash_show` file entries gained `old_mode` and `new_mode`, the file modes git prints
+  in the patch header as six octal digits (`100644`, `100755`, `120000` for a symlink, `160000` for a submodule).
+  Before this, a mode-only change, such as `git update-index --chmod=+x` with no content edit, came back as a
+  `modified` entry with no hunks and nothing to say what changed. An added file has no `old_mode`, a deleted one no
+  `new_mode`, and a rename or copy whose content and mode are both unchanged has neither, since git prints no mode for
+  it. `statOnly: true` entries have neither. No log change.
+
+## v2.19.0
+- Fixed: a `git_diff` against the working tree (worktree mode, or `fromRef` or `toRef` alone) that met a file whose
+  content matched the index but whose timestamps did not (a touched file, an edit undone, every file in a copied
+  repository) made git rewrite `.git/index` with the new timestamps, holding the index lock while it did, so a git
+  command of yours could fail at that moment. `GIT_OPTIONAL_LOCKS=0` does not cover that write
+  (`diff.autoRefreshIndex`). Every git call now passes `-c diff.autoRefreshIndex=false`.
+- Fixed: a worktree or staged `git_diff` whose `--numstat` pass hit the 8 MB output cap skipped the v2.18.0 check for
+  an unmerged path whose name holds a line break, so on Linux and macOS a repository with enough paths ahead of such a
+  name could still forge file entries. Such a call now fails with `GitCommandError` whenever the patch has a
+  `* Unmerged path` line.
+- Behavior change: a binary file whose timestamps alone changed now shows in `statOnly: true` results of a diff against
+  the working tree as `modified` with 0 additions and 0 deletions, until the index is refreshed (in a repository you
+  trust, a `git status` or `git update-index -q --refresh` of yours does it). A text file whose timestamps alone
+  changed is still left out, since git's `--numstat` omits a modified text file with no changed line, and the patch
+  modes still leave out both. Each such call compares those files' content again, where git used to refresh the index
+  once, so in a large copied repository a call can hit the timeout or the output cap.
+- Log change: every `argv_built` debug line shows `-c diff.autoRefreshIndex=false`, and its `argv_len` is 2 higher; the
+  bootstrap calls (`git version` at startup and the `rev-parse` calls) carry the same pin but log no argv line.
+  `patch_parse_empty` on `git_diff` now fires only when the `--numstat` pass counts an added or deleted line and the
+  patch yields no file, so a diff whose only entries are binary files whose timestamps alone changed, or unmerged
+  paths, no longer logs it; nor does one whose entries are all binary, mode-only, empty added files, or pure renames.
+  `git_stash_show` is unchanged. A call that such files push past the 8 MB cap (the binary ones in the `--numstat`
+  pass, all of them in the `statOnly` `--name-status` pass) counts in `truncations_total`, and a cut `--numstat` pass
+  skips the `patch_path_unmatched` check. A call the new cut-numstat check fails logs `tool_error` at Error with its
+  fixed message (`the --numstat pass hit the output cap while a path is unmerged; the patch cannot be read safely`)
+  and counts in `truncations_total`.
+
+## v2.18.0
+- Fixed: a worktree `git_diff` with a path a merge left unmerged attached that path's combined (`diff --cc`) hunks to
+  another file in the result, and could mark that file `deleted`. The patch reader now reads only `diff --git` sections
+  and skips any other `diff` section; the unmerged path still has no entry.
+- Fixed: `git_show` on an annotated tag parsed the tag's message as part of the patch, so a repository's author could
+  add a file entry the commit never changed, or put a hunk in front of its first real file. The patch pass now runs on
+  the commit the metadata pass resolved, and the reader drops any line outside a `diff --git` section.
+- Fixed: on Linux and macOS, a branch that conflicts on a path whose name holds a line break could forge file entries
+  in a worktree or staged `git_diff`, since git writes an unmerged path's name raw. Such a call now fails with
+  `GitCommandError`.
+- Behavior change: `git_show` with a ref that names a tree or a blob, or a tag of one, fails with `RejectedArgument` on
+  `ref`. It used to return `commit: null` and parse the tree listing or the blob's content as a patch.
+- Docs: the README's Scrubbed environment bullet says which reads show `lazy fetching disabled` in `stderr_tail` on
+  which gits.
+
+## v2.17.0
+- Fixed: on a git that does not check `GIT_NO_LAZY_FETCH` before a lazy fetch (see the README's Requirements), a tool
+  call that read an object missing from a repository with a promisor remote still started a fetch, and the fetch ran
+  the program the repository's config names for the transport, or, from git 2.40.0, first downloaded the bundle its
+  `fetch.bundleURI` names. Every git process the server starts now also gets `GIT_ALLOW_PROTOCOL=none`, so git allows
+  no transport, whatever a repository's `protocol.<name>.allow` config says, and every git call passes
+  `-c fetch.bundleURI=`, so no bundle is downloaded. No tool fetches, so on a git with the full check nothing changes.
+- Behavior change: on such a git, in an ordinary partial clone, a call whose read starts a lazy fetch fails with
+  `GitCommandError` instead of fetching, as it already does on newer gits. The server log's `subprocess_exit` Warning
+  for that call shows `transport '<protocol>' not allowed` in `stderr_tail` under an English or C locale. On 2.29.0 to
+  2.38.x, and on 2.45.0, `git_grep` with `ref` leaves such a file out of its results instead, with no Warning.
+- Log change: every `argv_built` debug line shows `-c fetch.bundleURI=`, and its `argv_len` is 2 higher. The bootstrap
+  `rev-parse` calls carry the same pin but log no argv line.
+
+## v2.16.0
+- Fixed: `git_diff`, `git_show`, and `git_stash_show` reported a file under the whole `diff --git` header line when git
+  quoted its path there, which git does for a path holding a double quote, a backslash, or a control character whatever
+  `core.quotePath` says, and under a wrong piece of the header when the path held ` b/` (a file in a directory named
+  `x b`, for one), which could be another file's path. A renamed or copied file with either kind of path got a wrong
+  `path` or `old_path` the same way, and the numstat overlay, keyed by path, missed every such file. The parser now
+  unquotes git's quoting, splits a header whose two sides name the same path at the one place that gives that path
+  twice, and takes a rename's or copy's paths from its `rename from`/`rename to` or `copy from`/`copy to` lines. The
+  `--numstat -z` reader cut a path holding a tab at the tab, and a file whose name was only whitespace made it take the
+  next two records as a rename's paths, dropping those files from `statOnly: true` results and from the overlay; it now
+  keeps both whole.
+- Log change: a new Warning event, `patch_path_unmatched`, when `git_diff` (any call but `statOnly: true`) or
+  `git_stash_show` reads a file from the patch whose path the `--numstat -z` pass does not list: a header the parser
+  could not read, or a working tree, index, or stash that changed between the call's two git passes. It is not checked
+  when the numstat pass was truncated, and a truncated patch's last file is left out.
+
+## v2.15.0
+- Fixed: a log event carrying an exception (a crash, or a record the host or the MCP SDK logged with an exception
+  attached) wrote the last 512 bytes of the exception's message and stack trace to `stderr_tail`, which can name a
+  file by its absolute path. It now writes the exception's type chain only, outer to inner, at most eight entries.
+  `stderr_tail` on `subprocess_exit` (git's own stderr) is unchanged.
+- Fixed: the generic host logged `Content root path: <working directory>` at Information on every startup; the
+  host's lifetime category is now held at Warning. Log change: the content of `stderr_tail` on exception events, and
+  the host's four status lines (`Application started`, `Hosting environment`, `Content root path`,
+  `Application is shutting down`) are gone.
+- Fixed: at a `TRACE` log level the MCP SDK wrote every JSON-RPC frame verbatim (the `cwd`, refs, paths, patterns,
+  file content) to the log; the SDK's categories are now held at Information or the configured level, whichever is
+  higher. Log change: at `DEBUG` and `TRACE`, the SDK's own lines below Information are gone.
+- Fixed: the `suspicious_filter_invocation` Warning put the failed filter's command, which can hold an absolute path,
+  in `driver_name`; it now carries no text from the command. It also missed a command containing `'`, such as a
+  quoted path (`'<path>' %f`), and now fires whatever characters the command holds.
+- Log change: `suspicious_filter_invocation` lines no longer have `driver_name`, and no line carries that field; the
+  event keeps `event`, `tool`, `call_id`, and `message`. It can now appear for a failed filter whose command contains
+  `'`, which wrote no line before.
+
+## v2.14.0
+- Fixed: `submodule.<name>.ignore=all`, which a committed `.gitmodules` can carry, `diff.ignoreSubmodules=all` in the
+  user's or the repository's config, or a `.gitmodules` left unmerged in the index made a staged or commit-to-commit
+  `git_diff`, `git_show`, and `git_stash_show` leave out a submodule whose recorded commit changed, and made `git_log`
+  skip the commits that moved it when called with `pickaxe`, with `follow`, or with one `paths` entry in a repository
+  whose config sets `log.follow=true`. Every pass of the three diff tools and every `git_log` call now passes
+  `--ignore-submodules=dirty`, which overrides those settings, as `git_status` and a `git_diff` against the working
+  tree already did. A diff against the working tree still never runs git inside a checked-out submodule.
+- Fixed: with `log.follow=true` in the user's or the repository's config, `git_log` with one `paths` entry followed
+  renames although `follow` was false, so it listed commits from before the file was renamed. Every git call now
+  passes `-c log.follow=false`, and only `follow` turns rename following on.
+- Behavior change: the submodule override applies to a setting you made on purpose too. A submodule that
+  `submodule.<name>.ignore=all` (in your global or the repository's config, or in `.gitmodules`) or
+  `diff.ignoreSubmodules=all` kept out of a staged or commit-to-commit `git_diff`, `git_show`, or `git_stash_show` now
+  appears whenever its recorded commit changed, and `git_log` with `pickaxe` or `follow` can return the commits that
+  moved it, so a `maxCount` page can hold commits it skipped before. There is no opt-out; run git in your own shell to
+  keep the setting's effect. Without an `all` value in either setting, or a `.gitmodules` left unmerged in the index,
+  the submodule override changes no result.
+- Behavior change: if you set `log.follow=true` so that `git log` follows renames, `git_log` with one `paths` entry no
+  longer does, and its history stops at the commit that renamed the file; pass `follow: true`.
+- Log change: every `argv_built` debug line shows `-c log.follow=false`, with `argv_len` 2 higher; the bootstrap calls
+  carry the same pin but log no argv line. The line also shows `--ignore-submodules=dirty` on every `git_log` call, on
+  the `git_show` patch pass, on both `git_stash_show` passes, and on each `git_diff` pass that does not read the working
+  tree, so those lines have `argv_len` 3 higher than in v2.13.0 in all; the passes that read the working tree showed the
+  flag already. A `git_log` line without `--follow` now means git did not follow renames, whatever `log.follow` says.
+
+## v2.13.0
+- Fixed: every git process started from the bare name `git`, which .NET looks up in the server's own directory and
+  current directory before `PATH` (on Windows, `CreateProcess` also tries the system directories first). An MCP client
+  that started the server inside a repository could make it run a `git` or `git.exe` committed at that repository's
+  root: on the first tool call in every earlier release, and at startup in v2.12.0. The server now finds git once at
+  startup in the absolute directories of its `PATH` (`git.exe` on Windows; elsewhere a file with an execute bit) and
+  starts that path every time.
+- Behavior change: empty and relative `PATH` entries are ignored, and a git found only in the server's own directory,
+  or on Windows only in a system directory not on `PATH`, is no longer found; tools then fail with `GitNotInstalled`.
+  Restart the server after installing or moving git.
+- Log change: a `GitNotInstalled` `tool_error` carries `git executable not found on PATH when the server started` when
+  no git was found and `git executable could not be started` when the file found fails to start, and the message no
+  longer ends with the executable in parentheses (the envelope's `message` carries the same text). No event or field
+  changes; the `argv_built` debug line still starts with `git`, and no line carries the path found.
+
+## v2.12.0
+- Log change: at startup the server runs `git version` once and logs, right after `server_start`, a `git_version` Info
+  line with a new `git_version` field, or a `git_version_unavailable` Warning with `error_code` (`GitNotInstalled`,
+  `GitTimeout`, or `GitCommandError`, with `git_exit_code` whenever git exited) when git is missing, takes more than
+  5 seconds, exits non-zero, or prints an unexpected line. The server starts in every one of those cases. The process
+  is not counted in the session metrics.
+
+## v2.11.0
+- Fixed: `git_diff`, `git_show`, and `git_stash_show` reported a changed file under the whole `diff --git` header
+  line instead of its path when the user's or the repository's git config set `diff.noprefix`,
+  `diff.mnemonicPrefix` (worktree, staged, and `HEAD`-to-worktree diffs), `diff.srcPrefix`, or `diff.dstPrefix`,
+  because the parser reads the path after ` b/`; the numstat overlay then missed the file. With `diff.submodule`
+  set to `log` or `diff`, a changed submodule was missing from `files`. `git_diff` and `git_show` now pass
+  `--src-prefix=a/ --dst-prefix=b/ --submodule=short` next to `--no-color` on every diff pass. `git_stash_show` passes
+  `--submodule=short` and pins the prefixes with
+  `-c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.srcPrefix=a/ -c diff.dstPrefix=b/`, because
+  `git stash show` in git 2.52.0 through 2.55.x garbles a prefix given on its command line.
+- Fixed: with `diff.submodule=diff` in a repository's config, a `git_diff`, `git_show`, or `git_stash_show` whose diff
+  included a submodule commit change made git start `git diff` inside the submodule, without `--no-ext-diff` or
+  `--no-textconv`, so an external diff command or textconv driver the submodule's own config names could run.
+  `--submodule=short` overrides the key, and git starts no process inside the submodule.
+- Log change: the `argv_built` debug line shows the three new flags on each `git diff` pass of `git_diff` and on the
+  `git_show` patch pass, with `argv_len` 3 higher, and on each `git stash show` pass of `git_stash_show` the four
+  `-c diff.*` pairs in front of the fixed `-c` pairs plus `--submodule=short`, with `argv_len` 9 higher.
+
+## v2.10.0
+- Fixed: a filter driver that a repository's config names (`filter.<driver>.clean` or `filter.<driver>.process`),
+  selected through a `filter` attribute in `.gitattributes` or `.git/info/attributes`, ran when `git_status`, a
+  worktree `git_diff`, or `git_blame` without `ref` read a worktree file; for `git_status`, every file whose timestamp
+  no longer matched the index, which is every file in a copied repository. Before each `git status`, `git diff`, and
+  `git blame`, the server now lists the drivers the config names and pins each one's `clean`, `smudge`, and `process`
+  to empty and `required` to `false` with `-c`. A driver name that contains `=` or is not valid UTF-8, or a listing
+  longer than the 8 MB output cap, fails the call with `GitCommandError`.
+- Fixed: `git_status` and a worktree `git_diff` made git run `git status` inside each checked-out submodule, with the
+  submodule's own config and filter drivers. Both now pass `--ignore-submodules=dirty`.
+- Behavior change: drivers from your global config are pinned too, so a file under git-lfs, git-crypt, or another
+  filter is compared as its raw worktree bytes: `git_status` can list it as modified when only its timestamp changed,
+  a worktree `git_diff` shows the stored pointer or ciphertext against the raw content, and `git_blame` without `ref`
+  attributes every line to the uncommitted working-tree version. In a repository you trust, running `git status` once
+  in your own shell, with the filter installed, refreshes the index's timestamps and clears those files from
+  `git_status` and a worktree `git_diff`. A submodule with only uncommitted changes inside it is no longer listed by
+  `git_status` or a worktree `git_diff`; one whose commit moved still is, even where `submodule.<name>.ignore` or
+  `diff.ignoreSubmodules` would hide it.
+- Log change: each `git status`, `git diff`, and `git blame` process is preceded by a `git config` process with its own
+  `argv_built` and `subprocess_exit` debug lines under the same `call_id`. That `subprocess_exit` shows
+  `git_exit_code` 1 when the config names no filter driver, which is not an error. The pins show in the next
+  `argv_built` line as `-c <filter_driver>`, four per driver, with `argv_len` 8 higher per driver, and the `argv_built`
+  line for `git_status` and for each `git_diff` pass that reads the working tree shows `--ignore-submodules=dirty`. A
+  listing that hits the output cap, or a driver name the server cannot pin, logs only the call's `tool_error` at Error,
+  with the fixed message and no `git_exit_code`. `suspicious_filter_invocation` is unchanged, and with the pins in
+  place no call should produce it.
+- Metrics change: the listing is a git subprocess, so `subprocess_duration_ms_p50` and `subprocess_duration_ms_p95` get
+  one more sample per `git_status` and `git_blame` call and two more per `git_diff` call, and are not comparable with an
+  earlier version's `server_stop` summary. A listing that hits the 8 MB cap counts in `truncations_total`. The two
+  refusals count as `error` in `tool_calls_total` and not in `git_command_errors_total`, which counts only git exits a
+  tool does not allow.
+
+## v2.9.0
+- Fixed: in a repository whose config names a promisor remote (`remote.<name>.promisor=true`,
+  `remote.<name>.partialCloneFilter`, or `extensions.partialClone`), a tool call that read an object git did not have
+  made git fetch it from that remote, and the fetch ran the program the repository's config names for the transport,
+  for example `remote.<name>.uploadpack` for a remote at a local path or `core.sshCommand` for ssh. Every git process
+  the server starts now gets `GIT_NO_LAZY_FETCH=1`, next to `GIT_TERMINAL_PROMPT=0`. git 2.45.1 and later and the May
+  2024 security releases for 2.39 to 2.44 have the full check (the README's Requirements lists them); 2.45.0 honors
+  the variable only in part, and an older git ignores it.
+- Behavior change: in an ordinary partial clone, a call that needs an object the clone has not fetched (an old blob for
+  `git_show`, `git_diff`, `git_blame`, `git_file_at_ref`, or `git_grep` with `ref`) fails with `GitCommandError`
+  instead of fetching it.
+
+## v2.8.0
+- Fixed: a repository's own config could make `git_log`, `git_show`, `git_reflog`, and `git_stash_list` run a program
+  it names. With `log.showSignature=true`, git verifies each signed commit it shows by running the program
+  `gpg.program`, `gpg.ssh.program`, or `gpg.x509.program` names, and a forged `gpgsig` header is enough. Every git
+  call now passes `-c log.showSignature=false`, next to the `core.fsmonitor` and `core.hooksPath` neutralizers. With
+  `log.showSignature=true` in the user's own config, `git_log` and the `git_show` metadata pass also put gpg's output
+  in front of each signed commit's `hash`, and `git_log`, both `git_show` passes, and `git_reflog` ran gpg once per
+  signed commit shown; the same change fixes both.
+- Log change: every `argv_built` debug line shows `-c log.showSignature=false`, and its `argv_len` is 2 higher. The
+  bootstrap `rev-parse` calls carry the same pin but log no argv line.
+
+## v2.7.0
+- Fixed: `git_diff`, `git_show`, and `git_stash_show` returned an empty file list, with no error, when the user's or
+  the repository's git config set `color.ui` or `color.diff` to `always`, because git colored the patch and no
+  `diff --git` header parsed. The three now always pass `--no-color`, as `git_grep` has since 2.6.0. `statOnly` was not
+  affected.
+- Log change: a new Warning event, `patch_parse_empty`, when the `--numstat` pass of `git_diff` or `git_stash_show`
+  lists files but no `diff --git` header parsed from the patch. The `argv_built` debug line for the three tools shows
+  `--no-color` on every pass, the `--numstat` and `--name-status` passes included.
+
+## v2.6.0
+- `git_grep` gained `countOnly`. `countOnly: true` adds git's `-c` in place of `-n` and returns one
+  `{path, match_count}` entry per file with at least one matching line, instead of one entry per line. `match_count`
+  counts matching lines, as `git grep -c` does, so a line with two occurrences counts once. Files with no match are
+  left out. `maxCount` together with `countOnly` is `RejectedArgument` (`param: max_count`), rejected before git runs:
+  git applies `-m` before counting, so the count would be capped at `maxCount`. `filters_applied` reports
+  `count_only`. Without `countOnly` the result is unchanged.
+- Fixed: `git_grep` returned an empty success when the user's or the repository's git config set `color.ui` or
+  `color.grep` to `always`, because git colored the line numbers and no record parsed; count mode would have
+  returned paths wrapped in escape codes. `git_grep` now always passes `--no-color`.
+- Log change: a new Warning event, `count_parse_empty`, when a count-mode grep exits 0 (git found a match) but no
+  record parsed. The `argv_built` debug line for `git_grep` shows `--no-color`, and `-c` instead of `-n` in count
+  mode.
+
+## v2.5.0
+- `git_file_at_ref` gained `lineStart`/`lineEnd`, `byteOffset`, and `maxBytes`, so a large or single-line file can be
+  read in pieces instead of overflowing the client's per-result limit. `lineStart` and `lineEnd` are 1-based and
+  inclusive, both or neither, as in `git_blame`; an end past the last line is clamped, and a start past it is
+  `RejectedArgument` (`param: line_range`) with `total_lines` in the detail. `byteOffset` skips bytes of what the
+  range kept, moving forward out of a multi-byte character; at or past the end it is `RejectedArgument`
+  (`param: byte_offset`) with `content_bytes` in the detail. `maxBytes` caps the content in UTF-8 bytes, backs off to
+  a character boundary (a cap below 4 keeps at least one byte), sets the envelope's `truncated`, and reports where to
+  continue in `next_byte_offset`. A malformed range, a negative offset, or a cap below 1 is rejected before git runs.
+  A binary blob ignores the three. There is no default cap; without them the result is the whole blob, as before.
+- The `git_file_at_ref` payload gained `total_lines` and `next_byte_offset` (both `null` for a binary blob).
+  `filters_applied` reports `line_range`, `byte_offset`, and `max_bytes` when set.
+- No log change. `truncations_total` still counts only the runner's 8 MB output cap; a `maxBytes` cut sets the
+  envelope's `truncated` without counting there.
+
+## v2.4.0
+- `git_log` gained `perlRegex` and `allRefs`. `perlRegex: true` adds git's `--perl-regexp`, so `grep` matches
+  Perl-compatible regular expressions, the dialect `git_grep` uses for `fixedString: false`: `A|B` alternation,
+  `\d`, `\s`, `+`, `?`, and grouping work. It applies to `author` as well, since git treats both as limiting
+  patterns. Without it, `grep` stays git's default basic regular expression, where `|` is a literal character,
+  so an alternation returns no commits; the `grep` description now says so. A git built without PCRE2 returns
+  `PcreUnavailable` for `perlRegex: true`, as `git_grep` does, instead of a generic command error.
+- `allRefs: true` adds git's `--all` and walks every ref under `refs/` plus `HEAD`: local branches,
+  remote-tracking branches, tags, and the stash. Combined with a non-empty `ref` it is `RejectedArgument`
+  (`param: all_refs`). `filters_applied` reports `perl_regex` and `all_refs`.
+- Behavior change: `git_log` always passes a dialect, `--basic-regexp` unless `perlRegex` is set. A
+  `grep.patternType` in the user's or the repository's git config used to change how `grep` and `author`
+  matched (`extended` made `A|B` an alternation, `fixed` made `.` a literal); it no longer does. Without that
+  config, and without either new flag, the result is unchanged.
+- Log change: the `argv_built` debug line for `git_log` shows `--basic-regexp` or `--perl-regexp`, plus `--all`
+  when `allRefs` is set.
+
+## v2.3.0
+- `git_grep` and `git_ls_files` gained `globs` and `excludePaths`. `globs` takes wildcard pathspecs with git's
+  default matching, where `*` and `?` also match `/`, so `*.cs` matches at any depth and `crates/*/*/Cargo.toml`
+  works. `excludePaths` drops paths or patterns through git's `:(exclude)` magic: a directory drops its subtree, and
+  with no `paths` and no `globs` the call covers every tracked file except the excluded ones. `filters_applied`
+  reports `globs_count` and `exclude_paths_count`.
+- Behavior change: a `paths` entry containing `*` or `?`, or starting with `:`, is now `RejectedArgument`
+  (`param: paths`) on every tool that takes `paths` (`git_grep`, `git_ls_files`, `git_log`, `git_diff`,
+  `git_show`). A wildcard entry used to match nothing and return an empty success, and an `:(exclude)` entry was
+  ignored. An empty `paths` entry, which used to mean the repository root, is also `RejectedArgument` now.
+- The server no longer runs git in literal-pathspec mode: the `--literal-pathspecs` flag and the
+  `GIT_LITERAL_PATHSPECS` environment variable are gone, and every pathspec carries a prefix the server chooses,
+  `:(literal)` for `paths`, `:(exclude)` for `excludePaths`, and none for `globs`. `paths` matching is unchanged.
+- Behavior change, Linux and macOS only (Windows cannot create such names): a tracked file whose name starts with
+  `:` can no longer be addressed through `paths` or blamed, and one whose name contains `*` or `?` can no longer be
+  addressed through `paths` on any tool.
+- Log change: the `argv_built` debug line no longer shows `--literal-pathspecs`, and it masks wildcard and exclude
+  pathspecs as `<glob>` and `<exclude>` (literal paths stay `<path>`).
+
 ## v2.2.2
 - `git_show` now says a rejected `<rev>:<path>` ref names "a file or tree, not a commit". `HEAD:` (the
   root tree) is rejected the same way as `HEAD:README.md`.

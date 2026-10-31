@@ -20,11 +20,11 @@ public class GitToolsIntegrationTests
     public GitToolsIntegrationTests(GitRepoFixture fixture)
     {
         _fixture = fixture;
-        var resolver = new RepoRootResolver();
+        var resolver = new RepoRootResolver(TestGit.Executable);
         var runner = new GitProcessRunner(NullLogger<GitProcessRunner>.Instance);
         var metrics = new SessionMetrics();
-        _common = new ToolCommon(resolver, runner, metrics, NullLoggerFactory.Instance);
-        _refVerifier = new RefVerifier();
+        _common = new ToolCommon(resolver, runner, metrics, NullLoggerFactory.Instance, TestGit.Executable);
+        _refVerifier = new RefVerifier(TestGit.Executable);
     }
 
     [Fact]
@@ -66,6 +66,21 @@ public class GitToolsIntegrationTests
 
         // Assert
         Assert.Equal(1, envelope.Count);
+    }
+
+    [Fact]
+    public async Task GitLogTool_WithWildcardPath_IsRejected()
+    {
+        // Arrange
+        var tool = new GitLogTool(_common, _refVerifier);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_fixture.RepoPath, paths: ["*.txt"]);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.RejectedArgument, envelope.Error.Code);
+        Assert.Equal("paths", envelope.Error.Detail["param"]);
     }
 
     [Fact]

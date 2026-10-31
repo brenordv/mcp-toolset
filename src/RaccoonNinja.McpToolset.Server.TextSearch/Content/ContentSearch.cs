@@ -65,6 +65,42 @@ public static class ContentSearch
         return new FileSearchOutcome(matches, TimedOut: false, capped);
     }
 
+    /// <summary>Count the lines of <paramref name="document"/> with at least one match. Exact: no per-file cap applies.</summary>
+    /// <param name="document">The decoded document (a binary document counts zero).</param>
+    /// <param name="matcher">The line matcher.</param>
+    /// <param name="cancellationToken">The operation-budget token, checked once per line.</param>
+    /// <returns>The count and whether a regex timeout stopped it early.</returns>
+    /// <exception cref="OperationCanceledException">The token was cancelled.</exception>
+    public static (int MatchingLines, bool TimedOut) CountMatchingLines(TextDocument document, LineMatcher matcher, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(matcher);
+
+        if (document.IsBinary)
+        {
+            return (0, false);
+        }
+
+        var count = 0;
+        try
+        {
+            foreach (var line in document.Lines)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (matcher.Matches(line.Content).Any())
+                {
+                    count++;
+                }
+            }
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return (count, true);
+        }
+
+        return (count, false);
+    }
+
     private static ContentMatch Build(
         IReadOnlyList<TextLine> lines,
         TextLine line,

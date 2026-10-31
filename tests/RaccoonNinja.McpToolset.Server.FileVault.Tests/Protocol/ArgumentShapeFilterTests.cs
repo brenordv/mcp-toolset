@@ -31,12 +31,18 @@ public sealed class ArgumentShapeFilterTests : IAsyncLifetime
             Command = "dotnet",
             Arguments = [serverDll],
             Name = "filevault-argshape-e2e",
+            // Every VAULT_MCP_* variable is pinned: the transport inherits the process
+            // environment, and VaultConfigTests mutates these same variables in parallel.
             EnvironmentVariables = new Dictionary<string, string>
             {
                 ["VAULT_MCP_HOME"] = _home,
                 ["VAULT_MCP_PROJECT"] = string.Empty,
                 ["VAULT_MCP_LOG"] = "warning",
                 ["VAULT_MCP_LOG_FILE"] = string.Empty,
+                ["VAULT_MCP_MAX_BYTES"] = string.Empty,
+                ["VAULT_MCP_BUSY_TIMEOUT_MS"] = string.Empty,
+                ["VAULT_MCP_SPLIT_HINT_CHARS"] = string.Empty,
+                ["VAULT_MCP_PURGE_DELETE_FILES"] = string.Empty,
             },
         });
         _client = await McpClient.CreateAsync(transport);

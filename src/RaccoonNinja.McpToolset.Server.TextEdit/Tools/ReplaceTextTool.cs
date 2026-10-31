@@ -82,18 +82,31 @@ public sealed class ReplaceTextTool(ToolCommon common, EditConfig config, ScopeR
                 CultureInfo.InvariantCulture,
                 $"replace regex={is_regex} plen={pattern.Length} phash={LogScrubbing.HashedValue(pattern)} rlen={replacement.Length} rhash={LogScrubbing.HashedValue(replacement)}");
 
-            var outcome = writer.Apply(
-                "replace_text",
-                relativePaths,
-                replacer,
-                argsSummary,
-                expected_match_count,
-                dry_run,
-                source_encoding,
-                walk.SkippedSymlinks,
-                walk.Truncated,
-                scope.Effective,
-                budget.Token);
+            BatchOutcome outcome;
+            try
+            {
+                outcome = writer.Apply(
+                    "replace_text",
+                    relativePaths,
+                    replacer,
+                    argsSummary,
+                    expected_match_count,
+                    dry_run,
+                    source_encoding,
+                    walk.SkippedSymlinks,
+                    walk.Truncated,
+                    scope.Effective,
+                    budget.Token);
+            }
+            finally
+            {
+                // The replacer counts its own timeouts, so the ones already hit reach the metric and the log
+                // even when Apply throws (an expected_match_count mismatch, or the operation budget).
+                for (var hit = 0; hit < replacer.RegexTimeouts; hit++)
+                {
+                    common.RegexTimeout(ctx);
+                }
+            }
 
             common.BatchCommitted(ctx, outcome, dry_run);
 
