@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using RaccoonNinja.McpToolset.Common.Files.Security;
 using RaccoonNinja.McpToolset.Common.Files.Text;
@@ -135,6 +136,9 @@ public sealed class TextEditHarness : IDisposable
 
     public void Dispose()
     {
+        // The journal pools its connections, and a pooled connection keeps the db file open. Without this, the delete
+        // below fails on Windows and every leftover connection closes at process exit, after the test run has finished.
+        SqliteConnection.ClearAllPools();
         SafeDelete(Root);
         SafeDelete(_appData);
     }
