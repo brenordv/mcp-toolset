@@ -1,3 +1,13 @@
+## v2.21.0
+- Fixed: every git process got the server's `PATH` as it was, empty and relative entries included. git looks up on
+  `PATH` a program it starts by name, such as the `git log` that `git stash list` starts, once its own exec path holds
+  no match, and it reads an empty entry as its current directory on Linux and macOS (a relative entry resolves against
+  that directory on every OS), which for a tool call is the repository root. So on a git whose exec path holds no
+  `git`, `git_stash_list` in a repository that commits a program called `git` could run it. The child's `PATH` now keeps
+  only the fully qualified entries, in their order. Behavior change: a program git would find only through a `PATH`
+  entry that is not fully qualified (empty, relative, or quoted) is not found; none of the server's calls needs one. No
+  log change.
+
 ## v2.20.0
 - `git_diff`, `git_show`, and `git_stash_show` file entries gained `old_mode` and `new_mode`, the file modes git prints
   in the patch header as six octal digits (`100644`, `100755`, `120000` for a symlink, `160000` for a submodule).

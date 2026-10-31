@@ -1,3 +1,15 @@
+## v3.5.0
+- Fixed: project inference took the first `git` (`git.exe` on Windows) it found in any `PATH` entry, relative ones
+  included. A relative entry such as `.` or `bin` resolves against the server's working directory, the MCP client's
+  project, so with one ahead of the real git's directory, a `git` or `git.exe` committed in that project ran when the
+  server derived the default `project`. Only fully qualified `PATH` entries are searched now, and off Windows the file
+  needs an execute bit.
+- Behavior change: a git reachable only through an empty or relative `PATH` entry is no longer used, so the default
+  `project` falls back to the folder name instead of `<repo>/<folder>`, as it does with no git installed. A `git`
+  without an execute bit is now passed over for a later entry instead of failing to start, and `PATH` entries are no
+  longer trimmed of spaces, so on Windows an entry written with a space before its drive letter
+  (`; C:\Program Files\Git\cmd`) is skipped like a relative one. No log change.
+
 ## v3.4.0
 - Fixed: `stderr_tail` kept the scrubbed full text (message and stack trace) of every exception that was not a vault
   or MCP exception, so a startup, host, SQLite, or filesystem exception that names a file by its absolute path

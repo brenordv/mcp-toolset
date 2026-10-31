@@ -631,8 +631,11 @@ flowchart TD
   through `cmd.exe`, which re-reads the arguments. An absolute `PATH` entry inside a repository (a virtualenv `bin`, the
   `node_modules/.bin` that `npm run` adds, a direnv `PATH_add`) is still trusted, as it is in your own shell.
 - **Scrubbed environment.** The child env is built from a small allowlist (`PATH`, locale vars, `HOME`, plus a few
-  Windows essentials) with fixed git neutralizers added. Everything else is dropped. `GIT_NO_LAZY_FETCH=1` is one of
-  them. In a partial clone, or any repository whose config names a promisor remote, reading an object git does not have
+  Windows essentials) with fixed git neutralizers added. Everything else is dropped. `PATH` keeps only its fully
+  qualified entries, in order (an empty, relative, or quoted entry is dropped): git looks up on `PATH` a program it
+  starts by name, such as the `git log` that `git stash list` starts, once its own exec path holds no match, and an
+  empty entry (on Linux and macOS) or a relative one resolves against git's current directory, the repository root for
+  a tool call. `GIT_NO_LAZY_FETCH=1` is one of the neutralizers. In a partial clone, or any repository whose config names a promisor remote, reading an object git does not have
   would otherwise start a fetch from that remote, and the fetch runs the program the repository's config names for the
   transport (for example `remote.<name>.uploadpack` for a remote at a local path, `core.sshCommand` for ssh, or a
   remote helper). A missing object fails the call with `GitCommandError` instead (message

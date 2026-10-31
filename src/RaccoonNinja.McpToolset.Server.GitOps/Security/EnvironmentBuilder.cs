@@ -4,8 +4,8 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Security;
 
 /// <summary>
 /// Builds the child-process environment from an allowlist (Layer 2 hardening).
-/// Anything NOT named here is dropped from the child env; fixed git neutralizers
-/// are unconditionally set.
+/// Anything NOT named here is dropped from the child env; <c>PATH</c> keeps only
+/// its fully qualified entries; fixed git neutralizers are unconditionally set.
 /// </summary>
 public static class EnvironmentBuilder
 {
@@ -79,8 +79,36 @@ public static class EnvironmentBuilder
                     env[key] = value;
             }
         }
+        if (env.TryGetValue("PATH", out var pathVariable))
+        {
+            env["PATH"] = KeepFullyQualifiedEntries(pathVariable);
+        }
         foreach (var kvp in FixedGitEnv) env[kvp.Key] = kvp.Value;
         return env;
+    }
+
+    /// <summary>
+    /// Keep the fully qualified entries of a <c>PATH</c> value, in order. git looks up on <c>PATH</c> a program it starts
+    /// by name, such as the <c>git log</c> that <c>git stash list</c> starts, once its own exec path holds no match; it
+    /// reads an empty entry as its current directory (Linux and macOS), and a relative entry resolves against that
+    /// directory, the repository root for a tool call. The result must not be empty: git writes its exec path and a
+    /// separator in front of <c>PATH</c>, so an empty value would become a trailing empty entry, the current directory.
+    /// It never is when a git process starts, since the entry holding the git the server starts is fully qualified.
+    /// </summary>
+    /// <param name="pathVariable">The parent's <c>PATH</c> value.</param>
+    /// <returns>The fully qualified entries, joined with <see cref="Path.PathSeparator"/>.</returns>
+    private static string KeepFullyQualifiedEntries(string pathVariable)
+    {
+        var kept = new List<string>();
+        foreach (var entry in pathVariable.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (Path.IsPathFullyQualified(entry))
+            {
+                kept.Add(entry);
+            }
+        }
+
+        return string.Join(Path.PathSeparator, kept);
     }
 
     private static Dictionary<string, string> GetCurrentEnvironment(StringComparer comparer)
