@@ -147,12 +147,13 @@ public sealed class FileSelection
 
     private WalkResult SelectPaths(FileSelector selector)
     {
+        var projectIgnore = new PathIgnoreEvaluator(_anchor.CanonicalRoot);
         var extensionMatch = BuildExtensionMatch(selector.Extensions);
         var entries = new List<WalkEntry>();
         foreach (var raw in selector.Paths)
         {
             if (raw is not null
-                && TryGate(raw, out var entry)
+                && TryGate(raw, projectIgnore, out var entry)
                 && (extensionMatch is null || extensionMatch(entry.RelativePath)))
             {
                 entries.Add(entry);
@@ -174,9 +175,9 @@ public sealed class FileSelection
     /// <summary>
     /// Run one path through the read gate. It is omitted (not surfaced) when it escapes the root, is
     /// denylisted, does not exist, or is a directory. Reporting a denied file's existence is itself recon,
-    /// so refusal is silent.
+    /// so refusal is silent. <paramref name="projectIgnore"/> is the one evaluator the whole selection shares.
     /// </summary>
-    private bool TryGate(string raw, out WalkEntry entry)
+    private bool TryGate(string raw, PathIgnoreEvaluator projectIgnore, out WalkEntry entry)
     {
         entry = null;
 
@@ -190,7 +191,7 @@ public sealed class FileSelection
             return false;
         }
 
-        if (!confined.Exists || IsDenied(confined.RelativePath) || IsProjectIgnored(confined.RelativePath))
+        if (!confined.Exists || IsDenied(confined.RelativePath) || IsProjectIgnored(projectIgnore, confined.RelativePath))
         {
             return false;
         }
@@ -214,11 +215,12 @@ public sealed class FileSelection
 
     /// <summary>
     /// Whether <paramref name="relativePath"/> (relative to this selection's root) is ignored by a
-    /// project ignore rule (<c>.gitignore</c>, an agent-ignore file, or <c>.mcpignore</c>), evaluated root-down from the base anchor so a scoped call
-    /// still honors ancestor ignore files and no re-include can pull a project-ignored path back.
+    /// project ignore rule (<c>.gitignore</c>, an agent-ignore file, or <c>.mcpignore</c>), evaluated root-down from the base anchor
+    /// through <paramref name="projectIgnore"/>, the selection's own evaluator, so a scoped call still honors ancestor
+    /// ignore files and no re-include can pull a project-ignored path back.
     /// </summary>
-    private bool IsProjectIgnored(string relativePath)
-        => PathIgnoreEvaluator.IsIgnored(_anchor.CanonicalRoot, ToBaseRelative(relativePath));
+    private bool IsProjectIgnored(PathIgnoreEvaluator projectIgnore, string relativePath)
+        => projectIgnore.IsIgnored(ToBaseRelative(relativePath));
 
     /// <summary>
     /// Whether <paramref name="relativePath"/> (relative to this selection's root) is on the denylist, tested as

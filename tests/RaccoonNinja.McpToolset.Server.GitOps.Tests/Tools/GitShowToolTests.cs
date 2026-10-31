@@ -12,6 +12,7 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Tools;
 public sealed class GitShowToolTests : IDisposable
 {
     private const string ChangedFile = "a.txt";
+    private const string SecondSubject = "second";
     private const string SignedSubject = "signed";
     private const string SubmodulePath = "sub";
     private const string TagName = "v1";
@@ -39,7 +40,7 @@ public sealed class GitShowToolTests : IDisposable
         _repo.Run("commit", "-m", "first");
         _repo.WriteFile(ChangedFile, "one\ntwo\n");
         _repo.Run("add", ".");
-        _repo.Run("commit", "-m", "second");
+        _repo.Run("commit", "-m", SecondSubject);
 
         var common = new ToolCommon(
             new RepoRootResolver(TestGit.Executable),
@@ -202,5 +203,24 @@ public sealed class GitShowToolTests : IDisposable
         Assert.Equal(ChangedFile, file.Path);
         Assert.Equal(ChangeType.Added, file.ChangeType);
         Assert.Equal(1, file.Additions);
+    }
+
+    [Theory]
+    [InlineData(TempGitRepo.LogOutputEncodingKey)]
+    [InlineData(TempGitRepo.CommitEncodingKey)]
+    public async Task Show_WithUtf16LogEncodingConfig_ReturnsRealHashAndSubject(string configKey)
+    {
+        // Arrange
+        var headHash = _repo.ConfigureUtf16LogEncoding(configKey);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        var commit = Assert.IsType<Commit>(payload["commit"]);
+        Assert.Equal(headHash, commit.Hash);
+        Assert.Equal(SecondSubject, commit.Subject);
     }
 }

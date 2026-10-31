@@ -58,8 +58,7 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
             var commit = commits[0];
             if (!RefVerifier.IsResolvedObjectName(commit.Hash))
             {
-                throw new GitCommandException(
-                    "log returned a malformed commit hash (an i18n.logOutputEncoding or i18n.commitEncoding setting can cause this)");
+                throw new GitCommandException("log returned a malformed commit hash");
             }
 
             var patchIntent = new GitIntent

@@ -16,6 +16,7 @@ public sealed class GitLogToolTests : IDisposable
     private const string AlphaSubject = "GMS-1 alpha";
     private const string BetaFile = "beta.txt";
     private const string BetaSubject = "DEVOPS-2 beta";
+    private const string GammaSubject = "plain gamma";
     private const string FeatureSubject = "GMS-9 feature work";
     private const string AlternationPattern = "GMS-1|DEVOPS-2";
     private const string SignedSubject = "GMS-4 signed";
@@ -32,7 +33,7 @@ public sealed class GitLogToolTests : IDisposable
         _repo = new TempGitRepo();
         CommitFile(AlphaFile, AlphaSubject);
         CommitFile(BetaFile, BetaSubject);
-        CommitFile("gamma.txt", "plain gamma");
+        CommitFile("gamma.txt", GammaSubject);
         _repo.Run("checkout", "-b", "feature");
         CommitFile("feature.txt", FeatureSubject);
         _repo.Run("checkout", "main");
@@ -254,6 +255,24 @@ public sealed class GitLogToolTests : IDisposable
         Assert.Null(envelope.Error);
         var commit = Assert.IsType<Commit>(Assert.Single(envelope.Results));
         Assert.Equal(rootCommit, commit.Hash);
+    }
+
+    [Theory]
+    [InlineData(TempGitRepo.LogOutputEncodingKey)]
+    [InlineData(TempGitRepo.CommitEncodingKey)]
+    public async Task Log_WithUtf16LogEncodingConfig_ReturnsRealHashAndSubject(string configKey)
+    {
+        // Arrange
+        var headHash = _repo.ConfigureUtf16LogEncoding(configKey);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, maxCount: 1, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var commit = Assert.IsType<Commit>(Assert.Single(envelope.Results));
+        Assert.Equal(headHash, commit.Hash);
+        Assert.Equal(GammaSubject, commit.Subject);
     }
 
     #region Test Helpers

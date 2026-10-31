@@ -9,6 +9,7 @@ public sealed class FileSelectionTests : IDisposable
     private const string ScopedDirectory = "proj/.claude";
     private const string ScopedAgentFile = "agents/a.md";
     private const string DeniedSettingsFile = "settings.json";
+    private const string LaterIgnoredFile = "notes.txt";
 
     private readonly string _rootDir;
     private readonly FileSelection _selection;
@@ -66,6 +67,23 @@ public sealed class FileSelectionTests : IDisposable
 
         // Assert
         Assert.Equal(["UserTest.cs"], paths);
+    }
+
+    [Fact]
+    public void Select_IgnoreFileAddedBetweenPathsSelections_OmitsThePathFromTheLater()
+    {
+        // Arrange
+        Write(LaterIgnoredFile, "1");
+        var selector = FileSelector.Create(paths: [LaterIgnoredFile]);
+        var before = Paths(_selection.Select(selector));
+        Write(IgnoreRules.GitIgnoreFileName, LaterIgnoredFile + "\n");
+
+        // Act
+        var after = Paths(_selection.Select(selector));
+
+        // Assert
+        Assert.Equal([LaterIgnoredFile], before);
+        Assert.Empty(after);
     }
 
     [Fact]

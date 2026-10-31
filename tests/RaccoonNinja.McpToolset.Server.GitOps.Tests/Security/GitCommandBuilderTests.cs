@@ -7,6 +7,7 @@ public class GitCommandBuilderTests
 {
     private const string AutoRefreshIndexPin = "diff.autoRefreshIndex=false";
     private const string ShowRootPin = "log.showRoot=true";
+    private const string LogOutputEncodingPin = "i18n.logOutputEncoding=UTF-8";
 
     private static readonly string GitExecutable = Path.Combine(Path.GetTempPath(), "git");
 
@@ -35,6 +36,7 @@ public class GitCommandBuilderTests
         Assert.Contains("fetch.bundleURI=", argv);
         Assert.Contains(AutoRefreshIndexPin, argv);
         Assert.Contains(ShowRootPin, argv);
+        Assert.Contains(LogOutputEncodingPin, argv);
     }
 
     [Fact]
@@ -378,6 +380,7 @@ public class GitCommandBuilderTests
         Assert.Contains("fetch.bundleURI=", prefix);
         Assert.Contains(AutoRefreshIndexPin, prefix);
         Assert.Contains(ShowRootPin, prefix);
+        Assert.Contains(LogOutputEncodingPin, prefix);
     }
 
     [Fact]

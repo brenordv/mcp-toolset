@@ -610,6 +610,9 @@ flowchart TD
   is there because a `git diff` against the working tree otherwise rewrites `.git/index` under its lock, which
   `GIT_OPTIONAL_LOCKS=0` does not prevent. `log.showRoot=true` is there because `log.showRoot=false` in config makes
   `git show` print no diff for a root commit and keeps `git log` with `-S` or `--follow` from listing one.
+  `i18n.logOutputEncoding=UTF-8` is there because git re-encodes each record `git log` and `git show` format, commit id
+  included, into that key's encoding, or into `i18n.commitEncoding`'s when that key is not set, so a value such as
+  `UTF-16` leaves no readable commit id.
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or

@@ -1,3 +1,14 @@
+## v2.23.0
+- Fixed: with `i18n.logOutputEncoding` in the user's or the repository's git config, or `i18n.commitEncoding` when
+  that key is not set, git re-encodes every record `git_log` and `git_show` read, commit id included. Set to an
+  encoding that is not ASCII-compatible, such as `UTF-16`, it made `git_log` return garbled commits (hash, parents,
+  names, dates, and message) and `git_show` return a garbled `commit` (from v2.18.0, a `GitCommandError` instead).
+  Every git call now passes `-c i18n.logOutputEncoding=UTF-8`, git's default, so both tools return real hashes and
+  UTF-8 text. Behavior change: if you set either key to read commit messages in another encoding, `git_log`,
+  `git_show`, and the other tools that print commit text no longer follow it.
+- Log change: every `argv_built` debug line shows `-c i18n.logOutputEncoding=UTF-8`, and its `argv_len` is 2 higher;
+  the bootstrap calls (`git version` at startup and the `rev-parse` calls) carry the same pin but log no argv line.
+
 ## v2.22.0
 - Fixed: with `log.showRoot=false` in the user's or the repository's git config, `git_show` on a root commit (a commit
   with no parent, which in a shallow clone includes each boundary commit) returned the commit with `files: []`, and
@@ -62,7 +73,8 @@
   the commit the metadata pass resolved, and the reader drops any line outside a `diff --git` section.
 - Fixed: on Linux and macOS, a branch that conflicts on a path whose name holds a line break could forge file entries
   in a worktree or staged `git_diff`, since git writes an unmerged path's name raw. Such a call now fails with
-  `GitCommandError`.
+  `GitCommandError` whenever the patch has a `* Unmerged path` line and any changed path holds a line break, whether or
+  not the two are the same path.
 - Behavior change: `git_show` with a ref that names a tree or a blob, or a tag of one, fails with `RejectedArgument` on
   `ref`. It used to return `commit: null` and parse the tree listing or the blob's content as a patch.
 - Docs: the README's Scrubbed environment bullet says which reads show `lazy fetching disabled` in `stderr_tail` on

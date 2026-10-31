@@ -61,7 +61,6 @@ public sealed class ScopeResolver
     private readonly IgnoreRules _defaultIgnore;
     private readonly SearchConfig _config;
     private readonly ISecretContentScanner _scanner;
-    private readonly CallScope _baseScope;
     private readonly Dictionary<string, PackageRoot> _packageRoots;
     private readonly IReadOnlyList<string> _packageRootNames;
 
@@ -79,14 +78,12 @@ public sealed class ScopeResolver
         _scanner = config.SecretScanEnabled
             ? new SecretContentScanner(new EncodingDetector(), config.SecretScanAggressive)
             : NullSecretContentScanner.Instance;
-        _baseScope = BuildScope(baseRoot, ScopeKind.Base, ".", baseRoot, string.Empty);
 
         var map = new Dictionary<string, PackageRoot>(packageRoots.Count, StringComparer.OrdinalIgnoreCase);
         var names = new List<string>(packageRoots.Count);
         foreach (var (name, confinement) in packageRoots)
         {
-            var wholeScope = BuildScope(confinement, ScopeKind.Package, $"{PackagePrefix}{name}", confinement, string.Empty);
-            map[name] = new PackageRoot(name, confinement, wholeScope);
+            map[name] = new PackageRoot(name, confinement);
             names.Add(name);
         }
 
@@ -163,7 +160,7 @@ public sealed class ScopeResolver
     /// The absolute (or base-relative) working directory to scope to, an <c>@name[/subpath]</c> package
     /// reference, or null/blank for the whole base.
     /// </param>
-    /// <returns>The resolved scope.</returns>
+    /// <returns>A scope built for this call alone; its read gate keeps per-call ignore state, so no scope is shared between calls.</returns>
     /// <exception cref="TextSearchException">
     /// Thrown (as a refusal-tagged <c>InvalidArgument</c>) when the <c>cwd</c> escapes its root, is not a
     /// directory, lands on or inside a protected directory, or names an unknown package root. Every message
@@ -173,7 +170,7 @@ public sealed class ScopeResolver
     {
         if (string.IsNullOrWhiteSpace(cwd))
         {
-            return _baseScope;
+            return BuildScope(_base, ScopeKind.Base, ".", _base, string.Empty);
         }
 
         return cwd.StartsWith(PackagePrefix)
@@ -198,7 +195,7 @@ public sealed class ScopeResolver
         // identity, so two spellings never mint two cursors.
         if (string.IsNullOrWhiteSpace(subpath) || subpath.Trim() == ".")
         {
-            return package.WholeScope;
+            return BuildScope(package.Confinement, ScopeKind.Package, $"{PackagePrefix}{package.Name}", package.Confinement, string.Empty);
         }
 
         return ResolveUnder(
@@ -264,6 +261,10 @@ public sealed class ScopeResolver
         return BuildScope(effective, kind, displayScopeKey(confined.RelativePath), confiner, prefix);
     }
 
+    /// <summary>
+    /// Build a scope for one call. Its read gate remembers each directory's project ignore rules for that call only, so a
+    /// scope is never reused across calls.
+    /// </summary>
     private CallScope BuildScope(RootConfinement confinement, ScopeKind kind, string scopeKey, RootConfinement anchor, string prefix)
     {
         var selection = new FileSelection(confinement, _denylist, _defaultIgnore, anchor, prefix);
@@ -507,6 +508,6 @@ public sealed class ScopeResolver
             ? []
             : raw.Split(EntrySeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    /// <summary>A configured package root: its stored name, its confiner, and its prebuilt whole-cache scope.</summary>
-    private sealed record PackageRoot(string Name, RootConfinement Confinement, CallScope WholeScope);
+    /// <summary>A configured package root: its stored name and its confiner.</summary>
+    private sealed record PackageRoot(string Name, RootConfinement Confinement);
 }

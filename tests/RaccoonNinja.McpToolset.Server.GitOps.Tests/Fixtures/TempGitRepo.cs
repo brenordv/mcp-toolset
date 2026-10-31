@@ -10,6 +10,12 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
 /// </summary>
 internal sealed class TempGitRepo : IDisposable
 {
+    /// <summary>The key that sets the encoding <c>git log</c> and <c>git show</c> print commit records in.</summary>
+    public const string LogOutputEncodingKey = "i18n.logOutputEncoding";
+
+    /// <summary>The key git uses for <see cref="LogOutputEncodingKey"/> when that key is unset.</summary>
+    public const string CommitEncodingKey = "i18n.commitEncoding";
+
     /// <summary>How long one git invocation may run before the helper kills it and fails the test.</summary>
     private const int GitTimeoutMilliseconds = 15_000;
 
@@ -54,6 +60,9 @@ internal sealed class TempGitRepo : IDisposable
 
     /// <summary>The commit <see cref="StageIgnoredSubmoduleMove"/> stages for its gitlink.</summary>
     private const string SubmoduleNewCommit = "2222222222222222222222222222222222222222";
+
+    /// <summary>An encoding that is not ASCII-compatible, so a record git re-encodes into it holds no readable commit id.</summary>
+    private const string Utf16Encoding = "UTF-16";
 
     /// <summary>Appended to the script's path to name the marker file the script creates when it runs.</summary>
     private const string TrapMarkerSuffix = ".ran";
@@ -194,6 +203,30 @@ internal sealed class TempGitRepo : IDisposable
         }
 
         return root;
+    }
+
+    /// <summary>
+    /// Set <paramref name="configKey"/> to <c>UTF-16</c> in the repository's config, as a hostile repository or a user's
+    /// own config can, then check that <c>git log</c> without the server's pin no longer prints exactly <c>HEAD</c>'s id,
+    /// so a test built on it never passes on a git that ignores the key. The check keeps <c>--format=%H</c>: git writes
+    /// that format's newline after the re-encoded record, as one byte the UTF-16 decoder cannot pair, so even a reader
+    /// that detects the byte-order mark gets more than the id. Call it once every commit the test needs exists: a commit
+    /// made under <see cref="CommitEncodingKey"/> records that encoding.
+    /// </summary>
+    /// <param name="configKey"><see cref="LogOutputEncodingKey"/> or <see cref="CommitEncodingKey"/>.</param>
+    /// <returns>The id of <c>HEAD</c>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or still prints exactly <c>HEAD</c>'s id.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string ConfigureUtf16LogEncoding(string configKey)
+    {
+        var head = Run("rev-parse", "HEAD");
+        Run("config", configKey, Utf16Encoding);
+        if (Run("log", "--max-count=1", "--format=%H") == head)
+        {
+            throw new InvalidOperationException($"git log still prints exactly the commit id with {configKey}={Utf16Encoding}");
+        }
+
+        return head;
     }
 
     /// <summary>

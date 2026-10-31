@@ -10,13 +10,14 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
 /// path as well. The size is checked before any bytes are read (an oversized
 /// file is refused unread) and the read is bounded to the cap, and every filesystem exception is caught
 /// and mapped to a typed outcome so no absolute path from a .NET exception message can escape into
-/// model context.
+/// model context. A reader serves one tool call: it loads each directory's project ignore files once and reuses
+/// them for every later read, so the scope resolver builds a new reader for every call.
 /// </summary>
 public sealed class GatedFileReader(IRootResolver root, ISecretDenylist denylist, long maxBytes, IRootResolver anchor = null, string prefix = null, ISecretContentScanner scanner = null)
 {
     private readonly IRootResolver _root = root ?? throw new ArgumentNullException(nameof(root));
     private readonly ISecretDenylist _denylist = denylist ?? throw new ArgumentNullException(nameof(denylist));
-    private readonly IRootResolver _anchor = anchor ?? root;
+    private readonly PathIgnoreEvaluator _projectIgnore = new((anchor ?? root).CanonicalRoot);
     private readonly string _prefix = prefix ?? string.Empty;
     private readonly ISecretContentScanner _scanner = scanner ?? NullSecretContentScanner.Instance;
 
@@ -49,7 +50,7 @@ public sealed class GatedFileReader(IRootResolver root, ISecretDenylist denylist
 
         // The project ignore boundary is anchored at the base root (not the effective scope), so a scoped
         // read still honors ancestor .gitignore/.mcpignore rules and no caller can read an ignored file.
-        if (PathIgnoreEvaluator.IsIgnored(_anchor.CanonicalRoot, ToBaseRelative(confined.RelativePath)))
+        if (_projectIgnore.IsIgnored(ToBaseRelative(confined.RelativePath)))
         {
             return ReadOutcome.Ignored(confined.RelativePath);
         }

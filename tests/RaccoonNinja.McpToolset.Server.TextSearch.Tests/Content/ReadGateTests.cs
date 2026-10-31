@@ -11,6 +11,11 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Tests.Content;
 /// </summary>
 public sealed class ReadGateTests
 {
+    private const string NotesFile = "notes.txt";
+    private const string NotesContent = "hello";
+    private const string GitIgnoreFile = ".gitignore";
+    private const string PackageName = "nuget";
+
     private static readonly string[] SecretPaths = ["ok.cs", ".env", ".git/config", ".ssh/id_rsa"];
 
     [Fact]
@@ -147,6 +152,43 @@ public sealed class ReadGateTests
         // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.NotFound, envelope.Error.Code);
+    }
+
+    [Fact]
+    public async Task ReadLines_IgnoreFileAddedBetweenWholeBaseCalls_RefusesTheLaterRead()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write(NotesFile, NotesContent);
+        var before = await harness.ReadLines.InvokeAsync(path: NotesFile, cancellationToken: TestContext.Current.CancellationToken);
+        harness.Write(GitIgnoreFile, NotesFile + "\n");
+
+        // Act
+        var after = await harness.ReadLines.InvokeAsync(path: NotesFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(before.Error);
+        Assert.NotNull(after.Error);
+        Assert.Equal(ErrorCodes.NotFound, after.Error.Code);
+    }
+
+    [Fact]
+    public async Task ReadLines_IgnoreFileAddedBetweenWholePackageCalls_RefusesTheLaterRead()
+    {
+        // Arrange
+        const string packageCwd = "@" + PackageName;
+        using var harness = new TextSearchHarness(packageRoots: [PackageName]);
+        harness.WritePackage(PackageName, NotesFile, NotesContent);
+        var before = await harness.ReadLines.InvokeAsync(path: NotesFile, cwd: packageCwd, cancellationToken: TestContext.Current.CancellationToken);
+        harness.WritePackage(PackageName, GitIgnoreFile, NotesFile + "\n");
+
+        // Act
+        var after = await harness.ReadLines.InvokeAsync(path: NotesFile, cwd: packageCwd, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(before.Error);
+        Assert.NotNull(after.Error);
+        Assert.Equal(ErrorCodes.NotFound, after.Error.Code);
     }
 
     [Fact]

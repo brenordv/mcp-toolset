@@ -35,7 +35,7 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile(string.Empty, IgnoreRules.GitIgnoreFileName, "bin/\n");
 
         // Act
-        var actual = PathIgnoreEvaluator.IsIgnored(_root, "bin/app.dll");
+        var actual = new PathIgnoreEvaluator(_root).IsIgnored("bin/app.dll");
 
         // Assert
         Assert.True(actual);
@@ -48,7 +48,7 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile(string.Empty, IgnoreRules.GitIgnoreFileName, "bin/\n");
 
         // Act
-        var actual = PathIgnoreEvaluator.IsIgnored(_root, "src/bin/app.dll");
+        var actual = new PathIgnoreEvaluator(_root).IsIgnored("src/bin/app.dll");
 
         // Assert
         Assert.True(actual);
@@ -61,7 +61,7 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile(string.Empty, IgnoreRules.GitIgnoreFileName, "*.log\n");
 
         // Act
-        var actual = PathIgnoreEvaluator.IsIgnored(_root, "logs/app.log");
+        var actual = new PathIgnoreEvaluator(_root).IsIgnored("logs/app.log");
 
         // Assert
         Assert.True(actual);
@@ -74,7 +74,7 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile(string.Empty, IgnoreRules.GitIgnoreFileName, "bin/\n*.log\n");
 
         // Act
-        var actual = PathIgnoreEvaluator.IsIgnored(_root, "src/Program.cs");
+        var actual = new PathIgnoreEvaluator(_root).IsIgnored("src/Program.cs");
 
         // Assert
         Assert.False(actual);
@@ -88,8 +88,8 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile("sub", IgnoreRules.McpIgnoreFileName, "!keep.log\n");
 
         // Act
-        var reincluded = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.log");
-        var stillIgnored = PathIgnoreEvaluator.IsIgnored(_root, "sub/other.log");
+        var reincluded = new PathIgnoreEvaluator(_root).IsIgnored("sub/keep.log");
+        var stillIgnored = new PathIgnoreEvaluator(_root).IsIgnored("sub/other.log");
 
         // Assert
         Assert.False(reincluded);
@@ -104,7 +104,7 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile("sub", IgnoreRules.GitIgnoreFileName, "!keep.hidden\n");
 
         // Act
-        var actual = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.hidden");
+        var actual = new PathIgnoreEvaluator(_root).IsIgnored("sub/keep.hidden");
 
         // Assert
         Assert.True(actual);
@@ -118,7 +118,7 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile("sub", ".cursorignore", "!keep.hidden\n");
 
         // Act
-        var actual = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.hidden");
+        var actual = new PathIgnoreEvaluator(_root).IsIgnored("sub/keep.hidden");
 
         // Assert
         Assert.True(actual);
@@ -132,7 +132,7 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile("sub", IgnoreRules.GitIgnoreFileName, "!keep.hidden\n");
 
         // Act
-        var actual = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.hidden");
+        var actual = new PathIgnoreEvaluator(_root).IsIgnored("sub/keep.hidden");
 
         // Assert
         Assert.True(actual);
@@ -146,8 +146,8 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile("sub", IgnoreRules.GitIgnoreFileName, "*.log\n");
 
         // Act
-        var reincluded = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.log");
-        var stillIgnored = PathIgnoreEvaluator.IsIgnored(_root, "sub/other.log");
+        var reincluded = new PathIgnoreEvaluator(_root).IsIgnored("sub/keep.log");
+        var stillIgnored = new PathIgnoreEvaluator(_root).IsIgnored("sub/other.log");
 
         // Assert
         Assert.False(reincluded);
@@ -162,7 +162,7 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile("proj", ".claudeignore", "dist/\n");
 
         // Act
-        var actual = PathIgnoreEvaluator.IsIgnored(_root, "proj/dist/app.js");
+        var actual = new PathIgnoreEvaluator(_root).IsIgnored("proj/dist/app.js");
 
         // Assert
         Assert.False(actual);
@@ -176,7 +176,7 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile("sub", IgnoreRules.GitIgnoreFileName, "!keep.log\n");
 
         // Act
-        var actual = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.log");
+        var actual = new PathIgnoreEvaluator(_root).IsIgnored("sub/keep.log");
 
         // Assert
         Assert.False(actual);
@@ -190,7 +190,7 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile("sub", IgnoreRules.McpIgnoreFileName, "!keep.hidden\n");
 
         // Act
-        var actual = PathIgnoreEvaluator.IsIgnored(_root, "sub/keep.hidden");
+        var actual = new PathIgnoreEvaluator(_root).IsIgnored("sub/keep.hidden");
 
         // Assert
         Assert.False(actual);
@@ -203,24 +203,27 @@ public sealed class PathIgnoreEvaluatorTests : IDisposable
         WriteIgnoreFile(string.Empty, ".cursorignore", "agent-secret.txt\n");
 
         // Act
-        var actual = PathIgnoreEvaluator.IsIgnored(_root, "config/agent-secret.txt");
+        var actual = new PathIgnoreEvaluator(_root).IsIgnored("config/agent-secret.txt");
 
         // Assert
         Assert.True(actual);
     }
 
     [Fact]
-    public void IsIgnored_BlankArguments_Throw()
+    public void IsIgnored_BlankPath_ThrowsArgumentException()
     {
         // Arrange
+        var evaluator = new PathIgnoreEvaluator(_root);
+
         // Act
+        var exception = Record.Exception(() => evaluator.IsIgnored("   "));
+
         // Assert
-        Assert.Throws<ArgumentException>(() => PathIgnoreEvaluator.IsIgnored("   ", "a.txt"));
-        Assert.Throws<ArgumentException>(() => PathIgnoreEvaluator.IsIgnored(_root, "   "));
+        Assert.IsType<ArgumentException>(exception);
     }
 
     [Fact]
-    public void IsIgnored_ReusedInstance_AnswersLikeTheStaticForm()
+    public void IsIgnored_ReusedInstance_AnswersEachPathByItsOwnRules()
     {
         // Arrange
         WriteIgnoreFile(string.Empty, IgnoreRules.GitIgnoreFileName, "gen/\n*.log\n");

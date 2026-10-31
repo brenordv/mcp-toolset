@@ -44,6 +44,9 @@ public static class GitCommandBuilder
     /// <c>log.showRoot=true</c> keeps a repository's config from hiding a root commit's diff: with the key off,
     /// <c>git show</c> prints no diff for a commit with no parent, and <c>git log</c> with <c>-S</c> or
     /// <c>--follow</c> never lists one.
+    /// <c>i18n.logOutputEncoding=UTF-8</c> keeps a repository's config from re-encoding what <c>git log</c> and
+    /// <c>git show</c> print: git converts each formatted record, commit id included, into that key's encoding, or into
+    /// <c>i18n.commitEncoding</c>'s when the key is unset, so a value such as <c>UTF-16</c> leaves no readable id.
     /// </summary>
     private static readonly IReadOnlyList<(string Key, string Value)> FixedConfig =
     [
@@ -58,7 +61,8 @@ public static class GitCommandBuilder
         ("log.follow", "false"),
         ("fetch.bundleURI", string.Empty),
         ("diff.autoRefreshIndex", "false"),
-        ("log.showRoot", "true")
+        ("log.showRoot", "true"),
+        ("i18n.logOutputEncoding", "UTF-8")
     ];
 
     private static readonly HashSet<string> DiffBearingSubcommands = new(StringComparer.Ordinal)
