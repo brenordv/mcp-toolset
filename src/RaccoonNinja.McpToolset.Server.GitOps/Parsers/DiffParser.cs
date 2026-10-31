@@ -139,23 +139,45 @@ public static class DiffParser
         => files.Any(file => !numstat.ContainsKey(file.Path));
 
     /// <summary>
-    /// True when a path in <paramref name="numstat"/> holds a line break and <paramref name="patch"/> has a
-    /// <c>* Unmerged path</c> line. git writes an unmerged path's name raw on that line, unlike a <c>diff --git</c> header,
-    /// so such a name can carry text that reads as a whole patch section.
+    /// True when <paramref name="patch"/> has a <c>* Unmerged path</c> line and a path in <paramref name="numstat"/>
+    /// holds a line break, or the numstat pass was cut at the output cap, so the list cannot show which names hold one.
+    /// git writes an unmerged path's name raw on that line, unlike a <c>diff --git</c> header, so such a name can carry
+    /// text that reads as a whole patch section.
     /// </summary>
     /// <param name="patch">Raw stdout bytes of the patch pass.</param>
     /// <param name="numstat">The map <see cref="ParseNumstatZ"/> returned for the same diff.</param>
+    /// <param name="numstatTruncated">Whether the numstat pass hit the output cap.</param>
     /// <returns>
-    /// <c>true</c> when at least one key of <paramref name="numstat"/> holds a line break and <paramref name="patch"/> has
-    /// at least one <c>* Unmerged path</c> line.
+    /// <c>true</c> when <paramref name="patch"/> has at least one <c>* Unmerged path</c> line and either a key of
+    /// <paramref name="numstat"/> holds a line break or <paramref name="numstatTruncated"/> is <c>true</c>.
     /// </returns>
     public static bool HasUnreadableUnmergedPath(
         byte[] patch,
-        IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat)
-        => numstat.Keys.Any(path => path.Contains('\n'))
+        IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat,
+        bool numstatTruncated)
+        => (numstatTruncated || numstat.Keys.Any(path => path.Contains('\n')))
            && TextDecoding.Decode(patch)
                .Split('\n')
                .Any(line => line.StartsWith(UnmergedPathPrefix, StringComparison.Ordinal));
+
+    /// <summary>
+    /// True when no file was read from the patch although the <c>--numstat -z</c> pass counted an added or deleted
+    /// line. git writes a <c>diff --git</c> section for every pair with a changed line, so that combination means the
+    /// patch was in a shape the reader does not recognize. A pair the numstat pass lists with 0 and 0 can have no
+    /// section of its own: an unmerged path, or a binary file whose content matches the index while its timestamps do
+    /// not, which counts as 0 and 0 since <see cref="ParseNumstatZ"/> reads its <c>-</c> counts as zero. git leaves a
+    /// text file in that state out of the numstat pass.
+    /// </summary>
+    /// <param name="files">Files read from the patch with <see cref="ParseUnified"/>.</param>
+    /// <param name="numstat">The map <see cref="ParseNumstatZ"/> returned for the same diff.</param>
+    /// <returns>
+    /// <c>true</c> when <paramref name="files"/> is empty and at least one entry of <paramref name="numstat"/> has a
+    /// nonzero count.
+    /// </returns>
+    public static bool HasCountedLinesMissingFromPatch(
+        IReadOnlyCollection<FileDiff> files,
+        IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat)
+        => files.Count == 0 && numstat.Values.Any(counts => counts.Additions > 0 || counts.Deletions > 0);
 
     /// <summary>Parse <c>git diff --name-status -z</c> into <c>path → <see cref="ChangeType"/></c>.</summary>
     /// <param name="raw">Raw stdout bytes from <c>git diff --name-status -z</c>.</param>

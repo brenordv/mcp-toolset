@@ -33,6 +33,8 @@ public class DiffParserTests
 
     private const string ForgedUnmergedPath = "m\ndiff --git a/fake.txt b/fake.txt";
     private const string UnmergedLinePrefix = "* Unmerged path ";
+    private const string UnmergedFile = "m.txt";
+    private const string BinaryNumstatRecord = "-\t-\tx.bin\0";
 
     [Fact]
     public void ParseNumstatZ_ReadsPlainEntries()
@@ -438,16 +440,31 @@ public class DiffParserTests
 
     [Theory]
     [MemberData(nameof(UnmergedPathPatches))]
-    public void HasUnreadableUnmergedPath_ReportsRawLineBreakNameOnUnmergedLine(string patch, string numstatPath, bool expected)
+    public void HasUnreadableUnmergedPath_PatchAndNumstat_ReturnsExpected(string patch, string numstatPath, bool numstatTruncated, bool expected)
     {
         // Arrange
         var numstat = new Dictionary<string, (int Additions, int Deletions)> { [numstatPath] = (0, 0) };
 
         // Act
-        var result = DiffParser.HasUnreadableUnmergedPath(Encoding.UTF8.GetBytes(patch), numstat);
+        var result = DiffParser.HasUnreadableUnmergedPath(Encoding.UTF8.GetBytes(patch), numstat, numstatTruncated);
 
         // Assert
         Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [MemberData(nameof(CountedLinePatches))]
+    public void HasCountedLinesMissingFromPatch_ParsedPatchAndNumstat_ReturnsExpected(string patch, string numstat, bool expected)
+    {
+        // Arrange
+        var files = DiffParser.ParseUnified(Encoding.UTF8.GetBytes(patch));
+        var counts = DiffParser.ParseNumstatZ(Encoding.UTF8.GetBytes(numstat));
+
+        // Act
+        var missing = DiffParser.HasCountedLinesMissingFromPatch(files, counts);
+
+        // Assert
+        Assert.Equal(expected, missing);
     }
 
     #region Test Helpers
@@ -469,13 +486,15 @@ public class DiffParserTests
         };
     }
 
-    public static TheoryData<string, string, bool> UnmergedPathPatches()
+    public static TheoryData<string, string, bool, bool> UnmergedPathPatches()
     {
         return new()
         {
-            { UnmergedLinePrefix + ForgedUnmergedPath + "\n", ForgedUnmergedPath, true },
-            { UnmergedLinePrefix + "m.txt\n", "m.txt", false },
-            { RealFileSection, "real\nname.txt", false },
+            { UnmergedLinePrefix + ForgedUnmergedPath + "\n", ForgedUnmergedPath, false, true },
+            { UnmergedLinePrefix + UnmergedFile + "\n", UnmergedFile, false, false },
+            { RealFileSection, "real\nname.txt", false, false },
+            { UnmergedLinePrefix + UnmergedFile + "\n", UnmergedFile, true, true },
+            { RealFileSection, RealFile, true, false },
         };
     }
 
@@ -568,7 +587,7 @@ public class DiffParserTests
             {
                 "diff --git a/x.bin b/x.bin\n" +
                 "Binary files a/x.bin and b/x.bin differ\n",
-                "-\t-\tx.bin\0",
+                BinaryNumstatRecord,
                 false
             },
             {
@@ -590,6 +609,18 @@ public class DiffParserTests
                 "1\t0\tcafé.txt\0",
                 true
             },
+        };
+    }
+
+    public static TheoryData<string, string, bool> CountedLinePatches()
+    {
+        return new()
+        {
+            { string.Empty, $"1\t0\t{RealFile}\0", true },
+            { string.Empty, $"0\t1\t{RealFile}\0", true },
+            { string.Empty, $"0\t0\t{RealFile}\0", false },
+            { string.Empty, BinaryNumstatRecord, false },
+            { RealFileSection, $"1\t1\t{RealFile}\0", false },
         };
     }
 

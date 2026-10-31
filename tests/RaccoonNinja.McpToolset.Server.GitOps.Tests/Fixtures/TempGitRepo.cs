@@ -65,8 +65,8 @@ internal sealed class TempGitRepo : IDisposable
     private const string TrapScript = $"#!/bin/sh\n: > \"$0{TrapMarkerSuffix}\"\necho \"trap program ran\" >&2\nexit 1\n";
 
     /// <summary>
-    /// How far <see cref="ArmFilterDriverTrap"/> moves a tracked file's modification time, so it no longer matches the time
-    /// the index recorded and git hashes the file again.
+    /// How far <see cref="ArmFilterDriverTrap"/> and <see cref="MakeStatDirty"/> move a tracked file's modification
+    /// time, so it no longer matches the time the index recorded and git hashes the file again.
     /// </summary>
     private static readonly TimeSpan StatDirtyShift = TimeSpan.FromMinutes(-10);
 
@@ -154,6 +154,25 @@ internal sealed class TempGitRepo : IDisposable
         if (Run("ls-files", "--unmerged").Length == 0)
         {
             throw new InvalidOperationException($"merging {branch} left no unmerged path");
+        }
+    }
+
+    /// <summary>
+    /// Move <paramref name="trackedPath"/>'s modification time by <see cref="StatDirtyShift"/>, so the stat data the
+    /// index recorded no longer matches the file while its content still does, then check that <c>git diff-files</c>
+    /// lists the file. <c>git diff-files</c> reports such a file as changed and never writes the index, so the check
+    /// leaves the file stat-dirty for the call under test.
+    /// </summary>
+    /// <param name="trackedPath">A <c>/</c>-separated path committed at <c>HEAD</c>, unchanged in the worktree.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or does not list the file.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void MakeStatDirty(string trackedPath)
+    {
+        var file = PrepareTarget(trackedPath);
+        File.SetLastWriteTimeUtc(file, File.GetLastWriteTimeUtc(file) + StatDirtyShift);
+        if (Run("diff-files", "--name-only", "--", trackedPath) != trackedPath)
+        {
+            throw new InvalidOperationException($"git diff-files does not list {trackedPath} after its modification time moved");
         }
     }
 

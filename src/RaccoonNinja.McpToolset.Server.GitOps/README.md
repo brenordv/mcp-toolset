@@ -143,10 +143,27 @@ alone) does not list a submodule with only uncommitted changes inside it; see
 [Security model (long version)](#security-model-long-version).
 
 On Linux and macOS, a worktree or staged `git_diff` fails with `GitCommandError` when the patch carries a
-`* Unmerged path <name>` line and any changed path has a line break in its name: git writes that line's name raw,
-where it could pass for patch text. A staged diff writes the line for every unmerged path; a worktree diff writes it
-only for a path that one side of the merge does not have (a modify/delete conflict, for one), and shows other
-conflicts as combined sections, which `git_diff` leaves out.
+`* Unmerged path <name>` line and any path the `--numstat` pass lists, a binary file whose timestamps alone changed
+included, has a line break in its name: git writes that line's name raw, where it could pass for patch text. A
+staged diff writes the line for every unmerged path; a worktree diff writes it only for a path that one side of the
+merge does not have (a modify/delete conflict, for one), and shows other conflicts as combined sections, which
+`git_diff` leaves out. On any OS the call also fails this way when the `--numstat` pass hits the 8 MB output cap
+and the patch has such a line, since the cut list cannot show which names hold a line break. Narrow the call with
+`paths` to bring the `--numstat` pass under the cap; `statOnly: true` runs no patch pass and is not affected.
+
+A diff against the working tree (worktree mode, or `fromRef` or `toRef` alone) never writes `.git/index`. When a
+file's content matches the index but its timestamps do not (a touched file, an edit undone, every file in a copied
+repository), git's own `git diff` refreshes the timestamps in the index and leaves the file out; the server runs git
+with `-c diff.autoRefreshIndex=false` instead. The patch modes still leave such a file out, since it has no changed
+line, and so does `statOnly: true` for a text file, since git's `--numstat` omits a modified text file with no
+changed line. `statOnly: true` lists a binary one as `modified` with 0 additions and 0 deletions, as it lists a
+mode-only or binary change. To tell them apart, call `git_diff` for those paths without `statOnly`: a mode or binary
+change has an entry there, a binary file whose timestamps alone changed does not. Every call compares such files'
+content again, so in a large copied repository a call can hit the 30 s timeout, or a pass that lists them
+(`--numstat` lists the binary ones, the `statOnly` `--name-status` pass lists all of them) can reach the 8 MB cap
+and return `truncated: true`; passing `paths` narrows every pass. In a repository you trust, a `git status` or
+`git update-index -q --refresh` in your own shell refreshes the timestamps and clears them; both can run commands the
+repository's config names (filter drivers, `core.fsmonitor`), which the server pins off.
 
 ```mermaid
 flowchart TD
@@ -570,15 +587,17 @@ flowchart TD
 
 - **One argv producer.** Tools declare a typed `GitIntent`; a single `GitCommandBuilder` is the only code that
   serializes it to argv. It prepends fixed `-c` neutralizers (disable hooks, pager, fsmonitor, credential helpers,
-  askpass, auto-gc, signature verification, rename following from config) and, before any positional ref, inserts
-  `--end-of-options` so no user value can be read as an option (git grep excepted: its pattern is a glued `-e` token
-  and its refs are pre-resolved SHAs). `log.showSignature=false` is there because verifying a signed commit runs the
-  program `gpg.program`, `gpg.ssh.program`, or `gpg.x509.program` names, and a repository's own config can set both
-  keys; a forged signature is enough. `log.follow=false` is there because `log.follow=true` in config makes `git log`
-  with one path follow renames although `follow` was false. `fetch.bundleURI=` is there for a git that does not check
-  `GIT_NO_LAZY_FETCH` (see the Scrubbed environment bullet below): from git 2.40.0, the `git fetch` that git starts for
-  a lazy fetch first downloads the bundle a repository's `fetch.bundleURI` names, before any protocol check, and git
-  skips an empty bundle URI.
+  askpass, auto-gc, signature verification, rename following from config, the index refresh in `git diff`) and,
+  before any positional ref, inserts `--end-of-options` so no user value can be read as an option (git grep excepted:
+  its pattern is a glued `-e` token and its refs are pre-resolved SHAs). `log.showSignature=false` is there because
+  verifying a signed commit runs the program `gpg.program`, `gpg.ssh.program`, or `gpg.x509.program` names, and a
+  repository's own config can set both keys; a forged signature is enough. `log.follow=false` is there because
+  `log.follow=true` in config makes `git log` with one path follow renames although `follow` was false.
+  `fetch.bundleURI=` is there for a git that does not check `GIT_NO_LAZY_FETCH` (see the Scrubbed environment bullet
+  below): from git 2.40.0, the `git fetch` that git starts for a lazy fetch first downloads the bundle a repository's
+  `fetch.bundleURI` names, before any protocol check, and git skips an empty bundle URI. `diff.autoRefreshIndex=false`
+  is there because a `git diff` against the working tree otherwise rewrites `.git/index` under its lock, which
+  `GIT_OPTIONAL_LOCKS=0` does not prevent.
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or

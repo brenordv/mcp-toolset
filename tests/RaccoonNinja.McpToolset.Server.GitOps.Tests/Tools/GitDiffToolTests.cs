@@ -12,6 +12,7 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Tools;
 public sealed class GitDiffToolTests : IDisposable
 {
     private const string ChangedFile = "a.txt";
+    private const string BinaryFile = "x.bin";
     private const string GitlinkMode = "160000";
     private const string SubmodulePath = "sub";
     private const string SubmoduleOldCommit = "1111111111111111111111111111111111111111";
@@ -32,6 +33,9 @@ public sealed class GitDiffToolTests : IDisposable
     private const string ThreeLineContent = "one\ntwo\nthree\n";
     private const string ForgedUnmergedPath = "m\ndiff --git a/fake.txt b/fake.txt\n@@ -0,0 +1 @@\n+fake";
     private const string UnreadablePatchMessage = "a changed path holds a line break while a path is unmerged; the patch cannot be read safely";
+    private const string CutNumstatMessage = "the --numstat pass hit the output cap while a path is unmerged; the patch cannot be read safely";
+    private const string DeleteSubject = "delete";
+    private const string ModifySubject = "modify";
 
     private readonly TempGitRepo _repo;
     private readonly GitDiffTool _tool;
@@ -46,13 +50,7 @@ public sealed class GitDiffToolTests : IDisposable
         _repo.Run("add", ".");
         _repo.Run("commit", "-m", "second");
 
-        var common = new ToolCommon(
-            new RepoRootResolver(TestGit.Executable),
-            new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
-            new SessionMetrics(),
-            NullLoggerFactory.Instance,
-            TestGit.Executable);
-        _tool = new GitDiffTool(common, new RefVerifier(TestGit.Executable));
+        _tool = BuildTool(new GitProcessRunner(NullLogger<GitProcessRunner>.Instance));
     }
 
     public void Dispose() => _repo.Dispose();
@@ -298,10 +296,10 @@ public sealed class GitDiffToolTests : IDisposable
         _repo.Run("commit", "-m", BaseSubject);
         _repo.Run("checkout", "-b", TheirsBranch);
         _repo.Run("rm", "--", ForgedUnmergedPath);
-        _repo.Run("commit", "-m", "delete");
+        _repo.Run("commit", "-m", DeleteSubject);
         _repo.Run("checkout", MainBranch);
         _repo.WriteFile(ForgedUnmergedPath, OursContent);
-        _repo.Run("commit", "-am", "modify");
+        _repo.Run("commit", "-am", ModifySubject);
         _repo.MergeLeavingConflicts(TheirsBranch);
 
         // Act
@@ -312,4 +310,110 @@ public sealed class GitDiffToolTests : IDisposable
         Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
         Assert.Equal(UnreadablePatchMessage, envelope.Error.Message);
     }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("HEAD", false)]
+    [InlineData(null, true)]
+    public async Task Diff_AgainstWorktreeWithStatDirtyFile_LeavesIndexUnchanged(string fromRef, bool statOnly)
+    {
+        // Arrange
+        _repo.MakeStatDirty(ChangedFile);
+        var indexPath = Path.Combine(_repo.RepoPath, ".git", "index");
+        var indexBefore = File.ReadAllBytes(indexPath);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, fromRef: fromRef, statOnly: statOnly, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(indexBefore, File.ReadAllBytes(indexPath));
+    }
+
+    [Fact]
+    public async Task Diff_StatOnlyWithStatDirtyFiles_ListsOnlyBinaryFileWithZeroCounts()
+    {
+        // Arrange
+        _repo.WriteBytes(BinaryFile, [0, 1, 2, 0, 3]);
+        _repo.Run("add", ".");
+        _repo.Run("commit", "-m", AddedFileSubject);
+        _repo.MakeStatDirty(ChangedFile);
+        _repo.MakeStatDirty(BinaryFile);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, statOnly: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var diff = Assert.IsType<DiffResult>(envelope.Results[0]);
+        var file = Assert.Single(diff.Files);
+        Assert.Equal(BinaryFile, file.Path);
+        Assert.Equal(ChangeType.Modified, file.ChangeType);
+        Assert.Equal(0, file.Additions);
+        Assert.Equal(0, file.Deletions);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Diff_WithUnmergedPathAndCutNumstat_FailsWithGitCommandError(bool staged)
+    {
+        // Arrange
+        _repo.WriteFile(ConflictFile, BaseContent);
+        _repo.Run("add", ".");
+        _repo.Run("commit", "-m", BaseSubject);
+        _repo.Run("checkout", "-b", TheirsBranch);
+        _repo.Run("rm", "--", ConflictFile);
+        _repo.Run("commit", "-m", DeleteSubject);
+        _repo.Run("checkout", MainBranch);
+        _repo.WriteFile(ConflictFile, OursContent);
+        _repo.Run("commit", "-am", ModifySubject);
+        _repo.MergeLeavingConflicts(TheirsBranch);
+        var tool = BuildTool(new NumstatTruncatingRunner());
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, staged: staged, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
+        Assert.Equal(CutNumstatMessage, envelope.Error.Message);
+    }
+
+    #region Test Helpers
+
+    /// <summary>Build the tool under test over <paramref name="runner"/>, with the real root resolver and ref verifier.</summary>
+    /// <param name="runner">The runner every git process of the call goes through.</param>
+    /// <returns>The tool.</returns>
+    private static GitDiffTool BuildTool(IGitProcessRunner runner)
+    {
+        var common = new ToolCommon(
+            new RepoRootResolver(TestGit.Executable),
+            runner,
+            new SessionMetrics(),
+            NullLoggerFactory.Instance,
+            TestGit.Executable);
+        return new GitDiffTool(common, new RefVerifier(TestGit.Executable));
+    }
+
+    /// <summary>Runs git for real and marks the result of every <c>--numstat</c> pass as cut at the output cap.</summary>
+    private sealed class NumstatTruncatingRunner : IGitProcessRunner
+    {
+        private readonly GitProcessRunner _inner = new(NullLogger<GitProcessRunner>.Instance);
+
+        public async Task<RunResult> RunAsync(
+            IList<string> argv,
+            IDictionary<string, string> env,
+            string workingDirectory,
+            int? timeoutMs = null,
+            int? outputCapBytes = null,
+            int? callId = null,
+            CancellationToken cancellationToken = default)
+        {
+            var result = await _inner.RunAsync(argv, env, workingDirectory, timeoutMs, outputCapBytes, callId, cancellationToken);
+            return argv.Contains("--numstat") ? result with { Truncated = true } : result;
+        }
+    }
+
+    #endregion
 }

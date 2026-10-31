@@ -37,6 +37,10 @@ public static class GitCommandBuilder
     /// <c>fetch.bundleURI=</c> reaches the <c>git fetch</c> a lazy fetch starts on a git that does not check
     /// <c>GIT_NO_LAZY_FETCH</c>: from git 2.40.0 that fetch first downloads the bundle the key names, before any protocol
     /// check, and git skips an empty bundle URI.
+    /// <c>diff.autoRefreshIndex=false</c> keeps a <c>git diff</c> against the working tree from rewriting
+    /// <c>.git/index</c>: with the key on, git refreshes the stat data of each file whose content matches the
+    /// index but whose timestamps do not, holding the index lock, and <c>GIT_OPTIONAL_LOCKS=0</c> does not cover
+    /// that write.
     /// </summary>
     private static readonly IReadOnlyList<(string Key, string Value)> FixedConfig =
     [
@@ -49,7 +53,8 @@ public static class GitCommandBuilder
         ("core.quotePath", "false"),
         ("log.showSignature", "false"),
         ("log.follow", "false"),
-        ("fetch.bundleURI", string.Empty)
+        ("fetch.bundleURI", string.Empty),
+        ("diff.autoRefreshIndex", "false")
     ];
 
     private static readonly HashSet<string> DiffBearingSubcommands = new(StringComparer.Ordinal)

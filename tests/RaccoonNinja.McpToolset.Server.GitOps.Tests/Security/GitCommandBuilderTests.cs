@@ -5,6 +5,8 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Security;
 
 public class GitCommandBuilderTests
 {
+    private const string AutoRefreshIndexPin = "diff.autoRefreshIndex=false";
+
     private static readonly string GitExecutable = Path.Combine(Path.GetTempPath(), "git");
 
     private static GitIntent BasicIntent(string subcommand = "log")
@@ -30,6 +32,7 @@ public class GitCommandBuilderTests
         Assert.Contains("log.showSignature=false", argv);
         Assert.Contains("log.follow=false", argv);
         Assert.Contains("fetch.bundleURI=", argv);
+        Assert.Contains(AutoRefreshIndexPin, argv);
     }
 
     [Fact]
@@ -371,6 +374,7 @@ public class GitCommandBuilderTests
         Assert.Contains("--no-pager", prefix);
         Assert.Contains("log.showSignature=false", prefix);
         Assert.Contains("fetch.bundleURI=", prefix);
+        Assert.Contains(AutoRefreshIndexPin, prefix);
     }
 
     [Fact]

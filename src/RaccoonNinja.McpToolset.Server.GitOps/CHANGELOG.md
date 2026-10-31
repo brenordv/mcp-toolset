@@ -1,3 +1,30 @@
+## v2.19.0
+- Fixed: a `git_diff` against the working tree (worktree mode, or `fromRef` or `toRef` alone) that met a file whose
+  content matched the index but whose timestamps did not (a touched file, an edit undone, every file in a copied
+  repository) made git rewrite `.git/index` with the new timestamps, holding the index lock while it did, so a git
+  command of yours could fail at that moment. `GIT_OPTIONAL_LOCKS=0` does not cover that write
+  (`diff.autoRefreshIndex`). Every git call now passes `-c diff.autoRefreshIndex=false`.
+- Fixed: a worktree or staged `git_diff` whose `--numstat` pass hit the 8 MB output cap skipped the v2.18.0 check for
+  an unmerged path whose name holds a line break, so on Linux and macOS a repository with enough paths ahead of such a
+  name could still forge file entries. Such a call now fails with `GitCommandError` whenever the patch has a
+  `* Unmerged path` line.
+- Behavior change: a binary file whose timestamps alone changed now shows in `statOnly: true` results of a diff against
+  the working tree as `modified` with 0 additions and 0 deletions, until the index is refreshed (in a repository you
+  trust, a `git status` or `git update-index -q --refresh` of yours does it). A text file whose timestamps alone
+  changed is still left out, since git's `--numstat` omits a modified text file with no changed line, and the patch
+  modes still leave out both. Each such call compares those files' content again, where git used to refresh the index
+  once, so in a large copied repository a call can hit the timeout or the output cap.
+- Log change: every `argv_built` debug line shows `-c diff.autoRefreshIndex=false`, and its `argv_len` is 2 higher; the
+  bootstrap calls (`git version` at startup and the `rev-parse` calls) carry the same pin but log no argv line.
+  `patch_parse_empty` on `git_diff` now fires only when the `--numstat` pass counts an added or deleted line and the
+  patch yields no file, so a diff whose only entries are binary files whose timestamps alone changed, or unmerged
+  paths, no longer logs it; nor does one whose entries are all binary, mode-only, empty added files, or pure renames.
+  `git_stash_show` is unchanged. A call that such files push past the 8 MB cap (the binary ones in the `--numstat`
+  pass, all of them in the `statOnly` `--name-status` pass) counts in `truncations_total`, and a cut `--numstat` pass
+  skips the `patch_path_unmatched` check. A call the new cut-numstat check fails logs `tool_error` at Error with its
+  fixed message (`the --numstat pass hit the output cap while a path is unmerged; the patch cannot be read safely`)
+  and counts in `truncations_total`.
+
 ## v2.18.0
 - Fixed: a worktree `git_diff` with a path a merge left unmerged attached that path's combined (`diff --cc`) hunks to
   another file in the result, and could mark that file `deleted`. The patch reader now reads only `diff --git` sections
