@@ -137,11 +137,11 @@ public class OtherParsersTests
     public void Branch_StripsRefsHeadsAndDetectsCurrent()
     {
         // Arrange
-        var line = $"refs/heads/main{Us}*{Us}abc123{Us}origin/main{Us}tip subject\n" +
-                   $"refs/remotes/origin/main{Us} {Us}abc123{Us}{Us}\n";
+        const string output = $"refs/heads/main{Nul}*{Nul}abc123{Nul}origin/main{Nul}tip subject{Nul}\n" +
+                              $"refs/remotes/origin/main{Nul} {Nul}abc123{Nul}{Nul}{Nul}\n";
 
         // Act
-        var branches = BranchParser.Parse(Encoding.UTF8.GetBytes(line));
+        var branches = BranchParser.Parse(Encoding.UTF8.GetBytes(output), truncated: false);
 
         // Assert
         Assert.Equal(2, branches.Count);

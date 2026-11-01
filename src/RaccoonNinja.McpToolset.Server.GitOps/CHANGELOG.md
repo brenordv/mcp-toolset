@@ -1,3 +1,22 @@
+## v2.26.0
+- Fixed: `git_branch_list` framed `git for-each-ref` output with the byte 0x1F between fields and a newline after each
+  ref. git keeps 0x1F in a tip commit's subject, so such a subject was cut at that byte. A branch's upstream is the
+  repository's own config text (`branch.<name>.merge`, mapped through the remote's fetch refspec, or as it is when
+  `branch.<name>.remote` is `.`), printed unchecked, so a value holding a newline and 0x1F, which a repository that
+  arrives with its `.git` can carry, could add a forged entry (any name, current-branch marker, and tip id) or put
+  other text in the real entry's upstream and subject.
+  `git_branch_list` now ends each field with NUL (`%00`) and checks the newline git prints after each ref; git never
+  prints a NUL inside one of those fields. Behavior change: such subjects and upstreams come back as recorded, with no
+  forged entry, and an upstream can hold a newline. Output that is not whole records fails the call with
+  `GitCommandError`. In a truncated reply the last ref is left out unless its subject is non-empty, as before for a
+  ref the 8 MB cap cut inside its name, tip id, or upstream; a ref cut inside its subject still comes back cut short
+  with `truncated: true`. A ref cut right before its subject, and a whole last ref with an empty subject, are now left
+  out of a truncated reply too.
+- Log change: the `argv_built` debug line of `git_branch_list`'s `git for-each-ref` shows the `%00` format, its
+  `argv_len` unchanged. Output that is not whole records logs the existing `tool_error` Error line with the fixed
+  message `git printed output that is not a whole number of NUL-framed records` and no `git_exit_code`; it counts as
+  `error` in `tool_calls_total` and not in `git_command_errors_total`.
+
 ## v2.25.0
 - Added a `git_version` tool (no arguments): `{ version }`, the text after `git version ` that the server read from
   the git it runs when it started, the value its `git_version` log line holds. It starts no git process and has no

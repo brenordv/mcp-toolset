@@ -457,8 +457,11 @@ flowchart LR
 
 ### `git_branch_list`
 
-Lists local branches, and remotes when `includeRemote: true`. Uses `git for-each-ref` with a unit-separator (`\x1f`)
-format so each branch yields its refname, HEAD marker, object name, upstream, and subject parsed into `Branch` records.
+Lists local branches, and remotes when `includeRemote: true`. Uses `git for-each-ref` with a format that ends each
+field with NUL (`%00`), so each branch yields its refname, HEAD marker, object name, upstream, and subject parsed
+into `Branch` records (see [Security model (long version)](#security-model-long-version)). `upstream` is the
+repository's own config text (`branch.<name>.merge`, mapped through the remote's fetch refspec, or as it is when
+`branch.<name>.remote` is `.`), printed unchecked, so it can hold any text, newlines included.
 
 ```mermaid
 flowchart LR
@@ -676,15 +679,18 @@ flowchart TD
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
 - **Records are framed by NUL.** `git_log`, the `git_show` metadata pass, `git_blame`'s author pass, `git_reflog`, and
-  `git_stash_list` print their fields with `%x00` between them and `-z`, which ends each record with NUL. git prints
-  every such field (commit text, author names, reflog messages) as text that stops at the first NUL, so a commit, an
-  author name, or a reflog message cannot add, split, or shift a record, whatever bytes it holds (newlines and the 0x1E
-  and 0x1F bytes included); a field ends early at a NUL that re-encoding a commit's declared encoding produces. Output
-  that is not a whole number of records fails the call with `GitCommandError`. Output cut by the 8 MB cap sets
-  `truncated: true` and returns its last record cut short (the field at the cut keeps its first bytes, later fields are
-  empty, so a later time reads as the Unix epoch), so treat the last item of a truncated reply as partial;
-  `git_stash_list` leaves out an entry cut inside its selector, and `git_blame`'s author pass fails the call instead
-  (see [`git_blame`](#git_blame)).
+  `git_stash_list` print their fields with `%x00` between them and `-z`, which ends each record with NUL.
+  `git_branch_list` prints `%00` after each `git for-each-ref` field; that command has no `-z` and ends each ref with
+  a newline, which the server expects right after a ref's last NUL. git prints every such field (commit text, author
+  names, reflog messages, a branch's upstream) as text that stops at the first NUL, so a commit, an author name, a
+  reflog message, or a repository's own config cannot add, split, or shift a record, whatever bytes it holds
+  (newlines and the 0x1E and 0x1F bytes included); a field ends early at a NUL that re-encoding a commit's declared
+  encoding produces. Output that is not a whole number of records fails the call with `GitCommandError`. Output cut
+  by the 8 MB cap sets `truncated: true` and returns its last record cut short (the field at the cut keeps its first
+  bytes, later fields are empty, so a later time reads as the Unix epoch), so treat the last item of a truncated
+  reply as partial; `git_stash_list` leaves out an entry cut inside its selector, `git_branch_list` leaves out its
+  last ref unless that ref's subject is non-empty (so a ref cut before its subject is left out), and `git_blame`'s
+  author pass fails the call instead (see [`git_blame`](#git_blame)).
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or
   drive-relative prefix, an NTFS alternate data stream, or otherwise escapes the root. The result is a repo-relative
   POSIX path placed after `--` as a `:(literal)` pathspec, so wildcards in it are plain characters.

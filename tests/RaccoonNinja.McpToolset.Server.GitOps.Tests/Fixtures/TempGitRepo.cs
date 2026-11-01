@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
 
@@ -115,6 +116,12 @@ internal sealed class TempGitRepo : IDisposable
 
     /// <summary>How <c>git diff --numstat</c> starts the line of a file it reads as binary: <c>-</c> for both counts.</summary>
     private const string BinaryNumstatPrefix = "-\t-\t";
+
+    /// <summary>The full name of the branch the repository starts on.</summary>
+    private const string MainBranchRef = "refs/heads/main";
+
+    /// <summary>The <c>git for-each-ref</c> format that prints a branch's upstream, shortened as <c>git_branch_list</c> asks for it.</summary>
+    private const string UpstreamShortFormat = "--format=%(upstream:short)";
 
     /// <summary>Appended to the script's path to name the marker file the script creates when it runs.</summary>
     private const string TrapMarkerSuffix = ".ran";
@@ -440,6 +447,29 @@ internal sealed class TempGitRepo : IDisposable
         if (!Run("diff", "--numstat", "HEAD~1", "HEAD", "--", trackedPath).StartsWith(BinaryNumstatPrefix, StringComparison.Ordinal))
         {
             throw new InvalidOperationException($"git diff --numstat does not mark {trackedPath} binary");
+        }
+    }
+
+    /// <summary>
+    /// Make <c>main</c> track a branch of this repository, as a repository's own config can: <c>branch.main.remote</c>
+    /// is <c>.</c> and <c>branch.main.merge</c> is <paramref name="merge"/>. Then check that <c>git for-each-ref</c>
+    /// prints <paramref name="merge"/> unchanged as <c>main</c>'s <c>%(upstream:short)</c>, so a test that passes a
+    /// value holding a newline or 0x1F never passes on a git that checks or rewrites it.
+    /// </summary>
+    /// <param name="merge">The value; one git prints unshortened, so not starting with <c>refs/</c>.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when git fails or prints another upstream; the message carries what git printed, JSON-escaped.
+    /// </exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void ConfigureLocalUpstream(string merge)
+    {
+        Run("config", "branch.main.remote", ".");
+        Run("config", "branch.main.merge", merge);
+        var printed = Run("for-each-ref", UpstreamShortFormat, MainBranchRef);
+        if (printed != merge)
+        {
+            throw new InvalidOperationException(
+                $"git for-each-ref printed {JsonSerializer.Serialize(printed)} as main's upstream, not branch.main.merge unchanged");
         }
     }
 
