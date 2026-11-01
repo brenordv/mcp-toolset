@@ -1,3 +1,14 @@
+## v1.10.0
+- Changed: `UTF.Unknown` 2.7.0 → 2.8.0. It reads a file in 1,024-byte batches and stops once it is confident, so the
+  codepage `inspect_files` reports and the read tools decode with for a file that is not valid UTF-8 can differ from
+  v1.9.0, and it can name `utf-8`, `shift-jis`, or `iso-2022-jp` for a file whose start fits that encoding but whose
+  later bytes do not. A charset guess is now kept only when decoding the file and encoding the text back gives the
+  same bytes; otherwise the file is reported as `iso-8859-1` at confidence 0, `read_lines`, `read_json`, and
+  `search_text` decode it as Latin-1, and the secret scan reads the Latin-1 view, so a key inside an ISO-2022-JP
+  escape is still withheld. No log change. Both servers share the fix through `Common.Files`.
+- Fixed: a file of ASCII text holding one `0xA0` byte was reported as `ascii` at confidence 1 and lost that byte in
+  decoding; it is now reported as `iso-8859-1` at confidence 0 and read as Latin-1.
+
 ## v1.9.0
 - Fixed: the generic host logged `Content root path: <working directory>` at Information on every startup; the
   host's lifetime category is now held at Warning. Log change: the host's four status lines (`Application started`,

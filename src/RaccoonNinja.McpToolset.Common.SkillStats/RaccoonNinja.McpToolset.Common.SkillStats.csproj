@@ -21,8 +21,8 @@
   <ItemGroup>
     <PackageReference Include="Dapper" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
-    <!-- Direct reference so the central 3.0.5 pin overrides the vulnerable transitive 2.1.11
-         (GHSA-2m69-gcr7-jv3q); Microsoft.Data.Sqlite declares an open >= range, so this is legal. -->
+    <!-- Direct reference so the central SQLitePCLRaw pin, which brings a known SQLite version, overrides
+         Microsoft.Data.Sqlite's transitive one; Microsoft.Data.Sqlite declares an open >= range, so this is legal. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
     <PackageReference Include="Roslynator.Analyzers">
       <PrivateAssets>all</PrivateAssets>

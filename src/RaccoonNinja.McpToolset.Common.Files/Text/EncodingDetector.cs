@@ -187,11 +187,17 @@ public sealed class EncodingDetector : IEncodingDetector
         }
     }
 
-    /// <summary>No BOM, no NULs, invalid UTF-8: some 8-bit codepage. Ask the charset detector, falling back to Latin-1 (decodes any byte) at zero confidence.</summary>
+    /// <summary>
+    /// No BOM, no NULs, invalid UTF-8: some other codepage. Ask the charset detector and keep its guess only when that
+    /// encoding decodes the payload and encodes the text back to the same bytes; otherwise, or with no guess, fall back
+    /// to Latin-1 (decodes any byte) at zero confidence. The detector can stop reading once it is confident, so a guess
+    /// can fit only the bytes it read; decoding through it would drop the rest on the next write and could hide them
+    /// from the secret scan.
+    /// </summary>
     private static DetectedEncoding GuessCodepage(byte[] content)
     {
         var detected = CharsetDetector.DetectFromBytes(content)?.Detected;
-        if (detected?.Encoding is not null)
+        if (detected?.Encoding is not null && RoundTrips(content, detected.Encoding))
         {
             return new DetectedEncoding
             {
@@ -214,6 +220,13 @@ public sealed class EncodingDetector : IEncodingDetector
             Step = EncodingDetectionStep.CharsetGuess,
         };
     }
+
+    /// <summary>Whether decoding <paramref name="content"/> with <paramref name="encoding"/> and encoding the text back gives the same bytes.</summary>
+    /// <param name="content">The raw payload.</param>
+    /// <param name="encoding">The guessed encoding.</param>
+    /// <returns><c>true</c> when the round trip reproduces every byte.</returns>
+    private static bool RoundTrips(byte[] content, Encoding encoding)
+        => encoding.GetBytes(encoding.GetString(content)).AsSpan().SequenceEqual(content);
 
     private static DetectedEncoding Utf8NoBom()
         => new()
