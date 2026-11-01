@@ -12,6 +12,8 @@ public sealed class GitReflogToolTests : IDisposable
 {
     private const string TrackedFile = "a.txt";
     private const string SignedSubject = "signed";
+    private const string ReflogSubcommand = "reflog";
+    private const int KeptEntryBytes = 45;
 
     private readonly TempGitRepo _repo;
     private readonly GitReflogTool _tool;
@@ -23,13 +25,7 @@ public sealed class GitReflogToolTests : IDisposable
         _repo.Run("add", ".");
         _repo.Run("commit", "-m", "first");
 
-        var common = new ToolCommon(
-            new RepoRootResolver(TestGit.Executable),
-            new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
-            new SessionMetrics(),
-            NullLoggerFactory.Instance,
-            TestGit.Executable);
-        _tool = new GitReflogTool(common);
+        _tool = BuildTool(new GitProcessRunner(NullLogger<GitProcessRunner>.Instance));
     }
 
     public void Dispose() => _repo.Dispose();
@@ -50,4 +46,55 @@ public sealed class GitReflogToolTests : IDisposable
         Assert.Equal(signedHash, entry.Hash);
         Assert.False(File.Exists(marker));
     }
+
+    [Fact]
+    public async Task Reflog_SubjectHoldingFieldSeparator_ReportsUnshiftedEntry()
+    {
+        // Arrange
+        var authorTime = _repo.CommitWithReflogSubject(TempGitRepo.ShiftingSubject);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, maxCount: 1, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var entry = Assert.IsType<ReflogEntry>(Assert.Single(envelope.Results));
+        Assert.Equal($"commit: {TempGitRepo.ShiftingSubject}", entry.Subject);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(authorTime), entry.When);
+    }
+
+    [Fact]
+    public async Task Reflog_OutputCut_ReturnsTheCutEntryMarkedTruncated()
+    {
+        // Arrange
+        var head = _repo.Run("rev-parse", "HEAD");
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(ReflogSubcommand), KeptEntryBytes));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.True(envelope.Truncated);
+        var entry = Assert.IsType<ReflogEntry>(Assert.Single(envelope.Results));
+        Assert.Equal(head, entry.Hash);
+    }
+
+    #region Test Helpers
+
+    /// <summary>Build the tool under test over <paramref name="runner"/>, with the real root resolver.</summary>
+    /// <param name="runner">The runner every git process of the call goes through.</param>
+    /// <returns>The tool.</returns>
+    private static GitReflogTool BuildTool(IGitProcessRunner runner)
+    {
+        var common = new ToolCommon(
+            new RepoRootResolver(TestGit.Executable),
+            runner,
+            new SessionMetrics(),
+            NullLoggerFactory.Instance,
+            TestGit.Executable);
+        return new GitReflogTool(common);
+    }
+
+    #endregion
 }

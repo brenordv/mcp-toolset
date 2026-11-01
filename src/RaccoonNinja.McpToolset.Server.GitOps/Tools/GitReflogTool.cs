@@ -32,11 +32,11 @@ public sealed class GitReflogTool(ToolCommon common)
                 Subcommand = "reflog",
                 SubSubcommand = "show",
                 RepoRoot = root,
-                Flags = [$"--format={ReflogParser.ReflogFormat}"],
+                Flags = [.. ReflogParser.FormatFlags],
                 AttachedOptions = attached,
             };
             var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
-            var entries = ReflogParser.Parse(result.Stdout);
+            var entries = ReflogParser.Parse(result.Stdout, result.Truncated);
 
             var filtersApplied = FiltersAppliedBuilder.Create()
                 .Number("max_count", maxCount)

@@ -1,10 +1,11 @@
+using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
 using RaccoonNinja.McpToolset.Server.GitOps.Models;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 
 /// <summary>
-/// Parser for <c>git log --pretty=format:%H%x1f%h%x1f...%x1e</c> output.
-/// Fields are separated by Unit Separator (US, 0x1F); commits by Record Separator (RS, 0x1E).
+/// Parser for <c>git log -z --pretty=tformat:%H%x00%h%x00...%x00%b</c> output: fields separated by NUL, each record ended
+/// by NUL (see <see cref="NulRecords"/>).
 /// </summary>
 public static class LogParser
 {
@@ -23,60 +24,53 @@ public static class LogParser
     ];
 
     /// <summary>
-    /// The git pretty-format spec corresponding to <see cref="LogFieldOrder"/>. It carries no <c>%G</c> placeholder: those
-    /// verify the commit's signature by running the program <c>gpg.program</c> names, whatever <c>log.showSignature</c>
-    /// says, and a repository's own config can name that program.
+    /// The git pretty-format spec corresponding to <see cref="LogFieldOrder"/>, its fields separated by NUL (<c>%x00</c>).
+    /// It carries no <c>%G</c> placeholder: those verify the commit's signature by running the program <c>gpg.program</c>
+    /// names, whatever <c>log.showSignature</c> says, and a repository's own config can name that program.
     /// </summary>
-    public const string LogPrettyFormat = "%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%ct%x1f%s%x1f%b%x1e";
+    public const string LogPrettyFormat = "%H%x00%h%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00%s%x00%b";
 
-    private const char UnitSeparator = '\x1f';
-    private const char RecordSeparator = '\x1e';
+    /// <summary>
+    /// The flags every <c>git log</c> intent <see cref="Parse"/> reads passes: <c>-z</c>, which makes git end each record
+    /// with NUL, and <see cref="LogPrettyFormat"/> as <c>tformat:</c>, which ends every record, the last one included.
+    /// </summary>
+    public static readonly IReadOnlyList<string> FormatFlags = ["-z", $"--pretty=tformat:{LogPrettyFormat}"];
 
-    /// <summary>Parse the output of <c>git log --pretty=format:%H%x1f...%x1e</c>.</summary>
-    public static IReadOnlyList<Commit> Parse(byte[] raw)
+    /// <summary>Parse the output of a <c>git log</c> run with <see cref="FormatFlags"/>.</summary>
+    /// <param name="raw">git's standard output.</param>
+    /// <param name="truncated">Whether the output hit the output cap; a cut last record comes back with its missing fields empty.</param>
+    /// <returns>The commits, in git's order.</returns>
+    /// <exception cref="GitCommandException">The output was not cut and is not a whole number of records.</exception>
+    public static IReadOnlyList<Commit> Parse(byte[] raw, bool truncated)
+        => [.. NulRecords.Split(raw, LogFieldOrder.Length, truncated).Select(ToCommit)];
+
+    /// <summary>Build a <see cref="Commit"/> from one record's fields, in <see cref="LogFieldOrder"/>.</summary>
+    /// <param name="fields">The record's fields.</param>
+    /// <returns>The commit.</returns>
+    private static Commit ToCommit(string[] fields)
     {
-        var text = TextDecoding.Decode(raw);
-        if (string.IsNullOrWhiteSpace(text)) return [];
+        var parents = fields[2]
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-        var result = new List<Commit>();
-        foreach (var rawRecord in text.Split(RecordSeparator))
+        var authoredUnix = long.TryParse(fields[5], out var aSeconds) ? aSeconds : 0L;
+        var committedUnix = long.TryParse(fields[6], out var cSeconds) ? cSeconds : 0L;
+        var authored = DateTimeOffset.FromUnixTimeSeconds(authoredUnix);
+        var committed = DateTimeOffset.FromUnixTimeSeconds(committedUnix);
+        var bodyRaw = fields[8].TrimEnd('\n');
+        var body = string.IsNullOrWhiteSpace(bodyRaw) ? null : bodyRaw;
+
+        return new Commit
         {
-            var record = rawRecord.TrimStart('\n');
-            if (string.IsNullOrWhiteSpace(record)) continue;
-
-            var fields = record.Split(UnitSeparator);
-            if (fields.Length < LogFieldOrder.Length)
-            {
-                var padded = new string[LogFieldOrder.Length];
-                Array.Copy(fields, padded, fields.Length);
-                for (var i = fields.Length; i < padded.Length; i++) padded[i] = string.Empty;
-                fields = padded;
-            }
-
-            var parents = fields[2]
-                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-            var authoredUnix = long.TryParse(fields[5], out var aSeconds) ? aSeconds : 0L;
-            var committedUnix = long.TryParse(fields[6], out var cSeconds) ? cSeconds : 0L;
-            var authored = DateTimeOffset.FromUnixTimeSeconds(authoredUnix);
-            var committed = DateTimeOffset.FromUnixTimeSeconds(committedUnix);
-            var bodyRaw = fields[8].TrimEnd('\n');
-            var body = string.IsNullOrWhiteSpace(bodyRaw) ? null : bodyRaw;
-
-            result.Add(new Commit
-            {
-                Hash = fields[0],
-                ShortHash = fields[1],
-                AuthorName = fields[3],
-                AuthorEmail = fields[4],
-                AuthoredAt = authored,
-                CommittedAt = committed,
-                RelativeTime = RelativeTime.Describe(authored),
-                Subject = fields[7],
-                Body = body,
-                Parents = parents,
-            });
-        }
-        return result;
+            Hash = fields[0],
+            ShortHash = fields[1],
+            AuthorName = fields[3],
+            AuthorEmail = fields[4],
+            AuthoredAt = authored,
+            CommittedAt = committed,
+            RelativeTime = RelativeTime.Describe(authored),
+            Subject = fields[7],
+            Body = body,
+            Parents = parents,
+        };
     }
 }

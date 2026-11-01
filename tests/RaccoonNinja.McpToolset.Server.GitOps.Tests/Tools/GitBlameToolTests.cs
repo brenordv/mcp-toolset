@@ -16,6 +16,8 @@ public sealed class GitBlameToolTests : IDisposable
     private const string StdinFlag = "--stdin";
     private const string TwoLines = "one\ntwo\n";
     private const string AuthorListMismatchMessage = "git log returned an author list that does not match the blamed commits";
+    private const int CutAuthorBytes = 10;
+    private const string AuthorPassCutMessage = "the blamed commits' author pass hit the output cap";
 
     private readonly TempGitRepo _repo;
     private readonly GitBlameTool _tool;
@@ -115,21 +117,40 @@ public sealed class GitBlameToolTests : IDisposable
     }
 
     [Fact]
-    public async Task Blame_AuthorNameHoldingRecordSeparator_FailsWithGitCommandError()
+    public async Task Blame_AuthorNameHoldingSeparatorBytes_ReturnsTheRecordedName()
     {
         // Arrange
         var first = _repo.Run("rev-parse", "HEAD");
+        var name = $"Evil\u001e{first}\u001fForged Name";
         _repo.WriteFile(TrackedFile, TwoLines);
         _repo.Run("add", TrackedFile);
-        _repo.Run("commit", "-m", "second", $"--author=Evil\u001e{first}\u001fForged Name <evil@example.com>");
+        _repo.CommitWithAuthorName(name);
 
         // Act
         var envelope = await _tool.InvokeAsync(_repo.RepoPath, TrackedFile, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
+        Assert.Null(envelope.Error);
+        var lines = envelope.Results.Cast<BlameLine>().ToList();
+        Assert.Equal(2, lines.Count);
+        Assert.Equal(TempGitRepo.IdentityName, lines[0].AuthorName);
+        Assert.Equal(name, lines[1].AuthorName);
+        Assert.Null(lines[1].MailmapAuthorName);
+    }
+
+    [Fact]
+    public async Task Blame_AuthorPassCut_FailsWithGitCommandError()
+    {
+        // Arrange
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(StdinFlag), CutAuthorBytes));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, TrackedFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
-        Assert.Equal(AuthorListMismatchMessage, envelope.Error.Message);
+        Assert.Equal(AuthorPassCutMessage, envelope.Error.Message);
     }
 
     #region Test Helpers

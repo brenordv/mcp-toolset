@@ -42,12 +42,12 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
             {
                 Subcommand = "log",
                 RepoRoot = root,
-                Flags = [$"--pretty=format:{LogParser.LogPrettyFormat}"],
+                Flags = [.. LogParser.FormatFlags],
                 AttachedOptions = [new AttachedOption("--max-count", "1")],
                 VerifiedRefs = [sha],
             };
             var metaResult = await common.ExecuteAsync(metaIntent, ctx, cancellationToken: cancellationToken);
-            var commits = LogParser.Parse(metaResult.Stdout);
+            var commits = LogParser.Parse(metaResult.Stdout, metaResult.Truncated);
             if (commits.Count == 0)
             {
                 throw new RejectedArgumentException(

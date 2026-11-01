@@ -7,13 +7,12 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 public static class BlameParser
 {
     /// <summary>
-    /// The <c>git log</c> pretty format the raw-author pass prints: each commit's id and recorded author name, separated by
-    /// Unit Separator (0x1F), each record ended by Record Separator (0x1E). <c>%an</c> never goes through the mailmap.
+    /// The flags of the raw-author <c>git log</c> pass: each commit's id and recorded author name, separated by NUL, each
+    /// record ended by NUL (see <see cref="NulRecords"/>). <c>%an</c> never goes through the mailmap.
     /// </summary>
-    public const string RawAuthorPrettyFormat = "%H%x1f%an%x1e";
+    public static readonly IReadOnlyList<string> RawAuthorFormatFlags = ["-z", "--pretty=tformat:%H%x00%an"];
 
-    private const char UnitSeparator = '\x1f';
-    private const char RecordSeparator = '\x1e';
+    private const int RawAuthorFieldCount = 2;
 
     /// <summary>
     /// Each line entry begins with <c>SHA orig_line final_line [count]</c>; metadata
@@ -48,29 +47,21 @@ public static class BlameParser
     }
 
     /// <summary>
-    /// Parse the raw-author pass's output into each requested commit's recorded author name. An author name can hold the
-    /// separator bytes, so the records must name exactly the requested commits, each once; text after the last Record
-    /// Separator is an unterminated record and is not read.
+    /// Parse the raw-author pass's output into each requested commit's recorded author name. The records must name exactly
+    /// the requested commits, each once, and the output must be whole records.
     /// </summary>
     /// <param name="raw">The pass's standard output.</param>
     /// <param name="requestedHashes">The commit ids written to the pass's standard input.</param>
     /// <returns>The recorded author name of each requested commit, keyed by commit id.</returns>
-    /// <exception cref="GitCommandException">The records do not name exactly the requested commits, each once.</exception>
+    /// <exception cref="GitCommandException">
+    /// The output is not a whole number of records, or the records do not name exactly the requested commits, each once.
+    /// </exception>
     public static IReadOnlyDictionary<string, string> ParseRawAuthors(byte[] raw, IReadOnlySet<string> requestedHashes)
     {
-        var records = TextDecoding.Decode(raw).Split(RecordSeparator);
         var authors = new Dictionary<string, string>(StringComparer.Ordinal);
-        for (var i = 0; i < records.Length - 1; i++)
+        foreach (var record in NulRecords.Split(raw, RawAuthorFieldCount, truncated: false))
         {
-            var record = records[i].TrimStart('\n');
-            var separator = record.IndexOf(UnitSeparator);
-            if (separator < 0)
-            {
-                throw AuthorListMismatch();
-            }
-
-            var hash = record[..separator];
-            if (!requestedHashes.Contains(hash) || !authors.TryAdd(hash, record[(separator + 1)..]))
+            if (!requestedHashes.Contains(record[0]) || !authors.TryAdd(record[0], record[1]))
             {
                 throw AuthorListMismatch();
             }

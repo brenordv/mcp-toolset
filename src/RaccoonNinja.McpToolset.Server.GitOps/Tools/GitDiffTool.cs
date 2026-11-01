@@ -226,10 +226,10 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
         };
 
     /// <summary>
-    /// Project numstat entries into <see cref="FileDiff"/> records. The change kind is unknown from
-    /// counts alone; it is overlaid afterwards from the <c>--name-status</c> companion pass.
+    /// Project numstat entries into <see cref="FileDiff"/> records: counts, and whether git marked the file binary. The
+    /// change kind is unknown from counts alone; it is overlaid afterwards from the <c>--name-status</c> companion pass.
     /// </summary>
-    private static List<FileDiff> BuildStatOnlyFiles(IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat)
+    private static List<FileDiff> BuildStatOnlyFiles(IReadOnlyDictionary<string, (int Additions, int Deletions, bool IsBinary)> numstat)
     {
         var files = new List<FileDiff>(numstat.Count);
         files.AddRange(numstat.Select(entry => new FileDiff
@@ -239,6 +239,7 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
             ChangeType = ChangeType.Unknown,
             Additions = entry.Value.Additions,
             Deletions = entry.Value.Deletions,
+            IsBinary = entry.Value.IsBinary,
         }));
         return files;
     }

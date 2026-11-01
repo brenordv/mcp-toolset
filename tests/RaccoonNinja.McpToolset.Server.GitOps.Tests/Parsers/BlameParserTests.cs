@@ -15,8 +15,8 @@ public class BlameParserTests
     private const string SecondAuthor = "Bob";
     private const string MappedAuthor = "Mapped";
     private const string UncommittedAuthor = "Not Committed Yet";
-    private const string FirstRecord = $"{FirstCommit}\u001f{FirstAuthor}\u001e";
-    private const string SecondRecord = $"\n{SecondCommit}\u001f{SecondAuthor}\u001e";
+    private const string FirstRecord = $"{FirstCommit}\0{FirstAuthor}\0";
+    private const string SecondRecord = $"{SecondCommit}\0{SecondAuthor}\0";
 
     [Fact]
     public void Parse_ReadsShaLineNumberAuthorAndContent()
@@ -121,8 +121,8 @@ public class BlameParserTests
     {
         FirstRecord,
         FirstRecord + FirstRecord,
-        FirstRecord + $"\n{ThirdCommit}\u001f{SecondAuthor}\u001e",
-        FirstRecord + $"\n{SecondCommit}\u001f{SecondAuthor}",
+        FirstRecord + $"{ThirdCommit}\0{SecondAuthor}\0",
+        FirstRecord + $"{SecondCommit}\0{SecondAuthor}",
     };
 
     #endregion

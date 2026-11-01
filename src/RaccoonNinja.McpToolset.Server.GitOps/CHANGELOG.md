@@ -1,3 +1,35 @@
+## v2.25.0
+- Added a `git_version` tool (no arguments): `{ version }`, the text after `git version ` that the server read from
+  the git it runs when it started, the value its `git_version` log line holds. It starts no git process and has no
+  `repo_root`. When the startup call read no version, each call fails with the code that call logged:
+  `GitNotInstalled`, `GitTimeout`, or `GitCommandError` (with `git_exit_code` when git exited). Any argument is
+  `InvalidArgument`.
+- Fixed: `git_diff` with `statOnly: true` reported `is_binary: false` for every entry. An entry git's `--numstat` marks
+  binary (`-` for both counts: a binary change, or a binary file whose timestamps alone changed) now has
+  `is_binary: true`.
+- Fixed: `git_log` and `git_show` framed their records with the bytes 0x1E and 0x1F, which git keeps in a commit's
+  subject, body, and author name, so one ordinary commit could add a forged record to `git_log` (any hash, author, or
+  subject, past `maxCount` and every filter), split one commit into two, or shift the email, dates, subject, and body
+  `git_show` reports. `git_reflog` and `git_stash_list` framed theirs with 0x1F and newlines: a subject holding 0x1F was
+  cut and a later field read in its place, and a reflog message holding a newline, which a repository's reftable can
+  store, could add a forged entry. All four, and `git_blame`'s author pass, now separate fields with NUL and end each
+  record with NUL (`-z`), and git never prints a NUL inside one of those fields. Behavior change: such commits and
+  entries come back as recorded, and `git_blame` on a line whose author name holds 0x1E no longer fails. Output that is
+  not whole records fails the call with `GitCommandError`. A `git_reflog` or `git_stash_list` entry cut by the 8 MB cap
+  comes back cut short (the field at the cut keeps its first bytes, later fields are empty, a later time reads as the
+  Unix epoch), as `git_log` and `git_show` already returned a cut commit, except a stash entry cut inside its selector,
+  which is left out; a cut `git_blame` author pass fails with `GitCommandError`.
+- Log change: the `argv_built` debug lines of the `git log` passes of `git_log`, `git_show` (metadata), and
+  `git_blame` (authors), and of `git reflog show` and `git stash list`, show `-z` and the NUL formats, their `argv_len`
+  1 higher. Output that is not whole records logs the existing `tool_error` Error line with the fixed message
+  `git printed output that is not a whole number of NUL-framed records` and no `git_exit_code`; it counts as `error` in
+  `tool_calls_total` and not in `git_command_errors_total`. A cut `git_blame` author pass logs `tool_error` with
+  `the blamed commits' author pass hit the output cap`, counted the same way. A `git_version` call starts no git
+  process, so it logs no `argv_built`, `cache_hit`, `cache_miss`, or `subprocess_exit` line and adds nothing to the
+  subprocess duration, timeout, or git command error metrics; it counts in `tool_calls_total` as `git_version:ok`, as
+  `git_version:error` (with a `tool_error` Error line carrying the startup `error_code`, and `git_exit_code` when git
+  exited), or as `git_version:binding_error` for any argument.
+
 ## v2.24.0
 - Fixed: with a `.mailmap` at the top of the working tree, or `mailmap.file` or `mailmap.blob` in the user's or the
   repository's config, `git_log` with `author` matched the name and email the mailmap maps each commit's author to,

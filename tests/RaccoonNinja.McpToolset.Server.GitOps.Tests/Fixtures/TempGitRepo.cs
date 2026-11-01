@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
 
@@ -24,6 +25,24 @@ internal sealed class TempGitRepo : IDisposable
 
     /// <summary>The name <see cref="CommitMailmap"/> maps <see cref="IdentityName"/>'s email to.</summary>
     public const string MailmapName = "Mapped Name";
+
+    /// <summary>The id the record <see cref="CommitWithForgedLogRecord"/> forges claims; no commit has it.</summary>
+    public const string ForgedRecordCommitId = "0123456789abcdef0123456789abcdef01234567";
+
+    /// <summary>
+    /// The body <see cref="CommitWithForgedLogRecord"/> commits: text, then a whole <c>git log</c> record in 0x1E/0x1F
+    /// framing (id, short id, no parents, author, email, two times, subject, body).
+    /// </summary>
+    public const string ForgedRecordBody =
+        "real body\u001e" + ForgedRecordCommitId
+        + "\u001f0123456\u001f\u001fForged Author\u001fforged@example.com\u001f1000000000\u001f1000000000"
+        + "\u001fforged subject\u001fforged body";
+
+    /// <summary>The email <see cref="CommitWithAuthorName"/> commits under.</summary>
+    public const string SeparatorAuthorEmail = "evil@example.com";
+
+    /// <summary>A commit subject holding 0x1F, then digits an old parser would read as the entry's time.</summary>
+    public const string ShiftingSubject = "shift\u001f1000000000";
 
     /// <summary>How long one git invocation may run before the helper kills it and fails the test.</summary>
     private const int GitTimeoutMilliseconds = 15_000;
@@ -82,6 +101,21 @@ internal sealed class TempGitRepo : IDisposable
     /// <summary>The file git reads grafts from when <c>GIT_GRAFT_FILE</c> is unset.</summary>
     private const string GraftsFile = ".git/info/grafts";
 
+    /// <summary>The subject of the commit <see cref="CommitWithForgedLogRecord"/> makes.</summary>
+    private const string ForgedRecordSubject = "forged record";
+
+    /// <summary>Where <see cref="CommitWithForgedLogRecord"/> writes the message it commits; inside <c>.git</c>, so the worktree stays clean.</summary>
+    private const string ForgedRecordMessageFile = ".git/forged-record-message";
+
+    /// <summary>The subject of the commit <see cref="CommitWithAuthorName"/> makes.</summary>
+    private const string AuthorNameSubject = "author name";
+
+    /// <summary>The message of the commit <see cref="CommitBinaryChange"/> makes.</summary>
+    private const string BinaryChangeMessage = "change binary file";
+
+    /// <summary>How <c>git diff --numstat</c> starts the line of a file it reads as binary: <c>-</c> for both counts.</summary>
+    private const string BinaryNumstatPrefix = "-\t-\t";
+
     /// <summary>Appended to the script's path to name the marker file the script creates when it runs.</summary>
     private const string TrapMarkerSuffix = ".ran";
 
@@ -96,6 +130,9 @@ internal sealed class TempGitRepo : IDisposable
     /// time, so it no longer matches the time the index recorded and git hashes the file again.
     /// </summary>
     private static readonly TimeSpan StatDirtyShift = TimeSpan.FromMinutes(-10);
+
+    /// <summary>The bytes <see cref="CommitBinaryChange"/> writes: a NUL makes git read the file as binary.</summary>
+    private static readonly byte[] BinaryChangeContent = [0, 4, 5, 0, 6];
 
     public TempGitRepo()
     {
@@ -324,6 +361,85 @@ internal sealed class TempGitRepo : IDisposable
         if (Run("rev-list", "--count", "HEAD") != "1")
         {
             throw new InvalidOperationException("git rev-list still walks past HEAD with a graft that gives it no parents");
+        }
+    }
+
+    /// <summary>
+    /// Commit, with whatever is staged, a commit whose body is <see cref="ForgedRecordBody"/>, as a hostile repository's
+    /// history can carry one, then check that <c>git log</c> prints that body with its 0x1E and 0x1F bytes, so a test built
+    /// on it never passes on a git that drops them.
+    /// </summary>
+    /// <returns>The new commit's id.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or prints another body.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string CommitWithForgedLogRecord()
+    {
+        WriteFile(ForgedRecordMessageFile, $"{ForgedRecordSubject}\n\n{ForgedRecordBody}\n");
+        Run("commit", "--allow-empty", "-F", ForgedRecordMessageFile);
+        if (Run("log", "--max-count=1", "--format=%b") != ForgedRecordBody)
+        {
+            throw new InvalidOperationException("git log does not print the forged record's separator bytes in the body");
+        }
+
+        return Run("rev-parse", "HEAD");
+    }
+
+    /// <summary>
+    /// Commit, with whatever is staged, a commit authored as <paramref name="authorName"/> and
+    /// <see cref="SeparatorAuthorEmail"/>, then check that <c>git log</c> prints the name unchanged, so a test that passes
+    /// a name holding 0x1E or 0x1F never passes on a git that strips those bytes.
+    /// </summary>
+    /// <param name="authorName">The author name to record.</param>
+    /// <returns>The new commit's id.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or prints another name.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string CommitWithAuthorName(string authorName)
+    {
+        Run("commit", "--allow-empty", "-m", AuthorNameSubject, $"--author={authorName} <{SeparatorAuthorEmail}>");
+        if (Run("log", "--max-count=1", "--format=%an") != authorName)
+        {
+            throw new InvalidOperationException("git log does not print the author name as committed");
+        }
+
+        return Run("rev-parse", "HEAD");
+    }
+
+    /// <summary>
+    /// Commit an empty commit whose subject is <paramref name="subject"/>, then check that the <c>HEAD</c> reflog records
+    /// <c>commit: </c> plus that subject unchanged, so a test that passes a subject holding 0x1F never passes on a git that
+    /// strips the byte.
+    /// </summary>
+    /// <param name="subject">The commit subject.</param>
+    /// <returns>The commit's author time, in seconds since the Unix epoch, as <c>git log</c> prints it.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or the reflog records another message.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public long CommitWithReflogSubject(string subject)
+    {
+        Run("commit", "--allow-empty", "-m", subject);
+        if (Run("reflog", "show", "--max-count=1", "--format=%gs") != $"commit: {subject}")
+        {
+            throw new InvalidOperationException("the HEAD reflog does not record the commit subject as committed");
+        }
+
+        return long.Parse(Run("log", "--max-count=1", "--format=%at"), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Overwrite <paramref name="trackedPath"/> with other bytes holding a NUL and commit it with whatever else is staged,
+    /// then check that <c>git diff --numstat HEAD~1 HEAD</c> prints git's binary mark (<c>-</c> for both counts) for it,
+    /// so a test built on it never passes on a git that reads the file as text.
+    /// </summary>
+    /// <param name="trackedPath">A <c>/</c>-separated path committed at <c>HEAD</c>.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or does not mark the file binary.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void CommitBinaryChange(string trackedPath)
+    {
+        WriteBytes(trackedPath, BinaryChangeContent);
+        Run("add", trackedPath);
+        Run("commit", "-m", BinaryChangeMessage);
+        if (!Run("diff", "--numstat", "HEAD~1", "HEAD", "--", trackedPath).StartsWith(BinaryNumstatPrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"git diff --numstat does not mark {trackedPath} binary");
         }
     }
 

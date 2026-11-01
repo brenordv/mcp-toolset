@@ -21,6 +21,11 @@ public sealed class GitShowToolTests : IDisposable
     private const string RegularFileMode = "100644";
     private const string ExecutableFileMode = "100755";
     private const string ForgedSubject = "forged";
+    private const string ShiftingAuthorName = "Evil\u001fforged@example.com\u001f1000000000";
+    private const string MetadataPassSubcommand = "log";
+    private const int KeptMetadataBytes = 45;
+    private const int KeptHashBytes = 20;
+    private const string MalformedHashMessage = "log returned a malformed commit hash";
 
     private const string PatchShapedTagMessage =
         "diff --git a/fake.txt b/fake.txt\n" +
@@ -43,13 +48,7 @@ public sealed class GitShowToolTests : IDisposable
         _repo.Run("add", ".");
         _repo.Run("commit", "-m", SecondSubject);
 
-        var common = new ToolCommon(
-            new RepoRootResolver(TestGit.Executable),
-            new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
-            new SessionMetrics(),
-            NullLoggerFactory.Instance,
-            TestGit.Executable);
-        _tool = new GitShowTool(common, new RefVerifier(TestGit.Executable));
+        _tool = BuildTool(new GitProcessRunner(NullLogger<GitProcessRunner>.Instance));
     }
 
     public void Dispose() => _repo.Dispose();
@@ -241,4 +240,73 @@ public sealed class GitShowToolTests : IDisposable
         Assert.Equal(headHash, commit.Hash);
         Assert.Equal(SecondSubject, commit.Subject);
     }
+
+    [Fact]
+    public async Task Show_AuthorNameHoldingFieldSeparators_ReportsUnshiftedFields()
+    {
+        // Arrange
+        var head = _repo.CommitWithAuthorName(ShiftingAuthorName);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        var commit = Assert.IsType<Commit>(payload["commit"]);
+        Assert.Equal(head, commit.Hash);
+        Assert.Equal(ShiftingAuthorName, commit.AuthorName);
+        Assert.Equal(TempGitRepo.SeparatorAuthorEmail, commit.AuthorEmail);
+    }
+
+    [Fact]
+    public async Task Show_MetadataPassCut_ReturnsTheCommitMarkedTruncated()
+    {
+        // Arrange
+        var head = _repo.Run("rev-parse", "HEAD");
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(MetadataPassSubcommand), KeptMetadataBytes));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.True(envelope.Truncated);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        Assert.Equal(head, Assert.IsType<Commit>(payload["commit"]).Hash);
+        Assert.NotEmpty(Assert.IsAssignableFrom<IReadOnlyList<FileDiff>>(payload["files"]));
+    }
+
+    [Fact]
+    public async Task Show_MetadataPassCutInsideTheHash_FailsWithGitCommandError()
+    {
+        // Arrange
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(MetadataPassSubcommand), KeptHashBytes));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
+        Assert.Equal(MalformedHashMessage, envelope.Error.Message);
+    }
+
+    #region Test Helpers
+
+    /// <summary>Build the tool under test over <paramref name="runner"/>, with the real root resolver and ref verifier.</summary>
+    /// <param name="runner">The runner every git process of the call goes through.</param>
+    /// <returns>The tool.</returns>
+    private static GitShowTool BuildTool(IGitProcessRunner runner)
+    {
+        var common = new ToolCommon(
+            new RepoRootResolver(TestGit.Executable),
+            runner,
+            new SessionMetrics(),
+            NullLoggerFactory.Instance,
+            TestGit.Executable);
+        return new GitShowTool(common, new RefVerifier(TestGit.Executable));
+    }
+
+    #endregion
 }

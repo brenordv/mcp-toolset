@@ -54,7 +54,7 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
                 Pathspecs = ToolCommon.ConfinePaths(root, paths),
             };
             var result = await common.ExecuteAsync(intent, ctx, stderrClassifier: GitGrepTool.ClassifyPcreStderr, cancellationToken: cancellationToken);
-            var commits = LogParser.Parse(result.Stdout);
+            var commits = LogParser.Parse(result.Stdout, result.Truncated);
 
             var filtersApplied = FiltersAppliedBuilder.Create()
                 .Redact("author", author)
@@ -75,9 +75,9 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
     /// <summary>
     /// Server-built log flags: <c>--follow</c> when scoping renames to a single path, exactly one
     /// dialect for the limiting patterns (<c>--grep</c>, <c>--author</c>), <c>--all</c> to walk every
-    /// ref under <c>refs/</c> plus <c>HEAD</c>, <c>--ignore-submodules=dirty</c>, then the pretty-format directive that
-    /// <see cref="LogParser"/> expects. The dialect is <c>--perl-regexp</c> or <c>--basic-regexp</c>,
-    /// always emitted: <c>git log</c> reads <c>grep.patternType</c> from the user's and the
+    /// ref under <c>refs/</c> plus <c>HEAD</c>, <c>--ignore-submodules=dirty</c>, then <see cref="LogParser.FormatFlags"/>
+    /// (<c>-z</c> and the pretty-format directive <see cref="LogParser"/> expects). The dialect is
+    /// <c>--perl-regexp</c> or <c>--basic-regexp</c>, always emitted: <c>git log</c> reads <c>grep.patternType</c> from the user's and the
     /// repository's config, and a command-line dialect overrides it. <c>--follow</c> comes only from here, since
     /// <see cref="GitCommandBuilder"/> pins <c>log.follow</c> to false. With <c>-S</c> or <c>--follow</c>, git keeps only the
     /// commits whose diff matches, and the <c>--ignore-submodules</c> value, the one <see cref="DiffParser.PatchShapeFlags"/>
@@ -91,7 +91,7 @@ public sealed class GitLogTool(ToolCommon common, IRefVerifier refVerifier)
         flags.Add(perlRegex ? "--perl-regexp" : "--basic-regexp");
         if (allRefs) flags.Add("--all");
         flags.Add("--ignore-submodules=dirty");
-        flags.Add($"--pretty=format:{LogParser.LogPrettyFormat}");
+        flags.AddRange(LogParser.FormatFlags);
         return flags;
     }
 

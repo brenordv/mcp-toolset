@@ -18,6 +18,8 @@ public sealed class GitBlameTool(ToolCommon common, IRefVerifier refVerifier)
     /// <summary>The id git blame prints for lines not committed yet.</summary>
     private const string UncommittedCommitHash = "0000000000000000000000000000000000000000";
 
+    private const string AuthorPassCutMessage = "the blamed commits' author pass hit the output cap";
+
     [McpServerTool(Name = "git_blame")]
     [Description("Return per-line author/commit/timestamp for a file, optionally restricted to a line range. author_name is the author recorded in the commit; mailmap_author_name, present only when the repository's mailmap (.mailmap, mailmap.file, or mailmap.blob) shows that author under another name, is that name.")]
     public Task<ResultEnvelope> InvokeAsync(
@@ -83,7 +85,9 @@ public sealed class GitBlameTool(ToolCommon common, IRefVerifier refVerifier)
     /// <param name="ctx">The call context; the pass logs under the same tool and call id.</param>
     /// <param name="cancellationToken">Token to cancel the pass.</param>
     /// <returns>The lines with recorded authors, or <paramref name="lines"/> itself when no line is committed.</returns>
-    /// <exception cref="GitCommandException">An id is not a full object name, or the pass's records do not match the ids.</exception>
+    /// <exception cref="GitCommandException">
+    /// An id is not a full object name, the pass's output hit the output cap, or its records do not match the ids.
+    /// </exception>
     private async Task<IReadOnlyList<BlameLine>> ReadRawAuthorsAsync(
         string root,
         IReadOnlyList<BlameLine> lines,
@@ -109,10 +113,15 @@ public sealed class GitBlameTool(ToolCommon common, IRefVerifier refVerifier)
         {
             Subcommand = "log",
             RepoRoot = root,
-            Flags = ["--no-walk", "--stdin", $"--pretty=format:{BlameParser.RawAuthorPrettyFormat}"],
+            Flags = ["--no-walk", "--stdin", .. BlameParser.RawAuthorFormatFlags],
             StandardInput = Encoding.ASCII.GetBytes(string.Join('\n', hashes) + "\n"),
         };
         var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
+        if (result.Truncated)
+        {
+            throw new GitCommandException(AuthorPassCutMessage);
+        }
+
         var rawAuthors = BlameParser.ParseRawAuthors(result.Stdout, hashes.ToHashSet(StringComparer.Ordinal));
         return BlameParser.WithRawAuthors(lines, rawAuthors);
     }
