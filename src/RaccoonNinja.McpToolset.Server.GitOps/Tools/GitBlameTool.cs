@@ -1,9 +1,11 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.Text;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Server.GitOps.Envelope;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
 using RaccoonNinja.McpToolset.Server.GitOps.Extensions;
+using RaccoonNinja.McpToolset.Server.GitOps.Models;
 using RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 using RaccoonNinja.McpToolset.Server.GitOps.Repo;
 using RaccoonNinja.McpToolset.Server.GitOps.Security;
@@ -13,8 +15,11 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tools;
 [McpServerToolType]
 public sealed class GitBlameTool(ToolCommon common, IRefVerifier refVerifier)
 {
+    /// <summary>The id git blame prints for lines not committed yet.</summary>
+    private const string UncommittedCommitHash = "0000000000000000000000000000000000000000";
+
     [McpServerTool(Name = "git_blame")]
-    [Description("Return per-line author/commit/timestamp for a file, optionally restricted to a line range.")]
+    [Description("Return per-line author/commit/timestamp for a file, optionally restricted to a line range. author_name is the author recorded in the commit; mailmap_author_name, present only when the repository's mailmap (.mailmap, mailmap.file, or mailmap.blob) shows that author under another name, is that name.")]
     public Task<ResultEnvelope> InvokeAsync(
         [Description("Absolute working directory.")] string cwd,
         [Description("Repo-relative path to the file to blame.")] string path = null,
@@ -57,6 +62,7 @@ public sealed class GitBlameTool(ToolCommon common, IRefVerifier refVerifier)
             };
             var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
             var lines = BlameParser.Parse(result.Stdout);
+            lines = await ReadRawAuthorsAsync(root, lines, ctx, cancellationToken);
 
             var filtersApplied = FiltersAppliedBuilder.Create()
                 .Redact("path", path)
@@ -65,5 +71,49 @@ public sealed class GitBlameTool(ToolCommon common, IRefVerifier refVerifier)
                 .Build();
             return ToolCommon.ListSuccess(lines, root, filtersApplied: filtersApplied, truncated: result.Truncated);
         });
+    }
+
+    /// <summary>
+    /// Read the recorded author of each committed line's commit with one <c>git log --no-walk --stdin</c>, whose ids go on
+    /// standard input, so the argv stays the same size however many commits the file has; git blame maps every author
+    /// through the repository's mailmap and has no switch to stop it.
+    /// </summary>
+    /// <param name="root">The resolved repository root.</param>
+    /// <param name="lines">The lines the porcelain blame parsed.</param>
+    /// <param name="ctx">The call context; the pass logs under the same tool and call id.</param>
+    /// <param name="cancellationToken">Token to cancel the pass.</param>
+    /// <returns>The lines with recorded authors, or <paramref name="lines"/> itself when no line is committed.</returns>
+    /// <exception cref="GitCommandException">An id is not a full object name, or the pass's records do not match the ids.</exception>
+    private async Task<IReadOnlyList<BlameLine>> ReadRawAuthorsAsync(
+        string root,
+        IReadOnlyList<BlameLine> lines,
+        CallContext ctx,
+        CancellationToken cancellationToken)
+    {
+        var hashes = lines
+            .Select(line => line.CommitHash)
+            .Where(hash => hash != UncommittedCommitHash)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (hashes.Count == 0)
+        {
+            return lines;
+        }
+
+        if (!hashes.TrueForAll(RefVerifier.IsResolvedObjectName))
+        {
+            throw new GitCommandException("blame returned a malformed commit hash");
+        }
+
+        var intent = new GitIntent
+        {
+            Subcommand = "log",
+            RepoRoot = root,
+            Flags = ["--no-walk", "--stdin", $"--pretty=format:{BlameParser.RawAuthorPrettyFormat}"],
+            StandardInput = Encoding.ASCII.GetBytes(string.Join('\n', hashes) + "\n"),
+        };
+        var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
+        var rawAuthors = BlameParser.ParseRawAuthors(result.Stdout, hashes.ToHashSet(StringComparer.Ordinal));
+        return BlameParser.WithRawAuthors(lines, rawAuthors);
     }
 }

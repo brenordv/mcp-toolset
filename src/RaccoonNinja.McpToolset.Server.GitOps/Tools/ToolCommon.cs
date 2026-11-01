@@ -57,7 +57,7 @@ public sealed class ToolCommon(
         RunResult result;
         try
         {
-            result = await runner.RunAsync(argv, env, intent.RepoRoot, timeoutMs, outputCapBytes, ctx.CallId, cancellationToken);
+            result = await runner.RunAsync(argv, env, intent.RepoRoot, timeoutMs, outputCapBytes, ctx.CallId, intent.StandardInput, cancellationToken);
         }
         catch (GitTimeoutException)
         {

@@ -1,3 +1,35 @@
+## v2.24.0
+- Fixed: with a `.mailmap` at the top of the working tree, or `mailmap.file` or `mailmap.blob` in the user's or the
+  repository's config, `git_log` with `author` matched the name and email the mailmap maps each commit's author to,
+  while it printed the author recorded in the commit, so a repository could hide a real author's commits from that
+  search or return commits whose printed author does not contain the search text. Every git call now passes
+  `-c log.mailmap=false`, so `author` matches the recorded author; git 2.23.0 and later turn the key on by default.
+- Fixed: `git_blame`'s `author_name` was the name the repository's mailmap shows, since `git blame` applies the mailmap
+  with no switch to stop it. `author_name` is now the author recorded in the commit, the name `git_log` and `git_show`
+  report, and a line whose author the mailmap shows under another name also carries that name in a new
+  `mailmap_author_name` field; a line the mailmap leaves alone, or one not committed yet, has none. Behavior change: in
+  a repository with a mailmap, `author_name` changes for the lines it maps. A `git_blame` call with a committed line
+  runs one more git process, `git log --no-walk --stdin`, which reads the blamed commit ids from its standard input,
+  and fails with `GitCommandError` when that process's records do not match those commits.
+- Fixed: a repository's replace refs (`refs/replace/<id>`) and `.git/info/grafts` file changed the history every tool
+  reads: with a replace ref, `git_show`, `git_log`, `git_diff`, `git_file_at_ref`, `git_grep` with `ref`, and
+  `git_blame` returned another object's content under the original id, and a graft gave a commit other parents. Every
+  git process now gets `GIT_NO_REPLACE_OBJECTS=1` and `GIT_GRAFT_FILE` set to a path that does not exist, and every git
+  call passes `-c core.useReplaceRefs=false`, which keeps a repository's `core.useReplaceRefs=true` from turning
+  replace refs back on in git 2.19.0 to 2.41.x. Behavior change: replace refs and grafts you made yourself no longer
+  apply through the tools. A `.git/shallow` file still does, since a shallow clone needs it, so a planted one can still
+  end the history the tools show at a commit it names. An object id still does not vouch for content in a repository
+  you did not clone yourself: current git (2.56.0 checked) does not re-hash the objects it reads, and it takes a
+  commit's parents from the commit-graph file without checking them, so run `git fsck` in your own shell before you
+  trust ids there.
+- Log change: every `argv_built` debug line shows `-c log.mailmap=false -c core.useReplaceRefs=false`, and its
+  `argv_len` is 4 higher; the bootstrap calls (`git version` at startup and the `rev-parse` calls) carry the same pins
+  but log no argv line. A `git_blame` call with a committed line logs one more `argv_built` and `subprocess_exit`
+  pair, for the `git log` pass, under the same `call_id`; when that pass's records do not match, the call logs the
+  existing `tool_error` Error line with the fixed message `git log returned an author list that does not match the
+  blamed commits` and no `git_exit_code`. Metrics change: `subprocess_duration_ms_p50` and
+  `subprocess_duration_ms_p95` get one more sample per such call.
+
 ## v2.23.0
 - Fixed: with `i18n.logOutputEncoding` in the user's or the repository's git config, or `i18n.commitEncoding` when
   that key is not set, git re-encodes every record `git_log` and `git_show` read, commit id included. Set to an

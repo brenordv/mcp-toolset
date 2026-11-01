@@ -20,6 +20,7 @@ public sealed class GitShowToolTests : IDisposable
     private const string HeadTree = "HEAD^{tree}";
     private const string RegularFileMode = "100644";
     private const string ExecutableFileMode = "100755";
+    private const string ForgedSubject = "forged";
 
     private const string PatchShapedTagMessage =
         "diff --git a/fake.txt b/fake.txt\n" +
@@ -212,6 +213,23 @@ public sealed class GitShowToolTests : IDisposable
     {
         // Arrange
         var headHash = _repo.ConfigureUtf16LogEncoding(configKey);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        var commit = Assert.IsType<Commit>(payload["commit"]);
+        Assert.Equal(headHash, commit.Hash);
+        Assert.Equal(SecondSubject, commit.Subject);
+    }
+
+    [Fact]
+    public async Task Show_WithReplaceRefOnHeadCommit_ReturnsStoredCommit()
+    {
+        // Arrange
+        var headHash = _repo.ReplaceHeadCommit(ForgedSubject);
 
         // Act
         var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);

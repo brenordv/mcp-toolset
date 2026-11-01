@@ -18,6 +18,9 @@ public sealed class GitFileAtRefToolTests : IDisposable
     private const string OneLineChunk = "0123456789";
     private const int OneLineChunkCount = 5000;
     private const int LastPageBytes = 1000;
+    private const string NestedFile = "dir/nested.txt";
+    private const string NestedContent = "nested\n";
+    private const string ReplacementContent = "replaced\n";
 
     private static readonly int OneLineFileBytes = OneLineChunk.Length * OneLineChunkCount;
 
@@ -62,6 +65,22 @@ public sealed class GitFileAtRefToolTests : IDisposable
         var file = Assert.IsType<FileAtRef>(envelope.Results[0]);
         Assert.Equal("dir/nested.txt", file.Path);
         Assert.Equal("nested\n", file.Content);
+    }
+
+    [Fact]
+    public async Task ReplacedBlob_ReturnsStoredContent()
+    {
+        // Arrange
+        var blob = _repo.ReplaceBlob(NestedFile, ReplacementContent);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, NestedFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var file = Assert.IsType<FileAtRef>(envelope.Results[0]);
+        Assert.Equal(blob, file.ObjectId);
+        Assert.Equal(NestedContent, file.Content);
     }
 
     [Fact]

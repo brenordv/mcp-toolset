@@ -275,6 +275,38 @@ public sealed class GitLogToolTests : IDisposable
         Assert.Equal(GammaSubject, commit.Subject);
     }
 
+    [Theory]
+    [InlineData(TempGitRepo.IdentityName, 4)]
+    [InlineData(TempGitRepo.MailmapName, 0)]
+    public async Task Log_WithMailmapRenamingTheAuthor_MatchesOnlyTheRecordedAuthor(string author, int expectedCount)
+    {
+        // Arrange
+        _repo.CommitMailmap();
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, author: author, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(expectedCount, envelope.Count);
+        Assert.All(envelope.Results.Cast<Commit>(), commit => Assert.Equal(TempGitRepo.IdentityName, commit.AuthorName));
+    }
+
+    [Fact]
+    public async Task Log_WithGraftMakingHeadARoot_ListsTheStoredHistory()
+    {
+        // Arrange
+        _repo.GraftHeadAsRoot();
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(3, envelope.Count);
+        Assert.Contains(AlphaSubject, Subjects(envelope));
+    }
+
     #region Test Helpers
 
     private void CommitFile(string path, string message)

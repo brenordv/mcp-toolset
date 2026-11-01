@@ -19,11 +19,14 @@ internal sealed class TempGitRepo : IDisposable
     /// <summary>The message of the commit that makes <c>a.txt</c> executable and changes nothing else.</summary>
     public const string ModeChangeMessage = "make a.txt executable";
 
+    /// <summary>The author and committer name the repository is configured with.</summary>
+    public const string IdentityName = "Test User";
+
+    /// <summary>The name <see cref="CommitMailmap"/> maps <see cref="IdentityName"/>'s email to.</summary>
+    public const string MailmapName = "Mapped Name";
+
     /// <summary>How long one git invocation may run before the helper kills it and fails the test.</summary>
     private const int GitTimeoutMilliseconds = 15_000;
-
-    /// <summary>The author and committer name the repository is configured with.</summary>
-    private const string IdentityName = "Test User";
 
     /// <summary>The author and committer email the repository is configured with.</summary>
     private const string IdentityEmail = "tester@example.com";
@@ -66,6 +69,18 @@ internal sealed class TempGitRepo : IDisposable
 
     /// <summary>An encoding that is not ASCII-compatible, so a record git re-encodes into it holds no readable commit id.</summary>
     private const string Utf16Encoding = "UTF-16";
+
+    /// <summary>The file git reads a mailmap from at the top of the working tree.</summary>
+    private const string MailmapFile = ".mailmap";
+
+    /// <summary>The message of the commit <see cref="CommitMailmap"/> makes.</summary>
+    private const string MailmapCommitMessage = "add mailmap";
+
+    /// <summary>Where <see cref="ReplaceBlob"/> writes the replacement content it hashes; inside <c>.git</c>, so the worktree stays clean.</summary>
+    private const string ReplacementBlobFile = ".git/replacement-blob";
+
+    /// <summary>The file git reads grafts from when <c>GIT_GRAFT_FILE</c> is unset.</summary>
+    private const string GraftsFile = ".git/info/grafts";
 
     /// <summary>Appended to the script's path to name the marker file the script creates when it runs.</summary>
     private const string TrapMarkerSuffix = ".ran";
@@ -230,6 +245,86 @@ internal sealed class TempGitRepo : IDisposable
         }
 
         return head;
+    }
+
+    /// <summary>
+    /// Commit a <c>.mailmap</c> that maps <see cref="IdentityName"/>'s email to <see cref="MailmapName"/>, as a hostile
+    /// repository can, then check that <c>git log --author</c> without the server's pin no longer matches
+    /// <see cref="IdentityName"/>, so a test built on it never passes on a git that does not apply the mailmap.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or still matches the recorded name.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void CommitMailmap()
+    {
+        WriteFile(MailmapFile, $"{MailmapName} <{IdentityEmail}>\n");
+        Run("add", MailmapFile);
+        Run("commit", "-m", MailmapCommitMessage);
+        if (Run("log", "--format=%H", $"--author={IdentityName}").Length != 0)
+        {
+            throw new InvalidOperationException("git log still matches the recorded author with a .mailmap that renames it");
+        }
+    }
+
+    /// <summary>
+    /// Make the blob <paramref name="trackedPath"/> has at <c>HEAD</c> read as <paramref name="replacementContent"/>
+    /// through a replace ref, as a hostile repository's <c>.git</c> can carry one, then check that <c>git cat-file -p</c>
+    /// without the server's environment returns the replacement, so a test built on it never passes on a git that
+    /// ignores replace refs.
+    /// </summary>
+    /// <param name="trackedPath">A <c>/</c>-separated path committed at <c>HEAD</c>.</param>
+    /// <param name="replacementContent">The content the blob should read as.</param>
+    /// <returns>The replaced blob's id, the one <c>HEAD</c>'s tree records.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or does not return the replacement.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string ReplaceBlob(string trackedPath, string replacementContent)
+    {
+        var blob = Run("rev-parse", $"HEAD:{trackedPath}");
+        WriteFile(ReplacementBlobFile, replacementContent);
+        var replacement = Run("hash-object", "-w", ReplacementBlobFile);
+        Run("replace", blob, replacement);
+        if (Run("cat-file", "-p", blob) != replacementContent.TrimEnd('\n'))
+        {
+            throw new InvalidOperationException("git cat-file does not return the replacement blob through the replace ref");
+        }
+
+        return blob;
+    }
+
+    /// <summary>
+    /// Make <c>HEAD</c>'s commit read as a parentless commit whose message is <paramref name="forgedSubject"/>, through a
+    /// replace ref, then check that <c>git log</c> without the server's environment prints the forged subject.
+    /// </summary>
+    /// <param name="forgedSubject">The message of the replacement commit.</param>
+    /// <returns>The id of <c>HEAD</c>'s commit, the one the replace ref covers.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or does not show the replacement.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string ReplaceHeadCommit(string forgedSubject)
+    {
+        var head = Run("rev-parse", "HEAD");
+        var forged = Run("commit-tree", "HEAD^{tree}", "-m", forgedSubject);
+        Run("replace", head, forged);
+        if (Run("log", "--max-count=1", "--format=%s") != forgedSubject)
+        {
+            throw new InvalidOperationException("git log does not show the replacement commit through the replace ref");
+        }
+
+        return head;
+    }
+
+    /// <summary>
+    /// Write a <c>.git/info/grafts</c> line that gives <c>HEAD</c>'s commit no parents, as a hostile repository's
+    /// <c>.git</c> can carry one, then check that <c>git rev-list --count HEAD</c> without the server's environment counts
+    /// one commit. Call it once <c>HEAD</c> has a parent.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or still walks past <c>HEAD</c>.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void GraftHeadAsRoot()
+    {
+        WriteFile(GraftsFile, Run("rev-parse", "HEAD") + "\n");
+        if (Run("rev-list", "--count", "HEAD") != "1")
+        {
+            throw new InvalidOperationException("git rev-list still walks past HEAD with a graft that gives it no parents");
+        }
     }
 
     /// <summary>

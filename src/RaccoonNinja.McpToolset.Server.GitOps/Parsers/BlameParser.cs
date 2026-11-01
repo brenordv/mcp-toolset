@@ -1,3 +1,4 @@
+using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
 using RaccoonNinja.McpToolset.Server.GitOps.Models;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Parsers;
@@ -5,6 +6,15 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 /// <summary>Parser for <c>git blame --porcelain</c> output.</summary>
 public static class BlameParser
 {
+    /// <summary>
+    /// The <c>git log</c> pretty format the raw-author pass prints: each commit's id and recorded author name, separated by
+    /// Unit Separator (0x1F), each record ended by Record Separator (0x1E). <c>%an</c> never goes through the mailmap.
+    /// </summary>
+    public const string RawAuthorPrettyFormat = "%H%x1f%an%x1e";
+
+    private const char UnitSeparator = '\x1f';
+    private const char RecordSeparator = '\x1e';
+
     /// <summary>
     /// Each line entry begins with <c>SHA orig_line final_line [count]</c>; metadata
     /// headers follow, then a single tab-prefixed content line.
@@ -36,6 +46,55 @@ public static class BlameParser
         }
         return result;
     }
+
+    /// <summary>
+    /// Parse the raw-author pass's output into each requested commit's recorded author name. An author name can hold the
+    /// separator bytes, so the records must name exactly the requested commits, each once; text after the last Record
+    /// Separator is an unterminated record and is not read.
+    /// </summary>
+    /// <param name="raw">The pass's standard output.</param>
+    /// <param name="requestedHashes">The commit ids written to the pass's standard input.</param>
+    /// <returns>The recorded author name of each requested commit, keyed by commit id.</returns>
+    /// <exception cref="GitCommandException">The records do not name exactly the requested commits, each once.</exception>
+    public static IReadOnlyDictionary<string, string> ParseRawAuthors(byte[] raw, IReadOnlySet<string> requestedHashes)
+    {
+        var records = TextDecoding.Decode(raw).Split(RecordSeparator);
+        var authors = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 0; i < records.Length - 1; i++)
+        {
+            var record = records[i].TrimStart('\n');
+            var separator = record.IndexOf(UnitSeparator);
+            if (separator < 0)
+            {
+                throw AuthorListMismatch();
+            }
+
+            var hash = record[..separator];
+            if (!requestedHashes.Contains(hash) || !authors.TryAdd(hash, record[(separator + 1)..]))
+            {
+                throw AuthorListMismatch();
+            }
+        }
+
+        return authors.Count == requestedHashes.Count ? authors : throw AuthorListMismatch();
+    }
+
+    /// <summary>
+    /// Put each line's recorded author in <see cref="BlameLine.AuthorName"/>, and the name git blame printed, which went
+    /// through the repository's mailmap, in <see cref="BlameLine.MailmapAuthorName"/> when the two differ. A line whose
+    /// commit has no entry (one not committed yet) is returned as it is.
+    /// </summary>
+    /// <param name="lines">The lines <see cref="Parse"/> returned.</param>
+    /// <param name="rawAuthors">The recorded author name of each committed line's commit, keyed by commit id.</param>
+    /// <returns>The lines, in order.</returns>
+    public static IReadOnlyList<BlameLine> WithRawAuthors(IReadOnlyList<BlameLine> lines, IReadOnlyDictionary<string, string> rawAuthors)
+        => [.. lines.Select(line => rawAuthors.TryGetValue(line.CommitHash, out var rawAuthor)
+            ? line with
+            {
+                AuthorName = rawAuthor,
+                MailmapAuthorName = string.Equals(line.AuthorName, rawAuthor, StringComparison.Ordinal) ? null : line.AuthorName,
+            }
+            : line)];
 
     /// <summary>
     /// Parse an entry header line (<c>SHA orig_line final_line [count]</c>). Returns
@@ -111,4 +170,9 @@ public static class BlameParser
             RelativeTime = RelativeTime.Describe(authored),
         };
     }
+
+    /// <summary>Build the fixed error for a raw-author pass whose records do not match the requested commits.</summary>
+    /// <returns>The exception to throw; its message names no commit and no author.</returns>
+    private static GitCommandException AuthorListMismatch()
+        => new("git log returned an author list that does not match the blamed commits");
 }

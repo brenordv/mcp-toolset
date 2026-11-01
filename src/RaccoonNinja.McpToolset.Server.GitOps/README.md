@@ -206,6 +206,10 @@ uses, so `A|B` alternation and `\d` work; a git without PCRE2 returns `PcreUnava
 cannot be combined with `ref`), `follow` (track renames, only when scoped to a single path; a `log.follow` setting in
 git config does not turn it on), and `maxCount` (default 50).
 
+`author` matches the author recorded in each commit, the one the result prints: every call passes
+`-c log.mailmap=false`, so a repository's `.mailmap` (or `mailmap.file` or `mailmap.blob` in config), which git
+2.23.0 and later apply to `--author` by default, cannot change what it matches.
+
 Every call also passes `--ignore-submodules=dirty`, so a submodule ignore setting cannot drop a submodule's commit
 change from the diff git builds for `pickaxe` or `follow`; see
 [Security model (long version)](#security-model-long-version).
@@ -331,6 +335,19 @@ Returns per-line attribution (author, commit, timestamp) for one file, optionall
 range and optionally at a specific `ref`. Uses `--porcelain` output for parseability. The line range is validated
 (`start >= 1`, `end >= start`); invalid ranges return a `RejectedArgument` error.
 
+Each line is `{line_no, content, commit_hash, author_name, mailmap_author_name, authored_at, relative_time}`.
+`author_name` is the author recorded in the commit, the name `git_log` and `git_show` report. `git blame` shows every
+author through the repository's mailmap (a `.mailmap` at the top of the working tree, or `mailmap.file` or
+`mailmap.blob` in config) and has no switch to stop it, so the server reads the recorded authors with one more git
+process, `git log --no-walk --stdin`, given the blamed commit ids on standard input. When the mailmap shows a line's
+author under another name, the line also carries that name in `mailmap_author_name`; a line the mailmap leaves alone
+has no `mailmap_author_name`, and neither does a line not committed yet (`commit_hash` all zeros, which `git blame`
+without `ref` reports for uncommitted changes). If that pass's output does not name each blamed commit exactly once,
+the call fails with `GitCommandError`, and the server log's `tool_error` line says
+`git log returned an author list that does not match the blamed commits`; a commit whose author name holds the byte
+0x1E causes it (a 0x1F inside a name is kept as part of the name), and a hostile repository can carry such a name to
+try to forge a record, so treat that repository's history as untrusted.
+
 ```mermaid
 flowchart LR
     A[git_blame: cwd, path, range, ref] --> B[Resolve root]
@@ -342,7 +359,9 @@ flowchart LR
     F --> H["git blame --porcelain [-L …] [ref] -- path"]
     G --> H
     H --> I[BlameParser → BlameLine list]
-    I --> J[ResultEnvelope]
+    I --> K["git log --no-walk --stdin<br/>--pretty=format:%H%x1f%an%x1e<br/>(commit ids on stdin)"]
+    K --> L[author_name = recorded author<br/>mailmap_author_name when it differs]
+    L --> J[ResultEnvelope]
 ```
 
 ---
@@ -598,12 +617,13 @@ flowchart TD
     F --> G[--end-of-options before positional refs<br/>omitted for git grep]
     G --> S["Pathspecs after --<br/>paths as :(literal)…, excludes as :(exclude)…,<br/>globs bare"]
     S --> H[ArgumentList execution<br/>no shell, no string join]
-    H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1<br/>GIT_NO_LAZY_FETCH=1<br/>GIT_ALLOW_PROTOCOL=none]
+    H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1<br/>GIT_NO_LAZY_FETCH=1<br/>GIT_ALLOW_PROTOCOL=none<br/>GIT_NO_REPLACE_OBJECTS=1<br/>GIT_GRAFT_FILE=/nonexistent/…]
 ```
 
 - **One argv producer.** Tools declare a typed `GitIntent`; a single `GitCommandBuilder` is the only code that
   serializes it to argv. It prepends fixed `-c` neutralizers (disable hooks, pager, fsmonitor, credential helpers,
-  askpass, auto-gc, signature verification, rename following from config, the index refresh in `git diff`) and,
+  askpass, auto-gc, signature verification, rename following from config, the index refresh in `git diff`, the mailmap
+  in `git log`, replace refs) and,
   before any positional ref, inserts `--end-of-options` so no user value can be read as an option (git grep excepted:
   its pattern is a glued `-e` token and its refs are pre-resolved SHAs). `log.showSignature=false` is there because
   verifying a signed commit runs the program `gpg.program`, `gpg.ssh.program`, or `gpg.x509.program` names, and a
@@ -617,7 +637,10 @@ flowchart TD
   `git show` print no diff for a root commit and keeps `git log` with `-S` or `--follow` from listing one.
   `i18n.logOutputEncoding=UTF-8` is there because git re-encodes each record `git log` and `git show` format, commit id
   included, into that key's encoding, or into `i18n.commitEncoding`'s when that key is not set, so a value such as
-  `UTF-16` leaves no readable commit id.
+  `UTF-16` leaves no readable commit id. `log.mailmap=false` is there because a repository's mailmap otherwise rewrites
+  the author `git log --author` matches, while `git_log` prints the recorded author; `git blame` has no such switch
+  (see [`git_blame`](#git_blame)). `core.useReplaceRefs=false` is there for git 2.19.0 to 2.41.x (see the Replace refs
+  and grafts ignored bullet below).
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or
@@ -661,6 +684,23 @@ flowchart TD
   (patch, stat, or pickaxe output, or rename detection); other reads fail with git's missing-object error alone. On
   2.29.0 to 2.38.x, and on 2.45.0, `git_grep` with `ref` leaves out a file whose blob is missing and logs no Warning.
   In a partial clone you trust, run the same git command in your own shell once to fetch what it needs.
+- **Replace refs and grafts ignored.** A repository that arrives with its `.git` can carry replace refs
+  (`refs/replace/<id>`), which make git read another object's content under the original id, and a `.git/info/grafts`
+  file, whose lines give a commit other parents, so `git_show`, `git_log`, `git_diff`, `git_file_at_ref`, `git_grep`
+  with `ref`, and `git_blame` would report the substitute. Every git process gets `GIT_NO_REPLACE_OBJECTS=1` and
+  `GIT_GRAFT_FILE` set to a path that does not exist, so git reads objects as stored and no grafts; every git from
+  2.6.1 on reads both. On git 2.19.0 to 2.41.x a repository's `core.useReplaceRefs=true` turns replace refs back on
+  over the variable, so every call also passes `-c core.useReplaceRefs=false`. Replace refs and grafts you made
+  yourself no longer apply through the tools either. An object id still does not vouch for content in a repository
+  you did not clone yourself: current git (2.56.0 checked) does not re-hash the objects these reads parse, and it
+  takes a commit's parents from `.git/objects/info/commit-graph` without checking them against the commit, so a
+  `.git` can store other content under a known id with no replace ref. Run `git fsck` in your own shell before you
+  trust ids there. A `.git/shallow` file still applies: git gives each commit it lists no parents, which a shallow
+  clone needs, so a planted one can end the history the tools show at any commit it names (`git_log` stops there,
+  `git_show` lists that commit's whole tree as added, `git_blame` attributes older lines to it). It cannot change an
+  object's content. The server cannot tell such a file from a real shallow clone, so in a repository you did not
+  clone yourself, check for `.git/shallow` before you trust where its history starts; through the tools a shallow
+  boundary looks like a root commit (`parents` empty).
 - **Filter drivers pinned.** `git status`, a `git diff` against the working tree, and `git blame` without a revision
   hash worktree files, and hashing a file runs the `clean` or `process` command of the filter driver its `filter`
   attribute selects (from `.gitattributes` or `.git/info/attributes`). The driver is defined in config

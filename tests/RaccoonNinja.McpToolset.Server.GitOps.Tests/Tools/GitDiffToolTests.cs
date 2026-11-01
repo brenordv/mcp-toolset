@@ -471,9 +471,10 @@ public sealed class GitDiffToolTests : IDisposable
             int? timeoutMs = null,
             int? outputCapBytes = null,
             int? callId = null,
+            byte[] standardInput = null,
             CancellationToken cancellationToken = default)
         {
-            var result = await _inner.RunAsync(argv, env, workingDirectory, timeoutMs, outputCapBytes, callId, cancellationToken);
+            var result = await _inner.RunAsync(argv, env, workingDirectory, timeoutMs, outputCapBytes, callId, standardInput, cancellationToken);
             return argv.Contains(NumstatFlag) ? result with { Truncated = true } : result;
         }
     }
