@@ -4,12 +4,12 @@ using Serilog.Events;
 
 namespace RaccoonNinja.McpToolset.Server.TextEdit.Tests.Logging;
 
-public sealed class LoggingBootstrapTests
+public sealed class LoggingBootstrapTests : IDisposable
 {
+    private const string LogFileName = "out.log";
     private const string HostLifetimeCategory = "Microsoft.Hosting.Lifetime";
     private const string ContentRootProbe = "content-root-probe";
     private const string ControlEvent = "lifetime-control";
-    private const string McpSdkFolderPrefix = "textedit-log-mcp-sdk-";
     private const string TraceLevel = "TRACE";
     private const string McpSdkTransportCategory = "ModelContextProtocol.Server.StdioServerTransport";
     private const string McpSdkSessionCategory = "ModelContextProtocol.Server.McpServer";
@@ -17,34 +17,46 @@ public sealed class LoggingBootstrapTests
     private const string McpHandlerProbe = "mcp-handler-probe";
     private const string McpControlEvent = "mcp-sdk-control";
 
+    private readonly string _root;
+    private readonly string _logPath;
+
+    public LoggingBootstrapTests()
+    {
+        _root = Path.Combine(Path.GetTempPath(), "textedit-log-" + Guid.NewGuid().ToString("N"));
+        _logPath = Path.Combine(_root, LogFileName);
+        Directory.CreateDirectory(_root);
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+        catch (IOException)
+        {
+            // Best-effort temp cleanup.
+        }
+    }
+
     [Fact]
     public void Build_LogFile_IsUtf8WithoutBom()
     {
         // Arrange
-        var parent = Path.Combine(Path.GetTempPath(), "textedit-log-bom-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        var logPath = Path.Combine(parent, "out.log");
-        try
-        {
-            var env = new Dictionary<string, string> { [LoggingConstants.EnvLogFile] = logPath };
+        var env = new Dictionary<string, string> { [LoggingConstants.EnvLogFile] = _logPath };
 
-            // Act
-            using (var logger = LoggingBootstrap.Build(env))
-            {
-                logger.Information("{Event}", "smoke");
-            }
-
-            // Assert
-            var bytes = File.ReadAllBytes(logPath);
-            var hasBom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
-            Assert.False(hasBom);
-            Assert.NotEmpty(bytes);
-            Assert.Equal((byte)'{', bytes[0]);
-        }
-        finally
+        // Act
+        using (var logger = LoggingBootstrap.Build(env))
         {
-            Directory.Delete(parent, true);
+            logger.Information("{Event}", "smoke");
         }
+
+        // Assert
+        var bytes = File.ReadAllBytes(_logPath);
+        var hasBom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+        Assert.False(hasBom);
+        Assert.NotEmpty(bytes);
+        Assert.Equal((byte)'{', bytes[0]);
     }
 
     [Fact]
@@ -61,35 +73,25 @@ public sealed class LoggingBootstrapTests
     public void Build_HostLifetimeInformation_IsNotWritten()
     {
         // Arrange
-        var parent = Path.Combine(Path.GetTempPath(), "textedit-log-lifetime-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        var logPath = Path.Combine(parent, "out.log");
-        try
+        var env = new Dictionary<string, string>
         {
-            var env = new Dictionary<string, string>
-            {
-                [LoggingConstants.EnvLogFile] = logPath,
-                [LoggingConstants.EnvLogLevel] = "DEBUG",
-            };
+            [LoggingConstants.EnvLogFile] = _logPath,
+            [LoggingConstants.EnvLogLevel] = "DEBUG",
+        };
 
-            // Act
-            using (var logger = LoggingBootstrap.Build(env))
-            {
-                logger
-                    .ForContext(Constants.SourceContextPropertyName, HostLifetimeCategory)
-                    .Information("Content root path: {ContentRoot}", ContentRootProbe);
-                logger.Information("{Event}", ControlEvent);
-            }
-
-            // Assert
-            var content = File.ReadAllText(logPath);
-            Assert.DoesNotContain(ContentRootProbe, content, StringComparison.Ordinal);
-            Assert.Contains(ControlEvent, content, StringComparison.Ordinal);
-        }
-        finally
+        // Act
+        using (var logger = LoggingBootstrap.Build(env))
         {
-            Directory.Delete(parent, true);
+            logger
+                .ForContext(Constants.SourceContextPropertyName, HostLifetimeCategory)
+                .Information("Content root path: {ContentRoot}", ContentRootProbe);
+            logger.Information("{Event}", ControlEvent);
         }
+
+        // Assert
+        var content = File.ReadAllText(_logPath);
+        Assert.DoesNotContain(ContentRootProbe, content, StringComparison.Ordinal);
+        Assert.Contains(ControlEvent, content, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -98,67 +100,47 @@ public sealed class LoggingBootstrapTests
     public void Build_McpSdkEventBelowItsFloor_IsNotWritten(string configuredLevel, LogEventLevel probeLevel)
     {
         // Arrange
-        var parent = Path.Combine(Path.GetTempPath(), McpSdkFolderPrefix + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        var logPath = Path.Combine(parent, "out.log");
-        try
+        var env = new Dictionary<string, string>
         {
-            var env = new Dictionary<string, string>
-            {
-                [LoggingConstants.EnvLogFile] = logPath,
-                [LoggingConstants.EnvLogLevel] = configuredLevel,
-            };
+            [LoggingConstants.EnvLogFile] = _logPath,
+            [LoggingConstants.EnvLogLevel] = configuredLevel,
+        };
 
-            // Act
-            using (var logger = LoggingBootstrap.Build(env))
-            {
-                logger
-                    .ForContext(Constants.SourceContextPropertyName, McpSdkTransportCategory)
-                    .Write(probeLevel, "transport received message. Message: '{Message}'.", McpFrameProbe);
-                logger.Error("{Event}", McpControlEvent);
-            }
-
-            // Assert
-            var content = File.ReadAllText(logPath);
-            Assert.DoesNotContain(McpFrameProbe, content, StringComparison.Ordinal);
-            Assert.Contains(McpControlEvent, content, StringComparison.Ordinal);
-        }
-        finally
+        // Act
+        using (var logger = LoggingBootstrap.Build(env))
         {
-            Directory.Delete(parent, true);
+            logger
+                .ForContext(Constants.SourceContextPropertyName, McpSdkTransportCategory)
+                .Write(probeLevel, "transport received message. Message: '{Message}'.", McpFrameProbe);
+            logger.Error("{Event}", McpControlEvent);
         }
+
+        // Assert
+        var content = File.ReadAllText(_logPath);
+        Assert.DoesNotContain(McpFrameProbe, content, StringComparison.Ordinal);
+        Assert.Contains(McpControlEvent, content, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Build_McpSdkInformationAtTrace_IsWritten()
     {
         // Arrange
-        var parent = Path.Combine(Path.GetTempPath(), McpSdkFolderPrefix + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        var logPath = Path.Combine(parent, "out.log");
-        try
+        var env = new Dictionary<string, string>
         {
-            var env = new Dictionary<string, string>
-            {
-                [LoggingConstants.EnvLogFile] = logPath,
-                [LoggingConstants.EnvLogLevel] = TraceLevel,
-            };
+            [LoggingConstants.EnvLogFile] = _logPath,
+            [LoggingConstants.EnvLogLevel] = TraceLevel,
+        };
 
-            // Act
-            using (var logger = LoggingBootstrap.Build(env))
-            {
-                logger
-                    .ForContext(Constants.SourceContextPropertyName, McpSdkSessionCategory)
-                    .Information("method '{Method}' request handler called.", McpHandlerProbe);
-            }
-
-            // Assert
-            var content = File.ReadAllText(logPath);
-            Assert.Contains(McpHandlerProbe, content, StringComparison.Ordinal);
-        }
-        finally
+        // Act
+        using (var logger = LoggingBootstrap.Build(env))
         {
-            Directory.Delete(parent, true);
+            logger
+                .ForContext(Constants.SourceContextPropertyName, McpSdkSessionCategory)
+                .Information("method '{Method}' request handler called.", McpHandlerProbe);
         }
+
+        // Assert
+        var content = File.ReadAllText(_logPath);
+        Assert.Contains(McpHandlerProbe, content, StringComparison.Ordinal);
     }
 }

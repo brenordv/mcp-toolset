@@ -210,19 +210,18 @@ public sealed class ReadGateTests
     [Fact]
     public async Task ReadLines_FileInUnlistableDirectory_FailsClosedAsInternalError()
     {
-        SkipUnlessUnixModesApply();
-
         // Arrange
+        UnixDirectoryModes.SkipUnlessApplicable();
         const string secretFile = "proj/secret.json";
         using var harness = new TextSearchHarness();
         harness.Write("proj/.gitignore", "secret.json\n");
         harness.Write(secretFile, "{ \"secret\": true }");
         var proj = Path.Combine(harness.Root, "proj");
-        MakeUnlistable(proj);
+        UnixDirectoryModes.MakeUnlistable(proj);
         try
         {
             // Act
-            var envelope = await harness.ReadLines.InvokeAsync(path: secretFile);
+            var envelope = await harness.ReadLines.InvokeAsync(path: secretFile, cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(ErrorCodes.InternalError, envelope.Error.Code);
@@ -230,7 +229,7 @@ public sealed class ReadGateTests
         }
         finally
         {
-            MakeListable(proj);
+            UnixDirectoryModes.MakeListable(proj);
         }
     }
 
@@ -244,39 +243,6 @@ public sealed class ReadGateTests
         harness.Write(".git/config", "[core]\n  token = SECRET");
         harness.Write(".ssh/id_rsa", "token PRIVATE KEY");
         return harness;
-    }
-
-    private static void SkipUnlessUnixModesApply()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.Skip("Unix file modes do not apply on Windows.");
-        }
-
-        if (Environment.IsPrivilegedProcess)
-        {
-            Assert.Skip("A privileged process bypasses directory mode bits.");
-        }
-    }
-
-    private static void MakeUnlistable(string directory)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        File.SetUnixFileMode(directory, UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-    }
-
-    private static void MakeListable(string directory)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     }
 
     #endregion

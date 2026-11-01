@@ -1,11 +1,12 @@
-using RaccoonNinja.McpToolset.Server.GitOps.Repo;
-
 namespace RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
 
 /// <summary>Raised when the configured <c>git</c> executable is not present or unreachable.</summary>
 public sealed class GitNotInstalledException(string message, IDictionary<string, object> detail = null)
     : GitCheckException(message, detail)
 {
+    /// <summary>How logs and error details name git. The absolute path found can hold the user's name, so it is never shown.</summary>
+    internal const string ExecutableDisplayName = "git";
+
     public override string Code => ErrorCodes.GitNotInstalled;
 
     /// <summary>
@@ -20,7 +21,7 @@ public sealed class GitNotInstalledException(string message, IDictionary<string,
         {
             throw new GitNotInstalledException(
                 "git executable not found on PATH when the server started",
-                new Dictionary<string, object> { ["executable"] = GitExecutableLocator.DisplayName });
+                new Dictionary<string, object> { ["executable"] = ExecutableDisplayName });
         }
     }
 }

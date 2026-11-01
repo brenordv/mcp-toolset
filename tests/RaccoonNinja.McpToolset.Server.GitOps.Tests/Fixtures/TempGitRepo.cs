@@ -16,6 +16,9 @@ internal sealed class TempGitRepo : IDisposable
     /// <summary>The key git uses for <see cref="LogOutputEncodingKey"/> when that key is unset.</summary>
     public const string CommitEncodingKey = "i18n.commitEncoding";
 
+    /// <summary>The message of the commit that makes <c>a.txt</c> executable and changes nothing else.</summary>
+    public const string ModeChangeMessage = "make a.txt executable";
+
     /// <summary>How long one git invocation may run before the helper kills it and fails the test.</summary>
     private const int GitTimeoutMilliseconds = 15_000;
 

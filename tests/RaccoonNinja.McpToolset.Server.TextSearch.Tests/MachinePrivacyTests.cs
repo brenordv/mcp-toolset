@@ -83,20 +83,19 @@ public sealed class MachinePrivacyTests
     [Fact]
     public async Task ReadLines_UnlistableDirectory_LogsRootRelativeNameOnly()
     {
-        SkipUnlessUnixModesApply();
-
         // Arrange
+        UnixDirectoryModes.SkipUnlessApplicable();
         const string secretFile = "proj/secret.json";
         var loggerFactory = new RecordingLoggerFactory();
         using var harness = new TextSearchHarness(loggerFactory: loggerFactory);
         harness.Write("proj/.gitignore", "secret.json\n");
         harness.Write(secretFile, "{ \"secret\": true }");
         var proj = Path.Combine(harness.Root, "proj");
-        MakeUnlistable(proj);
+        UnixDirectoryModes.MakeUnlistable(proj);
         try
         {
             // Act
-            var envelope = await harness.ReadLines.InvokeAsync(path: secretFile);
+            var envelope = await harness.ReadLines.InvokeAsync(path: secretFile, cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(ErrorCodes.InternalError, envelope.Error.Code);
@@ -105,7 +104,7 @@ public sealed class MachinePrivacyTests
         }
         finally
         {
-            MakeListable(proj);
+            UnixDirectoryModes.MakeListable(proj);
         }
     }
 
@@ -131,39 +130,6 @@ public sealed class MachinePrivacyTests
         var json = TextSearchHarness.ToJson(envelope);
         Assert.DoesNotContain(root, json, StringComparison.Ordinal);
         Assert.DoesNotContain(root.Replace("\\", "\\\\", StringComparison.Ordinal), json, StringComparison.Ordinal);
-    }
-
-    private static void SkipUnlessUnixModesApply()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.Skip("Unix file modes do not apply on Windows.");
-        }
-
-        if (Environment.IsPrivilegedProcess)
-        {
-            Assert.Skip("A privileged process bypasses directory mode bits.");
-        }
-    }
-
-    private static void MakeUnlistable(string directory)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        File.SetUnixFileMode(directory, UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-    }
-
-    private static void MakeListable(string directory)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     }
 
     #endregion

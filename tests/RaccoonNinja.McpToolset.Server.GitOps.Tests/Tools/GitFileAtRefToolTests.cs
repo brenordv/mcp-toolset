@@ -15,6 +15,11 @@ public sealed class GitFileAtRefToolTests : IDisposable
     private const string OneLineFile = "oneline.txt";
     private const string BinaryFile = "blob.bin";
     private const int PageBytes = 4096;
+    private const string OneLineChunk = "0123456789";
+    private const int OneLineChunkCount = 5000;
+    private const int LastPageBytes = 1000;
+
+    private static readonly int OneLineFileBytes = OneLineChunk.Length * OneLineChunkCount;
 
     private readonly TempGitRepo _repo;
     private readonly GitFileAtRefTool _tool;
@@ -26,7 +31,7 @@ public sealed class GitFileAtRefToolTests : IDisposable
         _repo.WriteFile("gone.txt", "bye\n");
         _repo.WriteBytes(BinaryFile, [0x89, 0x50, 0x00, 0x0A, 0x1A]);
         _repo.WriteFile(BigFile, string.Concat(Enumerable.Range(1, 1000).Select(n => $"line {n}\n")));
-        _repo.WriteFile(OneLineFile, string.Concat(Enumerable.Repeat("0123456789", 5000)));
+        _repo.WriteFile(OneLineFile, string.Concat(Enumerable.Repeat(OneLineChunk, OneLineChunkCount)));
         _repo.Run("add", ".");
         _repo.Run("commit", "-m", "add files");
         _repo.Run("rm", "gone.txt");
@@ -172,12 +177,12 @@ public sealed class GitFileAtRefToolTests : IDisposable
         var cwd = _repo.RepoPath;
 
         // Act
-        var envelope = await _tool.InvokeAsync(cwd, OneLineFile, byteOffset: 49000, maxBytes: PageBytes, cancellationToken: TestContext.Current.CancellationToken);
+        var envelope = await _tool.InvokeAsync(cwd, OneLineFile, byteOffset: OneLineFileBytes - LastPageBytes, maxBytes: PageBytes, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(envelope.Error);
         var file = Assert.IsType<FileAtRef>(envelope.Results[0]);
-        Assert.Equal(1000, file.Content.Length);
+        Assert.Equal(LastPageBytes, file.Content.Length);
         Assert.False(envelope.Truncated);
         Assert.Null(file.NextByteOffset);
     }

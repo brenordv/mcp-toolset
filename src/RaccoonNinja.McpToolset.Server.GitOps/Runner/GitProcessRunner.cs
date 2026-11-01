@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
-using RaccoonNinja.McpToolset.Server.GitOps.Repo;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Runner;
 
@@ -68,14 +67,14 @@ public sealed class GitProcessRunner(ILogger<GitProcessRunner> logger) : IGitPro
         {
             throw new GitNotInstalledException(
                 "git executable could not be started",
-                new Dictionary<string, object> { ["executable"] = GitExecutableLocator.DisplayName });
+                new Dictionary<string, object> { ["executable"] = GitNotInstalledException.ExecutableDisplayName });
         }
 
         if (process == null)
         {
             throw new GitNotInstalledException(
                 "failed to start git process",
-                new Dictionary<string, object> { ["executable"] = GitExecutableLocator.DisplayName });
+                new Dictionary<string, object> { ["executable"] = GitNotInstalledException.ExecutableDisplayName });
         }
 
         // Close stdin immediately so git never blocks on it.

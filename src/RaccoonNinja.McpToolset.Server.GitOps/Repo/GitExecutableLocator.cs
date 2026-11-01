@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using RaccoonNinja.McpToolset.Server.GitOps.Extensions;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Repo;
 
@@ -9,9 +10,6 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Repo;
 /// </summary>
 internal static class GitExecutableLocator
 {
-    /// <summary>How logs and error details name git. The absolute path found can hold the user's name, so it is never shown.</summary>
-    internal const string DisplayName = "git";
-
     private const string UnixFileName = "git";
 
     /// <summary>
@@ -33,13 +31,8 @@ internal static class GitExecutableLocator
         }
 
         var fileName = OperatingSystem.IsWindows() ? WindowsFileName : UnixFileName;
-        foreach (var entry in pathVariable.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        foreach (var entry in pathVariable.FullyQualifiedPathEntries())
         {
-            if (!Path.IsPathFullyQualified(entry))
-            {
-                continue;
-            }
-
             var candidate = Path.Combine(entry, fileName);
             if (IsStartable(candidate))
             {

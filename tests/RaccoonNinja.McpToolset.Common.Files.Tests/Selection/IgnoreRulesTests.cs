@@ -1,5 +1,6 @@
 using System.Globalization;
 using RaccoonNinja.McpToolset.Common.Files.Selection;
+using RaccoonNinja.McpToolset.Common.Files.Tests.TestSupport;
 
 namespace RaccoonNinja.McpToolset.Common.Files.Tests.Selection;
 
@@ -422,16 +423,15 @@ public sealed class IgnoreRulesTests
     [Fact]
     public void Load_UnlistableDirectory_ThrowsWithRootRelativeNameOnly()
     {
-        SkipUnlessUnixModesApply();
-
         // Arrange
+        UnixDirectoryModes.SkipUnlessApplicable();
         const string subdirectory = "sub";
         var dir = Directory.CreateTempSubdirectory("ignorerules-unlistable-");
         var sub = Directory.CreateDirectory(Path.Combine(dir.FullName, subdirectory));
         try
         {
             File.WriteAllText(Path.Combine(sub.FullName, IgnoreRules.GitIgnoreFileName), "*.log\n");
-            MakeUnlistable(sub.FullName);
+            UnixDirectoryModes.MakeUnlistable(sub.FullName);
 
             // Act
             var act = () => IgnoreRules.Load(sub.FullName, subdirectory);
@@ -443,7 +443,7 @@ public sealed class IgnoreRulesTests
         }
         finally
         {
-            MakeListable(sub.FullName);
+            UnixDirectoryModes.MakeListable(sub.FullName);
             dir.Delete(recursive: true);
         }
     }
@@ -647,41 +647,4 @@ public sealed class IgnoreRulesTests
         // Assert
         Assert.ThrowsAny<ArgumentException>(act);
     }
-
-    #region Test Helpers
-
-    private static void SkipUnlessUnixModesApply()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.Skip("Unix file modes do not apply on Windows.");
-        }
-
-        if (Environment.IsPrivilegedProcess)
-        {
-            Assert.Skip("A privileged process bypasses directory mode bits.");
-        }
-    }
-
-    private static void MakeUnlistable(string directory)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        File.SetUnixFileMode(directory, UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-    }
-
-    private static void MakeListable(string directory)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-    }
-
-    #endregion
 }

@@ -673,6 +673,15 @@ public class DiffParserTests
                 "x b/orig.txt",
                 "copy.txt"
             },
+            {
+                "diff --git \"a/x\\\\y\\nold.txt\" \"b/x\\\\y\\nnew.txt\"\n" +
+                "similarity index 95%\n" +
+                "rename from \"x\\\\y\\nold.txt\"\n" +
+                "rename to \"x\\\\y\\nnew.txt\"\n",
+                ChangeType.Renamed,
+                "x\\y\nold.txt",
+                "x\\y\nnew.txt"
+            },
         };
     }
 

@@ -150,7 +150,8 @@ Then compare against a known-good baseline. Ask the agent to call the `skill-sta
 - `total_records` did not move and `error_log_last_write` is just now: open `ingest-errors.log`. A
   `skipped reason=unrecognized_shape root_keys=[...]` line means the payload shape changed, and the listed keys are the
   real field names to compare against `command_name` and `command_args`. A `<stage> <Exception>: <message>` line means
-  the store.
+  recording failed at that stage; an `open-store` or `insert` line means the store could not be opened or written, for
+  example while another process held it locked.
 - `total_records` did not move and nothing was written to the error log: the hook never ran. Check the event name, the
   Windows bare-`.exe` form, and the hook `timeout`, since a timed-out hook is killed before it can log.
 

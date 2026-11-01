@@ -2,15 +2,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
 using RaccoonNinja.McpToolset.Server.GitOps.Runner;
 using RaccoonNinja.McpToolset.Server.GitOps.Security;
+using RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Runner;
 
 public sealed class GitProcessRunnerTests
 {
-    private const string BareExecutableName = "git";
     private const string VersionSubcommand = "version";
-    private const string ExecutableDetailKey = "executable";
-    private const string ExecutableDisplayName = "git";
 
     [Fact]
     public async Task RunAsync_WithBareExecutableName_ThrowsGitNotInstalled()
@@ -20,7 +18,7 @@ public sealed class GitProcessRunnerTests
 
         // Act
         var act = () => sut.RunAsync(
-            [BareExecutableName, VersionSubcommand],
+            [TestGit.BareName, VersionSubcommand],
             EnvironmentBuilder.Build(),
             Path.GetTempPath(),
             cancellationToken: TestContext.Current.CancellationToken);
@@ -46,7 +44,7 @@ public sealed class GitProcessRunnerTests
         // Assert
         var exception = await Assert.ThrowsAsync<GitNotInstalledException>(act);
         Assert.DoesNotContain(missingExecutable, exception.Message);
-        Assert.Equal(ExecutableDisplayName, exception.Detail[ExecutableDetailKey]);
+        Assert.Equal(TestGit.DisplayName, exception.Detail[TestGit.NotInstalledDetailKey]);
     }
 
     #region Test Helpers

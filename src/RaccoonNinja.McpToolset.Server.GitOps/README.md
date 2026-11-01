@@ -206,8 +206,9 @@ uses, so `A|B` alternation and `\d` work; a git without PCRE2 returns `PcreUnava
 cannot be combined with `ref`), `follow` (track renames, only when scoped to a single path; a `log.follow` setting in
 git config does not turn it on), and `maxCount` (default 50).
 
-Every call also passes `--ignore-submodules=dirty`, so a submodule ignore setting cannot drop a submodule's commit change
-from the diff git builds for `pickaxe` or `follow`; see [Security model (long version)](#security-model-long-version).
+Every call also passes `--ignore-submodules=dirty`, so a submodule ignore setting cannot drop a submodule's commit
+change from the diff git builds for `pickaxe` or `follow`; see
+[Security model (long version)](#security-model-long-version).
 
 ```mermaid
 flowchart LR
@@ -280,9 +281,10 @@ raw bytes git returned, before decoding:
   `RejectedArgument` with `param: line_range` and `total_lines` in the detail, so the caller can retry; an empty blob
   has no lines, so any range on it is rejected.
 - `byteOffset` (0-based) skips that many bytes of what the range kept, or of the whole blob without a range. An
-  offset that lands inside a multi-byte UTF-8 character moves forward to the next character. An offset at or past
-  the end is `RejectedArgument` with `param: byte_offset` and `content_bytes` (the length it was checked against) in
-  the detail. An offset of 0 on empty content returns empty content.
+  offset that lands inside a multi-byte UTF-8 character moves forward to the next character, so one inside the last
+  character returns empty content, with `truncated: false` and `next_byte_offset: null`. An offset at or past the end
+  is `RejectedArgument` with `param: byte_offset` and `content_bytes` (the length it was checked against) in the
+  detail. An offset of 0 on empty content returns empty content.
 - `maxBytes` caps the returned content in UTF-8 bytes. A cut that lands inside a character backs off to the start of
   that character, so a cap of 4 or more never splits one; a smaller cap always keeps at least one byte, so paging
   with it still advances. A cut sets the envelope's `truncated` to `true` and `next_byte_offset` to the offset of the
@@ -479,7 +481,8 @@ the patch. Every pass also runs with `--submodule=short` and with
 `diff --git a/<path> b/<path>` header each file is read from. The prefixes are pinned through config here, not with
 `--src-prefix=` and `--dst-prefix=` as in `git_diff`, because `git stash show` in git 2.52.0 through 2.55.x garbles a
 prefix given on its command line. Both passes also run with `--ignore-submodules=dirty`, so a submodule ignore setting
-cannot hide a submodule whose recorded commit changed; see [Security model (long version)](#security-model-long-version).
+cannot hide a submodule whose recorded commit changed; see
+[Security model (long version)](#security-model-long-version).
 
 ```mermaid
 flowchart TD
@@ -507,7 +510,8 @@ Every collection-returning tool wraps its payload in this structure:
     "author": "<redacted>",    // user-controlled values are redacted, not echoed
     "max_count": 50
   },
-  "truncated": false,          // true if git output hit the 8 MB cap, or a tool-level cap cut the payload (git_file_at_ref maxBytes)
+  "truncated": false,          // true if git output hit the 8 MB cap, or a tool-level cap cut the payload
+                               // (git_file_at_ref maxBytes)
   "repo_root": "/abs/path/to/repo",
   "error": null                // populated only on failure (see below)
 }
@@ -569,7 +573,8 @@ check out. Only argument names are echoed back, never values.
   - **Every input is treated as suspect.** Branch and commit names are checked against the real repo before use, and nothing the assistant sends can be mistaken for a secret command-line option.
   - **Git itself is locked down.** Auto-running scripts (hooks and filter drivers), password prompts, and credential helpers are switched off, and the command runs in a stripped-down environment, so a booby-trapped repo can't hijack it.
   - **It can't run away.** Each call is capped at 30 seconds and 8 MB of output, then stopped: no runaway processes, no memory blowups.
-  - **It doesn't leak.** Error messages and logs are scrubbed of your file names, search terms, and paths, except the end of git's own error output when a call fails, which the server log keeps for diagnosis.
+  - **It doesn't leak.** Error messages and logs are scrubbed of your file names, search terms, and paths, except the
+    end of git's own error output when a call fails, which the server log keeps for diagnosis.
 
 As is with all in-house security solutions: This is not perfect, and I might be unknowingly be re-inventing the wheel. But it's a best-effort type of thing. I'll gladly accept feedback and suggestions to improve it.
 
@@ -630,16 +635,17 @@ flowchart TD
   meta-characters can't leak.
 - **git starts from an absolute path.** At startup the server takes the first `git` (`git.exe` on Windows; elsewhere a
   file with an execute bit) in the absolute directories of its `PATH` and starts every git process from that path, so
-  a `git` or `git.exe` committed at a repository's root does not run when a client starts the server there. Empty and
-  relative `PATH` entries are skipped, and on Windows a `git.cmd` or `git.bat` never matches, since it would start
-  through `cmd.exe`, which re-reads the arguments. An absolute `PATH` entry inside a repository (a virtualenv `bin`, the
-  `node_modules/.bin` that `npm run` adds, a direnv `PATH_add`) is still trusted, as it is in your own shell.
+  a `git` or `git.exe` committed at a repository's root does not run when a client starts the server there. Empty,
+  relative, and quoted `PATH` entries are skipped, and on Windows a `git.cmd` or `git.bat` never matches, since it would
+  start through `cmd.exe`, which re-reads the arguments. An absolute `PATH` entry inside a repository (a virtualenv
+  `bin`, the `node_modules/.bin` that `npm run` adds, a direnv `PATH_add`) is still trusted, as it is in your own shell.
 - **Scrubbed environment.** The child env is built from a small allowlist (`PATH`, locale vars, `HOME`, plus a few
   Windows essentials) with fixed git neutralizers added. Everything else is dropped. `PATH` keeps only its fully
   qualified entries, in order (an empty, relative, or quoted entry is dropped): git looks up on `PATH` a program it
   starts by name, such as the `git log` that `git stash list` starts, once its own exec path holds no match, and an
   empty entry (on Linux and macOS) or a relative one resolves against git's current directory, the repository root for
-  a tool call. `GIT_NO_LAZY_FETCH=1` is one of the neutralizers. In a partial clone, or any repository whose config names a promisor remote, reading an object git does not have
+  a tool call. `GIT_NO_LAZY_FETCH=1` is one of the neutralizers. In a partial clone, or any repository whose config
+  names a promisor remote, reading an object git does not have
   would otherwise start a fetch from that remote, and the fetch runs the program the repository's config names for the
   transport (for example `remote.<name>.uploadpack` for a remote at a local path, `core.sshCommand` for ssh, or a
   remote helper). A missing object fails the call with `GitCommandError` instead (message
@@ -709,9 +715,10 @@ flowchart TD
 
 Structured JSON logs (allowlisted fields only, no user data) go to a rotating file, falling back to stderr if the file
 can't be opened. stdout is reserved for the MCP protocol. A logged exception is recorded in `stderr_tail` only as its
-type chain, never its message or stack trace. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of
-which names the working directory) are not logged. The MCP SDK's own lines (categories under `ModelContextProtocol`)
-are never logged below Information, so its Trace-level copy of every JSON-RPC frame is not logged.
+type chain, never its message or stack trace. The host's lifetime category (`Microsoft.Hosting.Lifetime`) is not
+logged below Warning, so its status lines, one of which names the working directory, are not logged. The MCP SDK's own
+lines (categories under `ModelContextProtocol`) are never logged below Information, so its Trace-level copy of every
+JSON-RPC frame is not logged.
 
 | Variable               | Purpose                                       | Default                                 |
 |------------------------|-----------------------------------------------|-----------------------------------------|
@@ -737,14 +744,16 @@ TODO: Add instructions to build on Windows, macOS, and Linux.
 ## Requirements
 
 - **`git` on `PATH`**: required. It must sit in a directory your `PATH` names by an absolute path (`.` and other
-  relative entries are skipped). The server looks for it once at startup, so restart the server after installing or
-  moving git. This server runs your system `git` for every call; without it, tools fail with a `GitNotInstalled` error. Any reasonably recent `git` works. The lazy-fetch block in the security model has two parts.
+  relative entries, and quoted ones, are skipped). The server looks for it once at startup, so restart the server
+  after installing or moving git. This server runs your system `git` for every call; without it, tools fail with a
+  `GitNotInstalled` error. Any reasonably recent `git` works. The lazy-fetch block in the security model has two parts.
   `GIT_NO_LAZY_FETCH=1` stops the fetch before it starts on git 2.45.1 or later, or 2.39.4, 2.40.2, 2.41.1, 2.42.2,
   2.43.4, 2.44.1, or a later release in the same series. git 2.45.0 honors it only in part and an older git ignores it,
   so there a tool call in a repository with a promisor remote can still start a fetch (a `git fetch` child from 2.29.0
   on, inside git itself before that); `GIT_ALLOW_PROTOCOL=none` and `-c fetch.bundleURI=` stop that fetch before it
   starts a transport program or downloads a bundle. Every git from 2.6.1 on reads `GIT_ALLOW_PROTOCOL`, and no git
-  before 2.17.0 fetches a missing object on demand. The server log's `git_version` line shows the version of the git the server runs.
+  before 2.17.0 fetches a missing object on demand. The server log's `git_version` line shows the version of the git
+  the server runs.
 - **.NET runtime**: *not* needed for the released binaries. Each release ships a self-contained, single-file
   executable per platform ([Releases and verification](../../README.md#releases-and-verification)), so there's nothing
   extra to install to run it.

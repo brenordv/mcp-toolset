@@ -65,7 +65,7 @@ public static class ContentSearch
         return new FileSearchOutcome(matches, TimedOut: false, capped);
     }
 
-    /// <summary>Count the lines of <paramref name="document"/> with at least one match. Exact: no per-file cap applies.</summary>
+    /// <summary>Count the lines of <paramref name="document"/> with at least one match. No per-file cap applies; a regex timeout stops the count early.</summary>
     /// <param name="document">The decoded document (a binary document counts zero).</param>
     /// <param name="matcher">The line matcher.</param>
     /// <param name="cancellationToken">The operation-budget token, checked once per line.</param>

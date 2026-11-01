@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using RaccoonNinja.McpToolset.Server.TextEdit.Errors;
 using RaccoonNinja.McpToolset.Server.TextEdit.Models;
 using RaccoonNinja.McpToolset.Server.TextEdit.Tests.TestSupport;
@@ -9,6 +10,10 @@ public sealed class ReplaceTextToolTests
     private const string BacktrackingPattern = "(?=(a+)+$)";
     private const string BacktrackingReplacement = "x";
     private const string TextFileGlob = "*.txt";
+    private const string SlowFileA = "slow-a.txt";
+    private const string SlowFileB = "slow-b.txt";
+    private const string FastFile = "fast.txt";
+    private const string FastFileContent = "hello";
     private const int RegexTimeoutMs = 50;
     private const string RegexTimeoutReason = "regex_timeout";
     private const string RegexTimeoutsTotal = "regex_timeouts_total";
@@ -84,7 +89,7 @@ public sealed class ReplaceTextToolTests
         var config = TextEditHarness.DefaultConfig() with { RegexTimeout = TimeSpan.FromMilliseconds(RegexTimeoutMs) };
         using var harness = new TextEditHarness(config);
         harness.WriteText(slowFile, BacktrackingInput);
-        harness.WriteText("fast.txt", "hello");
+        harness.WriteText(FastFile, FastFileContent);
 
         // Act
         var envelope = await harness.Replace.InvokeAsync(
@@ -109,8 +114,8 @@ public sealed class ReplaceTextToolTests
         // Arrange
         var config = TextEditHarness.DefaultConfig() with { RegexTimeout = TimeSpan.FromMilliseconds(RegexTimeoutMs) };
         using var harness = new TextEditHarness(config);
-        harness.WriteText("slow-a.txt", BacktrackingInput);
-        harness.WriteText("slow-b.txt", BacktrackingInput);
+        harness.WriteText(SlowFileA, BacktrackingInput);
+        harness.WriteText(SlowFileB, BacktrackingInput);
 
         // Act
         var envelope = await harness.Replace.InvokeAsync(
@@ -126,6 +131,29 @@ public sealed class ReplaceTextToolTests
         Assert.Equal(2, result.Refused);
         Assert.All(result.Files, file => Assert.Equal(RegexTimeoutReason, file.RefusalReason));
         Assert.Equal(2L, (long)harness.Metrics.Summary()[RegexTimeoutsTotal]);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RegexTimeoutOnTwoFiles_LogsOneRegexTimeoutWarningPerFile()
+    {
+        // Arrange
+        var loggerFactory = new RecordingLoggerFactory();
+        var config = TextEditHarness.DefaultConfig() with { RegexTimeout = TimeSpan.FromMilliseconds(RegexTimeoutMs) };
+        using var harness = new TextEditHarness(config, loggerFactory: loggerFactory);
+        harness.WriteText(SlowFileA, BacktrackingInput);
+        harness.WriteText(SlowFileB, BacktrackingInput);
+        harness.WriteText(FastFile, FastFileContent);
+
+        // Act
+        await harness.Replace.InvokeAsync(
+            BacktrackingPattern,
+            BacktrackingReplacement,
+            glob: TextFileGlob,
+            is_regex: true,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(2, loggerFactory.Entries.Count(entry => entry == (LogLevel.Warning, RegexTimeoutReason)));
     }
 
     [Fact]

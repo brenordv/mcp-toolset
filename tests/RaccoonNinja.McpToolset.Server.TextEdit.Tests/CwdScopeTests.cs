@@ -207,20 +207,19 @@ public sealed class CwdScopeTests
     [Fact]
     public async Task Replace_PathInUnlistableDirectory_FailsClosedWithoutWriting()
     {
-        SkipUnlessUnixModesApply();
-
         // Arrange
+        UnixDirectoryModes.SkipUnlessApplicable();
         const string secretFile = "proj/secret.json";
         const string original = "hello world";
         using var harness = new TextEditHarness();
         harness.WriteText("proj/.gitignore", "secret.json\n");
         harness.WriteText(secretFile, original);
         var proj = Path.Combine(harness.Root, "proj");
-        MakeUnlistable(proj);
+        UnixDirectoryModes.MakeUnlistable(proj);
         try
         {
             // Act
-            var envelope = await harness.Replace.InvokeAsync("world", "text", paths: [secretFile]);
+            var envelope = await harness.Replace.InvokeAsync("world", "text", paths: [secretFile], cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(ErrorCodes.InternalError, envelope.Error.Code);
@@ -228,44 +227,7 @@ public sealed class CwdScopeTests
         }
         finally
         {
-            MakeListable(proj);
+            UnixDirectoryModes.MakeListable(proj);
         }
     }
-
-    #region Test Helpers
-
-    private static void SkipUnlessUnixModesApply()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.Skip("Unix file modes do not apply on Windows.");
-        }
-
-        if (Environment.IsPrivilegedProcess)
-        {
-            Assert.Skip("A privileged process bypasses directory mode bits.");
-        }
-    }
-
-    private static void MakeUnlistable(string directory)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        File.SetUnixFileMode(directory, UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-    }
-
-    private static void MakeListable(string directory)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-    }
-
-    #endregion
 }

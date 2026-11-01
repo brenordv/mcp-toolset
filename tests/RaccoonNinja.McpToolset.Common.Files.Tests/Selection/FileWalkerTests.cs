@@ -1,5 +1,6 @@
 using RaccoonNinja.McpToolset.Common.Files.Security;
 using RaccoonNinja.McpToolset.Common.Files.Selection;
+using RaccoonNinja.McpToolset.Common.Files.Tests.TestSupport;
 
 namespace RaccoonNinja.McpToolset.Common.Files.Tests.Selection;
 
@@ -358,14 +359,13 @@ public sealed class FileWalkerTests : IDisposable
     [Fact]
     public void Walk_UnlistableSubdirectory_IsPrunedNotFailed()
     {
-        SkipUnlessUnixModesApply();
-
         // Arrange
+        UnixDirectoryModes.SkipUnlessApplicable();
         Write("sub/.gitignore", "*.log\n");
         Write("sub/a.txt", "a");
         Write("top.txt", "t");
         var sub = Path.Combine(_rootDir, "sub");
-        MakeUnlistable(sub);
+        UnixDirectoryModes.MakeUnlistable(sub);
         try
         {
             // Act
@@ -376,7 +376,7 @@ public sealed class FileWalkerTests : IDisposable
         }
         finally
         {
-            MakeListable(sub);
+            UnixDirectoryModes.MakeListable(sub);
         }
     }
 
@@ -449,39 +449,6 @@ public sealed class FileWalkerTests : IDisposable
         {
             return false;
         }
-    }
-
-    private static void SkipUnlessUnixModesApply()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.Skip("Unix file modes do not apply on Windows.");
-        }
-
-        if (Environment.IsPrivilegedProcess)
-        {
-            Assert.Skip("A privileged process bypasses directory mode bits.");
-        }
-    }
-
-    private static void MakeUnlistable(string directory)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        File.SetUnixFileMode(directory, UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-    }
-
-    private static void MakeListable(string directory)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
     }
 
     #endregion

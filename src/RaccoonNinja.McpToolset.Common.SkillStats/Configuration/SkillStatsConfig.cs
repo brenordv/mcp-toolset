@@ -20,7 +20,7 @@ public sealed record SkillStatsConfig
 
     /// <summary>
     /// Microsoft.Data.Sqlite command timeout for the ingest writer, in seconds. The library retries a busy or
-    /// locked command until this runs out, on top of the SQLite busy timeout, so it stays as short.
+    /// locked command until this runs out, so it is held to the same one second as <see cref="WriterBusyTimeoutMs"/>.
     /// </summary>
     public const int WriterCommandTimeoutSeconds = 1;
 

@@ -13,10 +13,11 @@
   names match case-insensitively on every platform. Behavior change: a `read_lines`, `read_json`,
   `inspect_files`, or `search_text` call that names a path inside a directory the server can enter but not
   list now fails with `InternalError`, as does a walk whose `cwd` is such a directory or lies under one; a
-  walk still skips such a subdirectory, and a subdirectory the server can list but whose ignore file it
-  cannot open now fails the walk. The `tool_error` log line for the failed call names the directory by its
-  root-relative path (`.` for the root) and the filesystem exception type; no new log field. Both servers
-  share the fix through `Common.Files`.
+  walk still skips such a subdirectory. A subdirectory the server can list but whose ignore file it cannot
+  open fails the walk, as it did before, and that now includes an ignore file `File.Exists` reported as
+  absent. The `tool_error` log line for the failed call names the directory by its root-relative path (`.`
+  for the root) and the filesystem exception type; no new log field. Both servers share the fix through
+  `Common.Files`.
 
 ## v1.7.0
 - Fixed: an extra deny entry containing a `/` (`MCP_TEXTSEARCH_EXTRA_DENY=**/.claude/settings*.json`) did

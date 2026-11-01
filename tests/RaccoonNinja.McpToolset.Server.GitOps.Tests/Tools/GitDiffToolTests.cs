@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors;
 using RaccoonNinja.McpToolset.Server.GitOps.Metrics;
@@ -38,6 +39,10 @@ public sealed class GitDiffToolTests : IDisposable
     private const string ModifySubject = "modify";
     private const string RegularFileMode = "100644";
     private const string ExecutableFileMode = "100755";
+    private const string NumstatFlag = "--numstat";
+    private const string DiffSubcommand = "diff";
+    private const string ParentRef = "HEAD~1";
+    private const string HeadRef = "HEAD";
 
     private readonly TempGitRepo _repo;
     private readonly GitDiffTool _tool;
@@ -45,14 +50,14 @@ public sealed class GitDiffToolTests : IDisposable
     public GitDiffToolTests()
     {
         _repo = new TempGitRepo();
-        _repo.WriteFile(ChangedFile, "one\n");
+        _repo.WriteFile(ChangedFile, AddedFileContent);
         _repo.Run("add", ".");
         _repo.Run("commit", "-m", "first");
-        _repo.WriteFile(ChangedFile, "one\ntwo\n");
+        _repo.WriteFile(ChangedFile, TwoLineContent);
         _repo.Run("add", ".");
         _repo.Run("commit", "-m", "second");
 
-        _tool = BuildTool(new GitProcessRunner(NullLogger<GitProcessRunner>.Instance));
+        _tool = BuildTool(new GitProcessRunner(NullLogger<GitProcessRunner>.Instance), NullLoggerFactory.Instance);
     }
 
     public void Dispose() => _repo.Dispose();
@@ -82,7 +87,7 @@ public sealed class GitDiffToolTests : IDisposable
     public async Task Diff_Worktree_WithMnemonicPrefixConfig_ReturnsChangedFile()
     {
         // Arrange
-        _repo.WriteFile(ChangedFile, "one\ntwo\nthree\n");
+        _repo.WriteFile(ChangedFile, ThreeLineContent);
         _repo.Run("config", "diff.mnemonicPrefix", "true");
 
         // Act
@@ -371,7 +376,7 @@ public sealed class GitDiffToolTests : IDisposable
         _repo.WriteFile(ConflictFile, OursContent);
         _repo.Run("commit", "-am", ModifySubject);
         _repo.MergeLeavingConflicts(TheirsBranch);
-        var tool = BuildTool(new NumstatTruncatingRunner());
+        var tool = BuildTool(new NumstatTruncatingRunner(), NullLoggerFactory.Instance);
 
         // Act
         var envelope = await tool.InvokeAsync(_repo.RepoPath, staged: staged, cancellationToken: TestContext.Current.CancellationToken);
@@ -387,7 +392,7 @@ public sealed class GitDiffToolTests : IDisposable
     {
         // Arrange
         _repo.Run("update-index", "--chmod=+x", ChangedFile);
-        _repo.Run("commit", "-m", "make a.txt executable");
+        _repo.Run("commit", "-m", TempGitRepo.ModeChangeMessage);
 
         // Act
         var envelope = await _tool.InvokeAsync(_repo.RepoPath, fromRef: "HEAD~1", toRef: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
@@ -402,18 +407,54 @@ public sealed class GitDiffToolTests : IDisposable
         Assert.Empty(file.Hunks);
     }
 
+    [Fact]
+    public async Task Diff_PatchPassYieldsNoFileForCountedLines_LogsPatchParseEmptyWarning()
+    {
+        // Arrange
+        var loggerFactory = new RecordingLoggerFactory();
+        var tool = BuildTool(new StdoutDroppingRunner(argv => argv.Contains(DiffSubcommand) && !argv.Contains(NumstatFlag)), loggerFactory);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, fromRef: ParentRef, toRef: HeadRef, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var warning = Assert.Single(loggerFactory.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Equal("patch_parse_empty", warning.Message);
+    }
+
+    [Fact]
+    public async Task Diff_PatchFileMissingFromNumstat_LogsPatchPathUnmatchedWarning()
+    {
+        // Arrange
+        var loggerFactory = new RecordingLoggerFactory();
+        var tool = BuildTool(new StdoutDroppingRunner(argv => argv.Contains(NumstatFlag)), loggerFactory);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, fromRef: ParentRef, toRef: HeadRef, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var warning = Assert.Single(loggerFactory.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Equal("patch_path_unmatched", warning.Message);
+    }
+
     #region Test Helpers
 
-    /// <summary>Build the tool under test over <paramref name="runner"/>, with the real root resolver and ref verifier.</summary>
+    /// <summary>
+    /// Build the tool under test over <paramref name="runner"/>, logging through <paramref name="loggerFactory"/>, with the
+    /// real root resolver and ref verifier.
+    /// </summary>
     /// <param name="runner">The runner every git process of the call goes through.</param>
+    /// <param name="loggerFactory">The factory the call's log lines go to.</param>
     /// <returns>The tool.</returns>
-    private static GitDiffTool BuildTool(IGitProcessRunner runner)
+    private static GitDiffTool BuildTool(IGitProcessRunner runner, ILoggerFactory loggerFactory)
     {
         var common = new ToolCommon(
             new RepoRootResolver(TestGit.Executable),
             runner,
             new SessionMetrics(),
-            NullLoggerFactory.Instance,
+            loggerFactory,
             TestGit.Executable);
         return new GitDiffTool(common, new RefVerifier(TestGit.Executable));
     }
@@ -433,7 +474,7 @@ public sealed class GitDiffToolTests : IDisposable
             CancellationToken cancellationToken = default)
         {
             var result = await _inner.RunAsync(argv, env, workingDirectory, timeoutMs, outputCapBytes, callId, cancellationToken);
-            return argv.Contains("--numstat") ? result with { Truncated = true } : result;
+            return argv.Contains(NumstatFlag) ? result with { Truncated = true } : result;
         }
     }
 

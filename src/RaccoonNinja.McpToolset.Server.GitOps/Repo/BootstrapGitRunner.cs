@@ -74,12 +74,12 @@ internal static class BootstrapGitRunner
         {
             throw new GitNotInstalledException(
                 "git executable could not be started",
-                new Dictionary<string, object> { ["executable"] = GitExecutableLocator.DisplayName });
+                new Dictionary<string, object> { ["executable"] = GitNotInstalledException.ExecutableDisplayName });
         }
 
         return process ?? throw new GitNotInstalledException(
             "failed to start git bootstrap process",
-            new Dictionary<string, object> { ["executable"] = GitExecutableLocator.DisplayName });
+            new Dictionary<string, object> { ["executable"] = GitNotInstalledException.ExecutableDisplayName });
     }
 
     /// <summary>

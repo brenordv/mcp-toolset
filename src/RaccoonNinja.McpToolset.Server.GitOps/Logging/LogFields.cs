@@ -29,7 +29,10 @@ public static class LogFields
     // Server-controlled session metrics. Emitted only on shutdown.
     public const string MetricsSummary = "metrics_summary";
 
-    // The text after "git version " in git's own output, allowlisted by GitVersionReader. Emitted only at startup.
+    /// <summary>
+    /// The text after <c>git version </c> in git's own output, allowlisted by <see cref="Repo.GitVersionReader"/>.
+    /// Emitted only at startup.
+    /// </summary>
     public const string GitVersion = "git_version";
 
     /// <summary>Service name property attached to every log line for downstream filtering.</summary>

@@ -75,10 +75,12 @@ refused with a path-free error; the same denylist and ignore tiers apply as unde
 - **`search_text` matches per line.** A pattern that spans a newline will not match; `match_start`/
   `match_end` are offsets into the line.
 - **`count_only` returns per-file counts.** Each entry is `{path, match_count}`, where `match_count` counts
-  matching lines (a line with two matches counts once) and is exact: `max_matches_per_file` does not apply.
-  The envelope carries `total_match_count`, the sum over every matching file, the same on every page. When
-  the selection hits its ceiling (`truncated` with no `cursor`), the total covers only the files walked. It
-  pages like `files_only`, every page re-scans the selection, and the two cannot be combined.
+  matching lines (a line with two matches counts once); `max_matches_per_file` does not apply. A file whose regex
+  timed out keeps the count it reached, with no marker, and one that matched no line by then is left out. The
+  envelope carries `total_match_count`, the sum over every matching file. Every page re-scans the selection, so the
+  total is the same on every page only while the files do not change and no regex times out. When the selection
+  hits its ceiling (`truncated` with no `cursor`), the total covers only the files walked. It pages like
+  `files_only`, and the two cannot be combined.
 - **`include_ignored` takes globs, not a boolean.** Pass globs (for example `["build/**"]` for a tracked
   build directory) to re-include otherwise-ignored paths for one call; omit or pass an empty list to keep
   every ignore tier in force. It only ever re-includes the built-in default tier: a `.gitignore`,
@@ -207,6 +209,9 @@ Four tiers decide which non-secret files a walk skips, applied least-specific fi
    and tool-scope ignores (`.npmignore`, `.dockerignore`, ...) are deliberately not honored.
 4. **`.mcpignore`**, the most specific tier, which overrides all above. Use a base-root `.mcpignore` to
    *augment* the defaults rather than replace them.
+
+Ignore-file names match case-insensitively on every platform, so on Linux a `.GitIgnore` or a `.MCPIGNORE`
+applies too, and a directory holding two spellings of one name applies both.
 
 A more specific tier wins regardless of directory depth, in both directions: a `!` line in a
 nested `.gitignore` cannot re-include a path that a shallower agent-ignore file or `.mcpignore`

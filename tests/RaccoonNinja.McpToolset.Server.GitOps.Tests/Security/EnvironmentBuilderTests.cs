@@ -16,6 +16,8 @@ public class EnvironmentBuilderTests
     private const string PlantedGitMarker = "git.ran";
     private const string EmptyExecPathDirectory = "empty-exec-path";
     private const string RootRelativeEntry = "\\root-relative";
+    private const string CurrentDirectoryEntry = ".";
+    private const string RelativeEntry = "bin";
 
     private static readonly string FirstPathDirectory = Path.Combine(Path.GetTempPath(), "mcp-gitops-path-first");
     private static readonly string SecondPathDirectory = Path.Combine(Path.GetTempPath(), "mcp-gitops-path-second");
@@ -92,7 +94,7 @@ public class EnvironmentBuilderTests
         // Arrange
         var parent = new Dictionary<string, string>
         {
-            ["PATH"] = string.Join(Path.PathSeparator, string.Empty, FirstPathDirectory, ".", "bin", RootRelativeEntry, SecondPathDirectory, string.Empty),
+            ["PATH"] = string.Join(Path.PathSeparator, string.Empty, FirstPathDirectory, CurrentDirectoryEntry, RelativeEntry, RootRelativeEntry, SecondPathDirectory, string.Empty),
         };
 
         // Act
@@ -100,6 +102,22 @@ public class EnvironmentBuilderTests
 
         // Assert
         Assert.Equal(string.Join(Path.PathSeparator, FirstPathDirectory, SecondPathDirectory), env["PATH"]);
+    }
+
+    [Fact]
+    public void Build_WithNoFullyQualifiedPathEntry_DropsPath()
+    {
+        // Arrange
+        var parent = new Dictionary<string, string>
+        {
+            ["PATH"] = string.Join(Path.PathSeparator, string.Empty, CurrentDirectoryEntry, RelativeEntry, RootRelativeEntry, string.Empty),
+        };
+
+        // Act
+        var env = EnvironmentBuilder.Build(parent);
+
+        // Assert
+        Assert.False(env.ContainsKey("PATH"));
     }
 
     [Fact]

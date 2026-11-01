@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using RaccoonNinja.McpToolset.Server.GitOps.Logging;
 using RaccoonNinja.McpToolset.Server.GitOps.Runner;
+using RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Runner;
 
@@ -28,7 +29,7 @@ public sealed class FilterTripwireTests
         FilterTripwire.Inspect(Encoding.UTF8.GetBytes(stderr), StatusArgv, ProbeCallId, logger);
 
         // Assert
-        Assert.Equal(LogLevel.Warning, Assert.Single(logger.Levels));
+        Assert.Equal(LogLevel.Warning, Assert.Single(logger.Entries).Level);
         var scope = Assert.Single(logger.Scopes);
         Assert.Equal(SuspiciousFilterEvent, (string)scope[LogFields.Event]);
         Assert.Equal(StatusSubcommand, (string)scope[LogFields.Tool]);
@@ -50,7 +51,7 @@ public sealed class FilterTripwireTests
         var scope = Assert.Single(logger.Scopes);
         Assert.False(scope.ContainsKey(DriverNameField));
         Assert.DoesNotContain(scope.Values, value => value.ToString().Contains(LeakProbeSegment, StringComparison.Ordinal));
-        Assert.DoesNotContain(LeakProbeSegment, Assert.Single(logger.Messages), StringComparison.Ordinal);
+        Assert.DoesNotContain(LeakProbeSegment, Assert.Single(logger.Entries).Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -65,42 +66,7 @@ public sealed class FilterTripwireTests
         FilterTripwire.Inspect(Encoding.UTF8.GetBytes(stderr), StatusArgv, ProbeCallId, logger);
 
         // Assert
-        Assert.Empty(logger.Levels);
+        Assert.Empty(logger.Entries);
         Assert.Empty(logger.Scopes);
     }
-
-    #region Test Helpers
-
-    private sealed class RecordingLogger : ILogger
-    {
-        private readonly List<LogLevel> _levels = [];
-        private readonly List<string> _messages = [];
-        private readonly List<IReadOnlyDictionary<string, object>> _scopes = [];
-
-        public IReadOnlyList<LogLevel> Levels => _levels;
-
-        public IReadOnlyList<string> Messages => _messages;
-
-        public IReadOnlyList<IReadOnlyDictionary<string, object>> Scopes => _scopes;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
-        {
-            _levels.Add(logLevel);
-            _messages.Add(formatter(state, exception));
-        }
-
-        IDisposable ILogger.BeginScope<TState>(TState state)
-        {
-            if (state is IReadOnlyDictionary<string, object> scope)
-            {
-                _scopes.Add(scope);
-            }
-
-            return null;
-        }
-    }
-
-    #endregion
 }

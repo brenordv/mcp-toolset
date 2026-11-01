@@ -170,7 +170,7 @@ public sealed class GitShowToolTests : IDisposable
     {
         // Arrange
         _repo.Run("update-index", "--chmod=+x", ChangedFile);
-        _repo.Run("commit", "-m", "make a.txt executable");
+        _repo.Run("commit", "-m", TempGitRepo.ModeChangeMessage);
 
         // Act
         var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);

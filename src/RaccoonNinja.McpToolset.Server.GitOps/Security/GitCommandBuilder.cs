@@ -1,5 +1,4 @@
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
-using RaccoonNinja.McpToolset.Server.GitOps.Repo;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Security;
 
@@ -261,7 +260,7 @@ public static class GitCommandBuilder
         var masked = new List<string>(argv);
         if (masked.Count > 0)
         {
-            masked[0] = GitExecutableLocator.DisplayName;
+            masked[0] = GitNotInstalledException.ExecutableDisplayName;
         }
 
         foreach (var (index, paramName) in intent.Provenance)
