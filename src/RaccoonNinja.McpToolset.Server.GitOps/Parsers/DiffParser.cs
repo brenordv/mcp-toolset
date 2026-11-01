@@ -61,12 +61,18 @@ public static class DiffParser
 
     private const string UnmergedPathPrefix = "* Unmerged path ";
 
-    /// <summary>Parse <c>git diff --numstat -z</c> into <c>path → (additions, deletions)</c>.</summary>
-    public static IReadOnlyDictionary<string, (int Additions, int Deletions)> ParseNumstatZ(byte[] raw)
+    /// <summary>The count git's <c>--numstat</c> prints for both sides of a binary file.</summary>
+    private const string BinaryCount = "-";
+
+    /// <summary>
+    /// Parse <c>git diff --numstat -z</c> into <c>path → (additions, deletions, binary)</c>. git prints <c>-</c> for both
+    /// counts of a binary file; such an entry reads as 0 and 0 with <c>IsBinary</c> <c>true</c>.
+    /// </summary>
+    public static IReadOnlyDictionary<string, (int Additions, int Deletions, bool IsBinary)> ParseNumstatZ(byte[] raw)
     {
         var text = TextDecoding.Decode(raw);
         var tokens = text.Split('\0');
-        var result = new Dictionary<string, (int, int)>(StringComparer.Ordinal);
+        var result = new Dictionary<string, (int, int, bool)>(StringComparer.Ordinal);
 
         var i = 0;
         while (i < tokens.Length)
@@ -81,16 +87,16 @@ public static class DiffParser
 
             if (TryResolvePath(parts, tokens, ref i, out var path))
             {
-                result[path] = (additions, deletions);
+                result[path] = (additions, deletions, parts[0] == BinaryCount && parts[1] == BinaryCount);
             }
         }
         return result;
     }
 
-    /// <summary>Parse a numstat count token; <c>"-"</c> (binary file) maps to zero. False when non-numeric.</summary>
+    /// <summary>Parse a numstat count token; <c>"-"</c> (git's mark for a binary file) maps to zero. False when non-numeric.</summary>
     private static bool TryParseCount(string token, out int count)
     {
-        if (token == "-")
+        if (token == BinaryCount)
         {
             count = 0;
             return true;
@@ -135,7 +141,7 @@ public static class DiffParser
     /// <returns><c>true</c> when at least one file's path is not a key of <paramref name="numstat"/>.</returns>
     public static bool HasPathMissingFromNumstat(
         IEnumerable<FileDiff> files,
-        IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat)
+        IReadOnlyDictionary<string, (int Additions, int Deletions, bool IsBinary)> numstat)
         => files.Any(file => !numstat.ContainsKey(file.Path));
 
     /// <summary>
@@ -153,7 +159,7 @@ public static class DiffParser
     /// </returns>
     public static bool HasUnreadableUnmergedPath(
         byte[] patch,
-        IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat,
+        IReadOnlyDictionary<string, (int Additions, int Deletions, bool IsBinary)> numstat,
         bool numstatTruncated)
         => (numstatTruncated || numstat.Keys.Any(path => path.Contains('\n')))
            && TextDecoding.Decode(patch)
@@ -176,7 +182,7 @@ public static class DiffParser
     /// </returns>
     public static bool HasCountedLinesMissingFromPatch(
         IReadOnlyCollection<FileDiff> files,
-        IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat)
+        IReadOnlyDictionary<string, (int Additions, int Deletions, bool IsBinary)> numstat)
         => files.Count == 0 && numstat.Values.Any(counts => counts.Additions > 0 || counts.Deletions > 0);
 
     /// <summary>Parse <c>git diff --name-status -z</c> into <c>path → <see cref="ChangeType"/></c>.</summary>
@@ -261,7 +267,7 @@ public static class DiffParser
         IReadOnlyList<FileDiff> files,
         string mode,
         bool truncated = false,
-        IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat = null,
+        IReadOnlyDictionary<string, (int Additions, int Deletions, bool IsBinary)> numstat = null,
         IReadOnlyDictionary<string, ChangeType> changeTypes = null)
     {
         var enriched = BuildEnrichedFiles(files, numstat, changeTypes);
@@ -279,7 +285,7 @@ public static class DiffParser
     /// <summary>Overlay numstat counts and change kinds onto <paramref name="files"/>, leaving entries without a match untouched.</summary>
     private static List<FileDiff> BuildEnrichedFiles(
         IReadOnlyList<FileDiff> files,
-        IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat,
+        IReadOnlyDictionary<string, (int Additions, int Deletions, bool IsBinary)> numstat,
         IReadOnlyDictionary<string, ChangeType> changeTypes)
     {
         if (numstat is null && changeTypes is null)
@@ -294,7 +300,7 @@ public static class DiffParser
     /// <summary>Return <paramref name="file"/> with its counts replaced by the numstat entry when one exists.</summary>
     private static FileDiff EnrichFromNumstat(
         FileDiff file,
-        IReadOnlyDictionary<string, (int Additions, int Deletions)> numstat)
+        IReadOnlyDictionary<string, (int Additions, int Deletions, bool IsBinary)> numstat)
     {
         if (numstat is null)
         {

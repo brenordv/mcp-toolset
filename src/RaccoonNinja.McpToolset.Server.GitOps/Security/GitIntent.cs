@@ -34,6 +34,12 @@ public sealed class GitIntent
     /// </summary>
     public IReadOnlyList<(string Key, string Value)> ConfigPins { get; init; }
 
+    /// <summary>
+    /// Bytes written to git's standard input, which is then closed; <c>null</c> closes it at once. Server data only: under
+    /// <c>--stdin</c> git reads revisions and pseudo-options such as <c>--all</c> from it.
+    /// </summary>
+    public byte[] StandardInput { get; init; }
+
     /// <summary>Map <c>argv_index → param_name</c> populated during build for masked DEBUG logging.</summary>
     public IDictionary<int, string> Provenance { get; set; } = new Dictionary<int, string>();
 }

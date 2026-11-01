@@ -6,6 +6,16 @@ namespace RaccoonNinja.McpToolset.Common.Files.Tests.Text;
 public sealed class EncodingDetectorTests
 {
     private const int Windows1252CodePage = 1252;
+    private const int ShiftJisCodePage = 932;
+    private const int Utf8PrefixCharCount = 300;
+    private const int AsciiPaddingLength = 2000;
+    private const int ShiftJisRepeatCount = 40;
+    private const int AsciiSentenceRepeatCount = 180;
+    private const byte StrayLatin1Byte = 0xE9;
+    private const byte ShiftJisLeadByte = 0x81;
+    private const byte NonBreakingSpaceByte = 0xA0;
+    private const string JapaneseSentence = "日本語のテキストファイルです。これは文字コードの検出をテストするための文章です。";
+    private const string AsciiSentence = "plain ascii text ";
 
     private readonly EncodingDetector _detector = new();
 
@@ -148,6 +158,20 @@ public sealed class EncodingDetectorTests
         Assert.NotNull(result.Encoding);
     }
 
+    [Theory]
+    [MemberData(nameof(GuessesThatCannotReproduceBytes))]
+    public void Detect_GuessThatCannotReproduceBytes_FallsBackToLatin1AtZeroConfidence(byte[] content)
+    {
+        // Act
+        var result = _detector.Detect(content);
+
+        // Assert
+        Assert.Equal(EncodingDetectionStep.CharsetGuess, result.Step);
+        Assert.Equal("iso-8859-1", result.Name);
+        Assert.Equal(0d, result.Confidence);
+        Assert.Equal(content, result.Encoding.GetBytes(result.Encoding.GetString(content)));
+    }
+
     [Fact]
     public void Detect_BinaryPayload_IdentifiesBinary()
     {
@@ -217,6 +241,33 @@ public sealed class EncodingDetectorTests
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         return Encoding.GetEncoding(Windows1252CodePage).GetBytes(text);
     }
+
+    public static TheoryData<byte[]> GuessesThatCannotReproduceBytes()
+        => new()
+        {
+            Utf8PrefixWithLateInvalidByte(),
+            ShiftJisPrefixWithLateInvalidByte(),
+            Iso2022JpPrefixWithLateHighByte(),
+            AsciiWithLoneNonBreakingSpaceByte(),
+        };
+
+    private static ReadOnlySpan<byte> LineTail => "x\n"u8;
+
+    private static byte[] Utf8PrefixWithLateInvalidByte()
+        => [.. Encoding.UTF8.GetBytes(new string('é', Utf8PrefixCharCount) + new string('a', AsciiPaddingLength)), StrayLatin1Byte, .. LineTail];
+
+    private static byte[] ShiftJisPrefixWithLateInvalidByte()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        var shiftJis = Encoding.GetEncoding(ShiftJisCodePage);
+        return [.. shiftJis.GetBytes(string.Concat(Enumerable.Repeat(JapaneseSentence, ShiftJisRepeatCount))), ShiftJisLeadByte, .. " x\n"u8];
+    }
+
+    private static byte[] Iso2022JpPrefixWithLateHighByte()
+        => [.. "\e$B"u8, .. "F|K\\8l"u8, .. "\e(B"u8, .. Encoding.ASCII.GetBytes(new string('a', AsciiPaddingLength)), StrayLatin1Byte, .. LineTail];
+
+    private static byte[] AsciiWithLoneNonBreakingSpaceByte()
+        => [.. Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat(AsciiSentence, AsciiSentenceRepeatCount))), NonBreakingSpaceByte, .. LineTail];
 
     private static byte[] BinaryPngHeader()
         =>

@@ -8,6 +8,8 @@ public class GitCommandBuilderTests
     private const string AutoRefreshIndexPin = "diff.autoRefreshIndex=false";
     private const string ShowRootPin = "log.showRoot=true";
     private const string LogOutputEncodingPin = "i18n.logOutputEncoding=UTF-8";
+    private const string MailmapPin = "log.mailmap=false";
+    private const string UseReplaceRefsPin = "core.useReplaceRefs=false";
 
     private static readonly string GitExecutable = Path.Combine(Path.GetTempPath(), "git");
 
@@ -37,6 +39,8 @@ public class GitCommandBuilderTests
         Assert.Contains(AutoRefreshIndexPin, argv);
         Assert.Contains(ShowRootPin, argv);
         Assert.Contains(LogOutputEncodingPin, argv);
+        Assert.Contains(MailmapPin, argv);
+        Assert.Contains(UseReplaceRefsPin, argv);
     }
 
     [Fact]
@@ -315,6 +319,8 @@ public class GitCommandBuilderTests
         Assert.Equal("0", env["GIT_OPTIONAL_LOCKS"]);
         Assert.Equal("1", env["GIT_NO_LAZY_FETCH"]);
         Assert.Equal("none", env["GIT_ALLOW_PROTOCOL"]);
+        Assert.Equal("1", env["GIT_NO_REPLACE_OBJECTS"]);
+        Assert.Equal("/nonexistent/git-ops-grafts-disabled", env["GIT_GRAFT_FILE"]);
         Assert.False(env.ContainsKey("GIT_LITERAL_PATHSPECS"));
         Assert.True(env.ContainsKey("PATH"));
     }
@@ -381,6 +387,8 @@ public class GitCommandBuilderTests
         Assert.Contains(AutoRefreshIndexPin, prefix);
         Assert.Contains(ShowRootPin, prefix);
         Assert.Contains(LogOutputEncodingPin, prefix);
+        Assert.Contains(MailmapPin, prefix);
+        Assert.Contains(UseReplaceRefsPin, prefix);
     }
 
     [Fact]

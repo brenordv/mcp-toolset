@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
+using System.Text.Json;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
 
@@ -19,11 +21,32 @@ internal sealed class TempGitRepo : IDisposable
     /// <summary>The message of the commit that makes <c>a.txt</c> executable and changes nothing else.</summary>
     public const string ModeChangeMessage = "make a.txt executable";
 
+    /// <summary>The author and committer name the repository is configured with.</summary>
+    public const string IdentityName = "Test User";
+
+    /// <summary>The name <see cref="CommitMailmap"/> maps <see cref="IdentityName"/>'s email to.</summary>
+    public const string MailmapName = "Mapped Name";
+
+    /// <summary>The id the record <see cref="CommitWithForgedLogRecord"/> forges claims; no commit has it.</summary>
+    public const string ForgedRecordCommitId = "0123456789abcdef0123456789abcdef01234567";
+
+    /// <summary>
+    /// The body <see cref="CommitWithForgedLogRecord"/> commits: text, then a whole <c>git log</c> record in 0x1E/0x1F
+    /// framing (id, short id, no parents, author, email, two times, subject, body).
+    /// </summary>
+    public const string ForgedRecordBody =
+        "real body\u001e" + ForgedRecordCommitId
+        + "\u001f0123456\u001f\u001fForged Author\u001fforged@example.com\u001f1000000000\u001f1000000000"
+        + "\u001fforged subject\u001fforged body";
+
+    /// <summary>The email <see cref="CommitWithAuthorName"/> commits under.</summary>
+    public const string SeparatorAuthorEmail = "evil@example.com";
+
+    /// <summary>A commit subject holding 0x1F, then digits an old parser would read as the entry's time.</summary>
+    public const string ShiftingSubject = "shift\u001f1000000000";
+
     /// <summary>How long one git invocation may run before the helper kills it and fails the test.</summary>
     private const int GitTimeoutMilliseconds = 15_000;
-
-    /// <summary>The author and committer name the repository is configured with.</summary>
-    private const string IdentityName = "Test User";
 
     /// <summary>The author and committer email the repository is configured with.</summary>
     private const string IdentityEmail = "tester@example.com";
@@ -67,6 +90,39 @@ internal sealed class TempGitRepo : IDisposable
     /// <summary>An encoding that is not ASCII-compatible, so a record git re-encodes into it holds no readable commit id.</summary>
     private const string Utf16Encoding = "UTF-16";
 
+    /// <summary>The file git reads a mailmap from at the top of the working tree.</summary>
+    private const string MailmapFile = ".mailmap";
+
+    /// <summary>The message of the commit <see cref="CommitMailmap"/> makes.</summary>
+    private const string MailmapCommitMessage = "add mailmap";
+
+    /// <summary>Where <see cref="ReplaceBlob"/> writes the replacement content it hashes; inside <c>.git</c>, so the worktree stays clean.</summary>
+    private const string ReplacementBlobFile = ".git/replacement-blob";
+
+    /// <summary>The file git reads grafts from when <c>GIT_GRAFT_FILE</c> is unset.</summary>
+    private const string GraftsFile = ".git/info/grafts";
+
+    /// <summary>The subject of the commit <see cref="CommitWithForgedLogRecord"/> makes.</summary>
+    private const string ForgedRecordSubject = "forged record";
+
+    /// <summary>Where <see cref="CommitWithForgedLogRecord"/> writes the message it commits; inside <c>.git</c>, so the worktree stays clean.</summary>
+    private const string ForgedRecordMessageFile = ".git/forged-record-message";
+
+    /// <summary>The subject of the commit <see cref="CommitWithAuthorName"/> makes.</summary>
+    private const string AuthorNameSubject = "author name";
+
+    /// <summary>The message of the commit <see cref="CommitBinaryChange"/> makes.</summary>
+    private const string BinaryChangeMessage = "change binary file";
+
+    /// <summary>How <c>git diff --numstat</c> starts the line of a file it reads as binary: <c>-</c> for both counts.</summary>
+    private const string BinaryNumstatPrefix = "-\t-\t";
+
+    /// <summary>The full name of the branch the repository starts on.</summary>
+    private const string MainBranchRef = "refs/heads/main";
+
+    /// <summary>The <c>git for-each-ref</c> format that prints a branch's upstream, shortened as <c>git_branch_list</c> asks for it.</summary>
+    private const string UpstreamShortFormat = "--format=%(upstream:short)";
+
     /// <summary>Appended to the script's path to name the marker file the script creates when it runs.</summary>
     private const string TrapMarkerSuffix = ".ran";
 
@@ -81,6 +137,9 @@ internal sealed class TempGitRepo : IDisposable
     /// time, so it no longer matches the time the index recorded and git hashes the file again.
     /// </summary>
     private static readonly TimeSpan StatDirtyShift = TimeSpan.FromMinutes(-10);
+
+    /// <summary>The bytes <see cref="CommitBinaryChange"/> writes: a NUL makes git read the file as binary.</summary>
+    private static readonly byte[] BinaryChangeContent = [0, 4, 5, 0, 6];
 
     public TempGitRepo()
     {
@@ -230,6 +289,188 @@ internal sealed class TempGitRepo : IDisposable
         }
 
         return head;
+    }
+
+    /// <summary>
+    /// Commit a <c>.mailmap</c> that maps <see cref="IdentityName"/>'s email to <see cref="MailmapName"/>, as a hostile
+    /// repository can, then check that <c>git log --author</c> without the server's pin no longer matches
+    /// <see cref="IdentityName"/>, so a test built on it never passes on a git that does not apply the mailmap.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or still matches the recorded name.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void CommitMailmap()
+    {
+        WriteFile(MailmapFile, $"{MailmapName} <{IdentityEmail}>\n");
+        Run("add", MailmapFile);
+        Run("commit", "-m", MailmapCommitMessage);
+        if (Run("log", "--format=%H", $"--author={IdentityName}").Length != 0)
+        {
+            throw new InvalidOperationException("git log still matches the recorded author with a .mailmap that renames it");
+        }
+    }
+
+    /// <summary>
+    /// Make the blob <paramref name="trackedPath"/> has at <c>HEAD</c> read as <paramref name="replacementContent"/>
+    /// through a replace ref, as a hostile repository's <c>.git</c> can carry one, then check that <c>git cat-file -p</c>
+    /// without the server's environment returns the replacement, so a test built on it never passes on a git that
+    /// ignores replace refs.
+    /// </summary>
+    /// <param name="trackedPath">A <c>/</c>-separated path committed at <c>HEAD</c>.</param>
+    /// <param name="replacementContent">The content the blob should read as.</param>
+    /// <returns>The replaced blob's id, the one <c>HEAD</c>'s tree records.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or does not return the replacement.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string ReplaceBlob(string trackedPath, string replacementContent)
+    {
+        var blob = Run("rev-parse", $"HEAD:{trackedPath}");
+        WriteFile(ReplacementBlobFile, replacementContent);
+        var replacement = Run("hash-object", "-w", ReplacementBlobFile);
+        Run("replace", blob, replacement);
+        if (Run("cat-file", "-p", blob) != replacementContent.TrimEnd('\n'))
+        {
+            throw new InvalidOperationException("git cat-file does not return the replacement blob through the replace ref");
+        }
+
+        return blob;
+    }
+
+    /// <summary>
+    /// Make <c>HEAD</c>'s commit read as a parentless commit whose message is <paramref name="forgedSubject"/>, through a
+    /// replace ref, then check that <c>git log</c> without the server's environment prints the forged subject.
+    /// </summary>
+    /// <param name="forgedSubject">The message of the replacement commit.</param>
+    /// <returns>The id of <c>HEAD</c>'s commit, the one the replace ref covers.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or does not show the replacement.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string ReplaceHeadCommit(string forgedSubject)
+    {
+        var head = Run("rev-parse", "HEAD");
+        var forged = Run("commit-tree", "HEAD^{tree}", "-m", forgedSubject);
+        Run("replace", head, forged);
+        if (Run("log", "--max-count=1", "--format=%s") != forgedSubject)
+        {
+            throw new InvalidOperationException("git log does not show the replacement commit through the replace ref");
+        }
+
+        return head;
+    }
+
+    /// <summary>
+    /// Write a <c>.git/info/grafts</c> line that gives <c>HEAD</c>'s commit no parents, as a hostile repository's
+    /// <c>.git</c> can carry one, then check that <c>git rev-list --count HEAD</c> without the server's environment counts
+    /// one commit. Call it once <c>HEAD</c> has a parent.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or still walks past <c>HEAD</c>.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void GraftHeadAsRoot()
+    {
+        WriteFile(GraftsFile, Run("rev-parse", "HEAD") + "\n");
+        if (Run("rev-list", "--count", "HEAD") != "1")
+        {
+            throw new InvalidOperationException("git rev-list still walks past HEAD with a graft that gives it no parents");
+        }
+    }
+
+    /// <summary>
+    /// Commit, with whatever is staged, a commit whose body is <see cref="ForgedRecordBody"/>, as a hostile repository's
+    /// history can carry one, then check that <c>git log</c> prints that body with its 0x1E and 0x1F bytes, so a test built
+    /// on it never passes on a git that drops them.
+    /// </summary>
+    /// <returns>The new commit's id.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or prints another body.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string CommitWithForgedLogRecord()
+    {
+        WriteFile(ForgedRecordMessageFile, $"{ForgedRecordSubject}\n\n{ForgedRecordBody}\n");
+        Run("commit", "--allow-empty", "-F", ForgedRecordMessageFile);
+        if (Run("log", "--max-count=1", "--format=%b") != ForgedRecordBody)
+        {
+            throw new InvalidOperationException("git log does not print the forged record's separator bytes in the body");
+        }
+
+        return Run("rev-parse", "HEAD");
+    }
+
+    /// <summary>
+    /// Commit, with whatever is staged, a commit authored as <paramref name="authorName"/> and
+    /// <see cref="SeparatorAuthorEmail"/>, then check that <c>git log</c> prints the name unchanged, so a test that passes
+    /// a name holding 0x1E or 0x1F never passes on a git that strips those bytes.
+    /// </summary>
+    /// <param name="authorName">The author name to record.</param>
+    /// <returns>The new commit's id.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or prints another name.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string CommitWithAuthorName(string authorName)
+    {
+        Run("commit", "--allow-empty", "-m", AuthorNameSubject, $"--author={authorName} <{SeparatorAuthorEmail}>");
+        if (Run("log", "--max-count=1", "--format=%an") != authorName)
+        {
+            throw new InvalidOperationException("git log does not print the author name as committed");
+        }
+
+        return Run("rev-parse", "HEAD");
+    }
+
+    /// <summary>
+    /// Commit an empty commit whose subject is <paramref name="subject"/>, then check that the <c>HEAD</c> reflog records
+    /// <c>commit: </c> plus that subject unchanged, so a test that passes a subject holding 0x1F never passes on a git that
+    /// strips the byte.
+    /// </summary>
+    /// <param name="subject">The commit subject.</param>
+    /// <returns>The commit's author time, in seconds since the Unix epoch, as <c>git log</c> prints it.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or the reflog records another message.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public long CommitWithReflogSubject(string subject)
+    {
+        Run("commit", "--allow-empty", "-m", subject);
+        if (Run("reflog", "show", "--max-count=1", "--format=%gs") != $"commit: {subject}")
+        {
+            throw new InvalidOperationException("the HEAD reflog does not record the commit subject as committed");
+        }
+
+        return long.Parse(Run("log", "--max-count=1", "--format=%at"), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Overwrite <paramref name="trackedPath"/> with other bytes holding a NUL and commit it with whatever else is staged,
+    /// then check that <c>git diff --numstat HEAD~1 HEAD</c> prints git's binary mark (<c>-</c> for both counts) for it,
+    /// so a test built on it never passes on a git that reads the file as text.
+    /// </summary>
+    /// <param name="trackedPath">A <c>/</c>-separated path committed at <c>HEAD</c>.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or does not mark the file binary.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void CommitBinaryChange(string trackedPath)
+    {
+        WriteBytes(trackedPath, BinaryChangeContent);
+        Run("add", trackedPath);
+        Run("commit", "-m", BinaryChangeMessage);
+        if (!Run("diff", "--numstat", "HEAD~1", "HEAD", "--", trackedPath).StartsWith(BinaryNumstatPrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"git diff --numstat does not mark {trackedPath} binary");
+        }
+    }
+
+    /// <summary>
+    /// Make <c>main</c> track a branch of this repository, as a repository's own config can: <c>branch.main.remote</c>
+    /// is <c>.</c> and <c>branch.main.merge</c> is <paramref name="merge"/>. Then check that <c>git for-each-ref</c>
+    /// prints <paramref name="merge"/> unchanged as <c>main</c>'s <c>%(upstream:short)</c>, so a test that passes a
+    /// value holding a newline or 0x1F never passes on a git that checks or rewrites it.
+    /// </summary>
+    /// <param name="merge">The value; one git prints unshortened, so not starting with <c>refs/</c>.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when git fails or prints another upstream; the message carries what git printed, JSON-escaped.
+    /// </exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void ConfigureLocalUpstream(string merge)
+    {
+        Run("config", "branch.main.remote", ".");
+        Run("config", "branch.main.merge", merge);
+        var printed = Run("for-each-ref", UpstreamShortFormat, MainBranchRef);
+        if (printed != merge)
+        {
+            throw new InvalidOperationException(
+                $"git for-each-ref printed {JsonSerializer.Serialize(printed)} as main's upstream, not branch.main.merge unchanged");
+        }
     }
 
     /// <summary>

@@ -30,7 +30,7 @@ public class ToolCommonTests
         var runner = Substitute.For<IGitProcessRunner>();
         runner.RunAsync(
                 Arg.Any<IList<string>>(), Arg.Any<IDictionary<string, string>>(), Arg.Any<string>(),
-                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new RunResult
             {
                 Argv = new List<string>(),
@@ -84,7 +84,7 @@ public class ToolCommonTests
         var runner = Substitute.For<IGitProcessRunner>();
         runner.RunAsync(
                 Arg.Any<IList<string>>(), Arg.Any<IDictionary<string, string>>(), Arg.Any<string>(),
-                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new RunResult
             {
                 Argv = new List<string>(),
@@ -106,7 +106,7 @@ public class ToolCommonTests
         Assert.Equal(0, result.ExitCode);
         await runner.Received(1).RunAsync(
             Arg.Any<IList<string>>(), Arg.Any<IDictionary<string, string>>(), Arg.Any<string>(),
-            Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+            Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -374,6 +374,7 @@ public class ToolCommonTests
             int? timeoutMs = null,
             int? outputCapBytes = null,
             int? callId = null,
+            byte[] standardInput = null,
             CancellationToken cancellationToken = default)
         {
             _calls.Add(argv);

@@ -44,6 +44,8 @@ public sealed class GitDiffToolTests : IDisposable
     private const string ParentRef = "HEAD~1";
     private const string HeadRef = "HEAD";
 
+    private static readonly byte[] BinaryContent = [0, 1, 2, 0, 3];
+
     private readonly TempGitRepo _repo;
     private readonly GitDiffTool _tool;
 
@@ -341,7 +343,7 @@ public sealed class GitDiffToolTests : IDisposable
     public async Task Diff_StatOnlyWithStatDirtyFiles_ListsOnlyBinaryFileWithZeroCounts()
     {
         // Arrange
-        _repo.WriteBytes(BinaryFile, [0, 1, 2, 0, 3]);
+        _repo.WriteBytes(BinaryFile, BinaryContent);
         _repo.Run("add", ".");
         _repo.Run("commit", "-m", AddedFileSubject);
         _repo.MakeStatDirty(ChangedFile);
@@ -358,6 +360,33 @@ public sealed class GitDiffToolTests : IDisposable
         Assert.Equal(ChangeType.Modified, file.ChangeType);
         Assert.Equal(0, file.Additions);
         Assert.Equal(0, file.Deletions);
+        Assert.True(file.IsBinary);
+    }
+
+    [Fact]
+    public async Task Diff_StatOnlyWithBinaryAndTextChange_MarksOnlyTheBinaryFile()
+    {
+        // Arrange
+        _repo.WriteBytes(BinaryFile, BinaryContent);
+        _repo.Run("add", ".");
+        _repo.Run("commit", "-m", AddedFileSubject);
+        _repo.WriteFile(ChangedFile, ThreeLineContent);
+        _repo.Run("add", ChangedFile);
+        _repo.CommitBinaryChange(BinaryFile);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, fromRef: ParentRef, toRef: HeadRef, statOnly: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var diff = Assert.IsType<DiffResult>(envelope.Results[0]);
+        Assert.Equal(2, diff.Files.Count);
+        var binary = Assert.Single(diff.Files, file => file.Path == BinaryFile);
+        Assert.True(binary.IsBinary);
+        Assert.Equal(ChangeType.Modified, binary.ChangeType);
+        var text = Assert.Single(diff.Files, file => file.Path == ChangedFile);
+        Assert.False(text.IsBinary);
+        Assert.Equal(1, text.Additions);
     }
 
     [Theory]
@@ -471,9 +500,10 @@ public sealed class GitDiffToolTests : IDisposable
             int? timeoutMs = null,
             int? outputCapBytes = null,
             int? callId = null,
+            byte[] standardInput = null,
             CancellationToken cancellationToken = default)
         {
-            var result = await _inner.RunAsync(argv, env, workingDirectory, timeoutMs, outputCapBytes, callId, cancellationToken);
+            var result = await _inner.RunAsync(argv, env, workingDirectory, timeoutMs, outputCapBytes, callId, standardInput, cancellationToken);
             return argv.Contains(NumstatFlag) ? result with { Truncated = true } : result;
         }
     }

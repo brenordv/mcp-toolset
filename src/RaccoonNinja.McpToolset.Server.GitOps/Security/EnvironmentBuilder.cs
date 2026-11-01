@@ -48,6 +48,12 @@ public static class EnvironmentBuilder
     /// allows only the transports the variable lists, whatever <c>protocol.&lt;name&gt;.allow</c> in a repository's config
     /// says, and checks before it starts a transport program or a remote helper, so the fetch dies first. git reads it from
     /// 2.6.1 on. The value is <c>none</c> because git splits an empty value into one empty protocol name.
+    /// <c>GIT_NO_REPLACE_OBJECTS=1</c> makes git ignore a repository's replace refs (<c>refs/replace/</c>), which make it
+    /// read another object's content under the original id; every git from 2.6.1 on reads it, and from 2.42.0 it wins
+    /// over <c>core.useReplaceRefs</c>, which <see cref="GitCommandBuilder"/> pins off for the gits before.
+    /// <c>GIT_GRAFT_FILE</c> names the file git reads grafts from in place of <c>.git/info/grafts</c>, where a line gives
+    /// a commit other parents; git reads none, and prints nothing, when the file does not exist. Every git from 2.6.1 on
+    /// reads it.
     /// </summary>
     private static readonly Dictionary<string, string> FixedGitEnv = new()
     {
@@ -56,6 +62,8 @@ public static class EnvironmentBuilder
         ["GIT_OPTIONAL_LOCKS"] = "0",
         ["GIT_NO_LAZY_FETCH"] = "1",
         ["GIT_ALLOW_PROTOCOL"] = "none",
+        ["GIT_NO_REPLACE_OBJECTS"] = "1",
+        ["GIT_GRAFT_FILE"] = "/nonexistent/git-ops-grafts-disabled",
     };
 
     /// <summary>Construct the hardened child env from <paramref name="parent"/> (defaults to current process env).</summary>

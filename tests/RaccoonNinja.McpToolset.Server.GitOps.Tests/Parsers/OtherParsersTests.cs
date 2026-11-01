@@ -14,6 +14,8 @@ public class OtherParsersTests
     private const string ObjectIdA = "1111111111111111111111111111111111111111";
     private const string ObjectIdB = "2222222222222222222222222222222222222222";
     private const string ObjectIdC = "3333333333333333333333333333333333333333";
+    private const string Nul = "\0";
+    private const string ForgedLine = $"\n{ObjectIdB}{Us}2222222{Us}HEAD@{{1}}{Us}forged{Us}1000000000";
 
     private static readonly string[] LsFilesExpected = ["a.txt", "src/b.cs", "c"];
 
@@ -135,11 +137,11 @@ public class OtherParsersTests
     public void Branch_StripsRefsHeadsAndDetectsCurrent()
     {
         // Arrange
-        var line = $"refs/heads/main{Us}*{Us}abc123{Us}origin/main{Us}tip subject\n" +
-                   $"refs/remotes/origin/main{Us} {Us}abc123{Us}{Us}\n";
+        const string output = $"refs/heads/main{Nul}*{Nul}abc123{Nul}origin/main{Nul}tip subject{Nul}\n" +
+                              $"refs/remotes/origin/main{Nul} {Nul}abc123{Nul}{Nul}{Nul}\n";
 
         // Act
-        var branches = BranchParser.Parse(Encoding.UTF8.GetBytes(line));
+        var branches = BranchParser.Parse(Encoding.UTF8.GetBytes(output), truncated: false);
 
         // Assert
         Assert.Equal(2, branches.Count);
@@ -154,10 +156,10 @@ public class OtherParsersTests
     public void Stash_ParsesIndexFromRefname()
     {
         // Arrange
-        var line = $"stash@{{2}}{Us}On main: WIP{Us}1700000000";
+        const string line = $"stash@{{2}}{Nul}On main: WIP{Nul}1700000000{Nul}";
 
         // Act
-        var entries = StashListParser.Parse(Encoding.UTF8.GetBytes(line));
+        var entries = StashListParser.Parse(Encoding.UTF8.GetBytes(line), truncated: false);
 
         // Assert
         var entry = Assert.Single(entries);
@@ -166,13 +168,57 @@ public class OtherParsersTests
     }
 
     [Fact]
+    public void Stash_SubjectHoldingNewline_StaysOneEntry()
+    {
+        // Arrange
+        const string line = $"stash@{{0}}{Nul}WIP{ForgedLine}{Nul}1700000000{Nul}";
+
+        // Act
+        var entries = StashListParser.Parse(Encoding.UTF8.GetBytes(line), truncated: false);
+
+        // Assert
+        var entry = Assert.Single(entries);
+        Assert.Equal($"WIP{ForgedLine}", entry.Subject);
+    }
+
+    [Fact]
+    public void Stash_CutInsideTheSelector_LeavesTheEntryOut()
+    {
+        // Arrange
+        const string output = $"stash@{{0}}{Nul}WIP{Nul}1700000000{Nul}stash@{{1";
+
+        // Act
+        var entries = StashListParser.Parse(Encoding.UTF8.GetBytes(output), truncated: true);
+
+        // Assert
+        var entry = Assert.Single(entries);
+        Assert.Equal(0, entry.Index);
+        Assert.Equal("WIP", entry.Subject);
+    }
+
+    [Fact]
+    public void Reflog_SubjectHoldingNewline_StaysOneEntry()
+    {
+        // Arrange
+        const string line = $"{ObjectIdA}{Nul}1111111{Nul}HEAD@{{0}}{Nul}commit: real{ForgedLine}{Nul}1700000000{Nul}";
+
+        // Act
+        var entries = ReflogParser.Parse(Encoding.UTF8.GetBytes(line), truncated: false);
+
+        // Assert
+        var entry = Assert.Single(entries);
+        Assert.Equal(ObjectIdA, entry.Hash);
+        Assert.Equal($"commit: real{ForgedLine}", entry.Subject);
+    }
+
+    [Fact]
     public void Reflog_ParsesFieldsAndEpochIntoStructuredWhen()
     {
         // Arrange
-        var line = $"abc123def{Us}abc123{Us}HEAD@{{0}}{Us}commit: init{Us}1700000000";
+        const string line = $"abc123def{Nul}abc123{Nul}HEAD@{{0}}{Nul}commit: init{Nul}1700000000{Nul}";
 
         // Act
-        var entries = ReflogParser.Parse(Encoding.UTF8.GetBytes(line));
+        var entries = ReflogParser.Parse(Encoding.UTF8.GetBytes(line), truncated: false);
 
         // Assert
         var entry = Assert.Single(entries);

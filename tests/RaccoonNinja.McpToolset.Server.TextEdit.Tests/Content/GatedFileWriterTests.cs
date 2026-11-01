@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using RaccoonNinja.McpToolset.Common.Files.Security;
 using RaccoonNinja.McpToolset.Common.Files.Selection;
 using RaccoonNinja.McpToolset.Server.TextEdit.Content;
@@ -11,6 +12,10 @@ namespace RaccoonNinja.McpToolset.Server.TextEdit.Tests.Content;
 
 public sealed class GatedFileWriterTests : IDisposable
 {
+    private const int Utf8PrefixCharCount = 300;
+    private const int AsciiPaddingLength = 2000;
+    private const byte StrayLatin1Byte = 0xE9;
+
     private readonly TextEditHarness _harness = new();
 
     public void Dispose() => _harness.Dispose();
@@ -204,6 +209,23 @@ public sealed class GatedFileWriterTests : IDisposable
         // Assert
         Assert.Equal(RefusalReason.LowConfidenceEncoding, refused.Files[0].Reason);
         Assert.True(allowed.Files[0].Changed);
+    }
+
+    [Fact]
+    public void Apply_ValidUtf8PrefixWithLateInvalidByte_IsRefusedLowConfidenceAndNotWritten()
+    {
+        // Arrange
+        const string path = "mixed.txt";
+        var content = Utf8PrefixWithLateInvalidByte();
+        _harness.WriteBytes(path, content);
+
+        // Act
+        var outcome = _harness.Apply("replace_text", Replace("x", "y"), path);
+
+        // Assert
+        Assert.Equal(RefusalReason.LowConfidenceEncoding, Assert.Single(outcome.Files).Reason);
+        Assert.Null(outcome.BatchId);
+        Assert.Equal(content, _harness.ReadBytes(path));
     }
 
     [Fact]
@@ -458,6 +480,9 @@ public sealed class GatedFileWriterTests : IDisposable
 
     private Replacer Replace(string pattern, string replacement)
         => new(pattern, replacement, isRegex: false, caseSensitive: false, _harness.Config);
+
+    private static byte[] Utf8PrefixWithLateInvalidByte()
+        => [.. Encoding.UTF8.GetBytes(new string('é', Utf8PrefixCharCount) + new string('a', AsciiPaddingLength)), StrayLatin1Byte, .. "x\n"u8];
 
     [DllImport("kernel32.dll", EntryPoint = "GetShortPathNameW", SetLastError = true, CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern uint GetShortPathName(string longPath, [Out] char[] shortPath, uint bufferLength);

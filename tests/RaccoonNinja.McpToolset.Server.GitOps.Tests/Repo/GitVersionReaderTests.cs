@@ -40,14 +40,14 @@ public sealed class GitVersionReaderTests
     }
 
     [Fact]
-    public async Task LogAsync_WithInstalledGit_LogsGitVersionLine()
+    public async Task ReadAsync_WithInstalledGit_LogsAndReturnsVersion()
     {
         // Arrange
         var sink = new CollectingSink();
         using var logger = new LoggerConfiguration().MinimumLevel.Verbose().WriteTo.Sink(sink).CreateLogger();
 
         // Act
-        await GitVersionReader.LogAsync(logger, TestGit.Executable, TestContext.Current.CancellationToken);
+        var probe = await GitVersionReader.ReadAsync(logger, TestGit.Executable, TestContext.Current.CancellationToken);
 
         // Assert
         var logEvent = Assert.Single(sink.Events);
@@ -57,18 +57,20 @@ public sealed class GitVersionReaderTests
         var version = line.RootElement.GetProperty(LogFields.GitVersion).GetString();
         Assert.False(string.IsNullOrWhiteSpace(version));
         Assert.Equal(version, GitVersionReader.ParseVersion(VersionPrefix + version));
+        Assert.Equal(version, probe.Version);
+        Assert.Null(probe.ErrorCode);
     }
 
     [Theory]
     [MemberData(nameof(NotStartableExecutables))]
-    public async Task LogAsync_WithGitNotStartable_LogsUnavailableWarning(string gitExecutable)
+    public async Task ReadAsync_WithGitNotStartable_LogsWarningAndReturnsGitNotInstalled(string gitExecutable)
     {
         // Arrange
         var sink = new CollectingSink();
         using var logger = new LoggerConfiguration().MinimumLevel.Verbose().WriteTo.Sink(sink).CreateLogger();
 
         // Act
-        await GitVersionReader.LogAsync(logger, gitExecutable, TestContext.Current.CancellationToken);
+        var probe = await GitVersionReader.ReadAsync(logger, gitExecutable, TestContext.Current.CancellationToken);
 
         // Assert
         var logEvent = Assert.Single(sink.Events);
@@ -77,6 +79,9 @@ public sealed class GitVersionReaderTests
         Assert.Equal("git_version_unavailable", line.RootElement.GetProperty(LogFields.Event).GetString());
         Assert.Equal(ErrorCodes.GitNotInstalled, line.RootElement.GetProperty(LogFields.ErrorCode).GetString());
         Assert.False(line.RootElement.TryGetProperty(LogFields.GitExitCode, out _));
+        Assert.Null(probe.Version);
+        Assert.Equal(ErrorCodes.GitNotInstalled, probe.ErrorCode);
+        Assert.Null(probe.GitExitCode);
     }
 
     #region Test Helpers

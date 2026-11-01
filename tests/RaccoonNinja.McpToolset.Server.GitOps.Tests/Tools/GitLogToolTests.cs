@@ -24,6 +24,9 @@ public sealed class GitLogToolTests : IDisposable
     private const string SubmoduleMoveSubject = "move submodule";
     private const string RenamedFile = "renamed.txt";
     private const string RenameSubject = "rename beta";
+    private const string ForgedAuthorPrefix = "Evil";
+    private const string LogSubcommand = "log";
+    private const int KeptRecordBytes = 45;
 
     private readonly TempGitRepo _repo;
     private readonly GitLogTool _tool;
@@ -38,13 +41,7 @@ public sealed class GitLogToolTests : IDisposable
         CommitFile("feature.txt", FeatureSubject);
         _repo.Run("checkout", "main");
 
-        var common = new ToolCommon(
-            new RepoRootResolver(TestGit.Executable),
-            new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
-            new SessionMetrics(),
-            NullLoggerFactory.Instance,
-            TestGit.Executable);
-        _tool = new GitLogTool(common, new RefVerifier(TestGit.Executable));
+        _tool = BuildTool(new GitProcessRunner(NullLogger<GitProcessRunner>.Instance));
     }
 
     public void Dispose() => _repo.Dispose();
@@ -275,7 +272,105 @@ public sealed class GitLogToolTests : IDisposable
         Assert.Equal(GammaSubject, commit.Subject);
     }
 
+    [Theory]
+    [InlineData(TempGitRepo.IdentityName, 4)]
+    [InlineData(TempGitRepo.MailmapName, 0)]
+    public async Task Log_WithMailmapRenamingTheAuthor_MatchesOnlyTheRecordedAuthor(string author, int expectedCount)
+    {
+        // Arrange
+        _repo.CommitMailmap();
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, author: author, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(expectedCount, envelope.Count);
+        Assert.All(envelope.Results.Cast<Commit>(), commit => Assert.Equal(TempGitRepo.IdentityName, commit.AuthorName));
+    }
+
+    [Fact]
+    public async Task Log_WithGraftMakingHeadARoot_ListsTheStoredHistory()
+    {
+        // Arrange
+        _repo.GraftHeadAsRoot();
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(3, envelope.Count);
+        Assert.Contains(AlphaSubject, Subjects(envelope));
+    }
+
+    [Fact]
+    public async Task Log_BodyHoldingForgedRecord_ReturnsOnlyTheRealCommits()
+    {
+        // Arrange
+        var head = _repo.CommitWithForgedLogRecord();
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Equal(4, envelope.Count);
+        Assert.DoesNotContain(envelope.Results.Cast<Commit>(), item => item.Hash == TempGitRepo.ForgedRecordCommitId);
+        var commit = Assert.Single(envelope.Results.Cast<Commit>(), item => item.Hash == head);
+        Assert.Equal(TempGitRepo.ForgedRecordBody, commit.Body);
+    }
+
+    [Fact]
+    public async Task Log_AuthorNameHoldingRecordSeparator_ReturnsOneRecordPerCommit()
+    {
+        // Arrange
+        var claimed = _repo.Run("rev-parse", "HEAD");
+        var name = $"{ForgedAuthorPrefix}\u001e{claimed}\u001fForged Name";
+        var head = _repo.CommitWithAuthorName(name);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, maxCount: 1, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var commit = Assert.IsType<Commit>(Assert.Single(envelope.Results));
+        Assert.Equal(head, commit.Hash);
+        Assert.Equal(name, commit.AuthorName);
+    }
+
+    [Fact]
+    public async Task Log_OutputCut_ReturnsTheCutCommitMarkedTruncated()
+    {
+        // Arrange
+        var head = _repo.Run("rev-parse", "HEAD");
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(LogSubcommand), KeptRecordBytes));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.True(envelope.Truncated);
+        var commit = Assert.IsType<Commit>(Assert.Single(envelope.Results));
+        Assert.Equal(head, commit.Hash);
+    }
+
     #region Test Helpers
+
+    /// <summary>Build the tool under test over <paramref name="runner"/>, with the real root resolver and ref verifier.</summary>
+    /// <param name="runner">The runner every git process of the call goes through.</param>
+    /// <returns>The tool.</returns>
+    private static GitLogTool BuildTool(IGitProcessRunner runner)
+    {
+        var common = new ToolCommon(
+            new RepoRootResolver(TestGit.Executable),
+            runner,
+            new SessionMetrics(),
+            NullLoggerFactory.Instance,
+            TestGit.Executable);
+        return new GitLogTool(common, new RefVerifier(TestGit.Executable));
+    }
 
     private void CommitFile(string path, string message)
     {

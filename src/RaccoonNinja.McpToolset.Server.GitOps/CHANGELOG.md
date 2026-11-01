@@ -1,3 +1,86 @@
+## v2.26.0
+- Fixed: `git_branch_list` framed `git for-each-ref` output with the byte 0x1F between fields and a newline after each
+  ref. git keeps 0x1F in a tip commit's subject, so such a subject was cut at that byte. A branch's upstream is the
+  repository's own config text (`branch.<name>.merge`, mapped through the remote's fetch refspec, or as it is when
+  `branch.<name>.remote` is `.`), printed unchecked, so a value holding a newline and 0x1F, which a repository that
+  arrives with its `.git` can carry, could add a forged entry (any name, current-branch marker, and tip id) or put
+  other text in the real entry's upstream and subject.
+  `git_branch_list` now ends each field with NUL (`%00`) and checks the newline git prints after each ref; git never
+  prints a NUL inside one of those fields. Behavior change: such subjects and upstreams come back as recorded, with no
+  forged entry, and an upstream can hold a newline. Output that is not whole records fails the call with
+  `GitCommandError`. In a truncated reply the last ref is left out unless its subject is non-empty, as before for a
+  ref the 8 MB cap cut inside its name, tip id, or upstream; a ref cut inside its subject still comes back cut short
+  with `truncated: true`. A ref cut right before its subject, and a whole last ref with an empty subject, are now left
+  out of a truncated reply too.
+- Log change: the `argv_built` debug line of `git_branch_list`'s `git for-each-ref` shows the `%00` format, its
+  `argv_len` unchanged. Output that is not whole records logs the existing `tool_error` Error line with the fixed
+  message `git printed output that is not a whole number of NUL-framed records` and no `git_exit_code`; it counts as
+  `error` in `tool_calls_total` and not in `git_command_errors_total`.
+
+## v2.25.0
+- Added a `git_version` tool (no arguments): `{ version }`, the text after `git version ` that the server read from
+  the git it runs when it started, the value its `git_version` log line holds. It starts no git process and has no
+  `repo_root`. When the startup call read no version, each call fails with the code that call logged:
+  `GitNotInstalled`, `GitTimeout`, or `GitCommandError` (with `git_exit_code` when git exited). Any argument is
+  `InvalidArgument`.
+- Fixed: `git_diff` with `statOnly: true` reported `is_binary: false` for every entry. An entry git's `--numstat` marks
+  binary (`-` for both counts: a binary change, or a binary file whose timestamps alone changed) now has
+  `is_binary: true`.
+- Fixed: `git_log` and `git_show` framed their records with the bytes 0x1E and 0x1F, which git keeps in a commit's
+  subject, body, and author name, so one ordinary commit could add a forged record to `git_log` (any hash, author, or
+  subject, past `maxCount` and every filter), split one commit into two, or shift the email, dates, subject, and body
+  `git_show` reports. `git_reflog` and `git_stash_list` framed theirs with 0x1F and newlines: a subject holding 0x1F was
+  cut and a later field read in its place, and a reflog message holding a newline, which a repository's reftable can
+  store, could add a forged entry. All four, and `git_blame`'s author pass, now separate fields with NUL and end each
+  record with NUL (`-z`), and git never prints a NUL inside one of those fields. Behavior change: such commits and
+  entries come back as recorded, and `git_blame` on a line whose author name holds 0x1E no longer fails. Output that is
+  not whole records fails the call with `GitCommandError`. A `git_reflog` or `git_stash_list` entry cut by the 8 MB cap
+  comes back cut short (the field at the cut keeps its first bytes, later fields are empty, a later time reads as the
+  Unix epoch), as `git_log` and `git_show` already returned a cut commit, except a stash entry cut inside its selector,
+  which is left out; a cut `git_blame` author pass fails with `GitCommandError`.
+- Log change: the `argv_built` debug lines of the `git log` passes of `git_log`, `git_show` (metadata), and
+  `git_blame` (authors), and of `git reflog show` and `git stash list`, show `-z` and the NUL formats, their `argv_len`
+  1 higher. Output that is not whole records logs the existing `tool_error` Error line with the fixed message
+  `git printed output that is not a whole number of NUL-framed records` and no `git_exit_code`; it counts as `error` in
+  `tool_calls_total` and not in `git_command_errors_total`. A cut `git_blame` author pass logs `tool_error` with
+  `the blamed commits' author pass hit the output cap`, counted the same way. A `git_version` call starts no git
+  process, so it logs no `argv_built`, `cache_hit`, `cache_miss`, or `subprocess_exit` line and adds nothing to the
+  subprocess duration, timeout, or git command error metrics; it counts in `tool_calls_total` as `git_version:ok`, as
+  `git_version:error` (with a `tool_error` Error line carrying the startup `error_code`, and `git_exit_code` when git
+  exited), or as `git_version:binding_error` for any argument.
+
+## v2.24.0
+- Fixed: with a `.mailmap` at the top of the working tree, or `mailmap.file` or `mailmap.blob` in the user's or the
+  repository's config, `git_log` with `author` matched the name and email the mailmap maps each commit's author to,
+  while it printed the author recorded in the commit, so a repository could hide a real author's commits from that
+  search or return commits whose printed author does not contain the search text. Every git call now passes
+  `-c log.mailmap=false`, so `author` matches the recorded author; git 2.23.0 and later turn the key on by default.
+- Fixed: `git_blame`'s `author_name` was the name the repository's mailmap shows, since `git blame` applies the mailmap
+  with no switch to stop it. `author_name` is now the author recorded in the commit, the name `git_log` and `git_show`
+  report, and a line whose author the mailmap shows under another name also carries that name in a new
+  `mailmap_author_name` field; a line the mailmap leaves alone, or one not committed yet, has none. Behavior change: in
+  a repository with a mailmap, `author_name` changes for the lines it maps. A `git_blame` call with a committed line
+  runs one more git process, `git log --no-walk --stdin`, which reads the blamed commit ids from its standard input,
+  and fails with `GitCommandError` when that process's records do not match those commits.
+- Fixed: a repository's replace refs (`refs/replace/<id>`) and `.git/info/grafts` file changed the history every tool
+  reads: with a replace ref, `git_show`, `git_log`, `git_diff`, `git_file_at_ref`, `git_grep` with `ref`, and
+  `git_blame` returned another object's content under the original id, and a graft gave a commit other parents. Every
+  git process now gets `GIT_NO_REPLACE_OBJECTS=1` and `GIT_GRAFT_FILE` set to a path that does not exist, and every git
+  call passes `-c core.useReplaceRefs=false`, which keeps a repository's `core.useReplaceRefs=true` from turning
+  replace refs back on in git 2.19.0 to 2.41.x. Behavior change: replace refs and grafts you made yourself no longer
+  apply through the tools. A `.git/shallow` file still does, since a shallow clone needs it, so a planted one can still
+  end the history the tools show at a commit it names. An object id still does not vouch for content in a repository
+  you did not clone yourself: current git (2.56.0 checked) does not re-hash the objects it reads, and it takes a
+  commit's parents from the commit-graph file without checking them, so run `git fsck` in your own shell before you
+  trust ids there.
+- Log change: every `argv_built` debug line shows `-c log.mailmap=false -c core.useReplaceRefs=false`, and its
+  `argv_len` is 4 higher; the bootstrap calls (`git version` at startup and the `rev-parse` calls) carry the same pins
+  but log no argv line. A `git_blame` call with a committed line logs one more `argv_built` and `subprocess_exit`
+  pair, for the `git log` pass, under the same `call_id`; when that pass's records do not match, the call logs the
+  existing `tool_error` Error line with the fixed message `git log returned an author list that does not match the
+  blamed commits` and no `git_exit_code`. Metrics change: `subprocess_duration_ms_p50` and
+  `subprocess_duration_ms_p95` get one more sample per such call.
+
 ## v2.23.0
 - Fixed: with `i18n.logOutputEncoding` in the user's or the repository's git config, or `i18n.commitEncoding` when
   that key is not set, git re-encodes every record `git_log` and `git_show` read, commit id included. Set to an

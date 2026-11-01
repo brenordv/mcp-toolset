@@ -19,9 +19,10 @@ internal sealed class StdoutDroppingRunner(Func<IList<string>, bool> drops) : IG
         int? timeoutMs = null,
         int? outputCapBytes = null,
         int? callId = null,
+        byte[] standardInput = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _inner.RunAsync(argv, env, workingDirectory, timeoutMs, outputCapBytes, callId, cancellationToken);
+        var result = await _inner.RunAsync(argv, env, workingDirectory, timeoutMs, outputCapBytes, callId, standardInput, cancellationToken);
         return drops(argv) ? result with { Stdout = [] } : result;
     }
 }

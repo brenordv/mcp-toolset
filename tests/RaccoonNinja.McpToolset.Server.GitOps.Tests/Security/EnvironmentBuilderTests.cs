@@ -19,6 +19,12 @@ public class EnvironmentBuilderTests
     private const string CurrentDirectoryEntry = ".";
     private const string RelativeEntry = "bin";
 
+    private const string NoReplaceObjectsVariable = "GIT_NO_REPLACE_OBJECTS";
+    private const string GraftFileVariable = "GIT_GRAFT_FILE";
+    private const string DisabledGraftFile = "/nonexistent/git-ops-grafts-disabled";
+    private const string ReplacementContent = "replaced\n";
+    private const string UseReplaceRefsPin = "core.useReplaceRefs=false";
+
     private static readonly string FirstPathDirectory = Path.Combine(Path.GetTempPath(), "mcp-gitops-path-first");
     private static readonly string SecondPathDirectory = Path.Combine(Path.GetTempPath(), "mcp-gitops-path-second");
 
@@ -58,11 +64,15 @@ public class EnvironmentBuilderTests
         Assert.Equal("0", env["GIT_OPTIONAL_LOCKS"]);
         Assert.Equal("1", env["GIT_NO_LAZY_FETCH"]);
         Assert.Equal("none", env["GIT_ALLOW_PROTOCOL"]);
+        Assert.Equal("1", env[NoReplaceObjectsVariable]);
+        Assert.Equal(DisabledGraftFile, env[GraftFileVariable]);
     }
 
     [Theory]
     [InlineData("GIT_NO_LAZY_FETCH", "0", "1")]
     [InlineData("GIT_ALLOW_PROTOCOL", "file:ssh", "none")]
+    [InlineData(NoReplaceObjectsVariable, "0", "1")]
+    [InlineData(GraftFileVariable, ".git/info/grafts", DisabledGraftFile)]
     public void Build_ParentSetsFixedVariable_KeepsFixedValue(string name, string parentValue, string fixedValue)
     {
         // Arrange
@@ -155,6 +165,40 @@ public class EnvironmentBuilderTests
     }
 
     [Fact]
+    public async Task Build_WithoutNoReplaceObjectsVariable_UseReplaceRefsPinReadsStoredBlob()
+    {
+        // Arrange
+        using var repo = new TempGitRepo();
+        var (argv, env) = ArmReplacedBlobForServerRead(repo);
+        repo.Run("config", "core.useReplaceRefs", "true");
+        env.Remove(NoReplaceObjectsVariable);
+        var runner = new GitProcessRunner(NullLogger<GitProcessRunner>.Instance);
+
+        // Act
+        var result = await runner.RunAsync(argv, env, repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(TrackedFileContent, Encoding.UTF8.GetString(result.Stdout));
+    }
+
+    [Fact]
+    public async Task Build_WithoutUseReplaceRefsPin_NoReplaceObjectsVariableReadsStoredBlob()
+    {
+        // Arrange
+        using var repo = new TempGitRepo();
+        var (argv, env) = ArmReplacedBlobForServerRead(repo);
+        var pin = argv.IndexOf(UseReplaceRefsPin);
+        argv.RemoveRange(pin - 1, 2);
+        var runner = new GitProcessRunner(NullLogger<GitProcessRunner>.Instance);
+
+        // Act
+        var result = await runner.RunAsync(argv, env, repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(TrackedFileContent, Encoding.UTF8.GetString(result.Stdout));
+    }
+
+    [Fact]
     public async Task Build_WithEmptyPathEntry_StashListStartsNoRepositoryGit()
     {
         if (OperatingSystem.IsWindows())
@@ -224,6 +268,30 @@ public class EnvironmentBuilderTests
         };
         var (argv, env) = GitCommandBuilder.Build(intent, TestGit.Executable);
         return (marker, argv, env);
+    }
+
+    /// <summary>
+    /// Commit <see cref="TrackedFile"/> in <paramref name="repo"/>, replace its blob with <see cref="ReplacementContent"/>,
+    /// and build the server's argv and environment for <c>git show --format=</c> on the blob, the read
+    /// <c>git_file_at_ref</c> makes.
+    /// </summary>
+    /// <param name="repo">The repository to commit in and arm.</param>
+    /// <returns>The argv, as a list the caller can trim, and the environment <see cref="GitCommandBuilder.Build"/> returns.</returns>
+    private static (List<string> Argv, IDictionary<string, string> Env) ArmReplacedBlobForServerRead(TempGitRepo repo)
+    {
+        repo.WriteFile(TrackedFile, TrackedFileContent);
+        repo.Run("add", TrackedFile);
+        repo.Run("commit", "-m", TrackedFileCommitMessage);
+        var blob = repo.ReplaceBlob(TrackedFile, ReplacementContent);
+        var intent = new GitIntent
+        {
+            Subcommand = "show",
+            RepoRoot = repo.RepoPath,
+            Flags = ["--format="],
+            VerifiedRefs = [blob],
+        };
+        var (argv, env) = GitCommandBuilder.Build(intent, TestGit.Executable);
+        return ([.. argv], env);
     }
 
     /// <summary>
