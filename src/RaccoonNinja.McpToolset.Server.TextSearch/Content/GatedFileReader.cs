@@ -6,16 +6,18 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Content;
 /// <summary>
 /// The one open-boundary read gate for file content. Every content read (inspect, search, read_lines)
 /// goes through it, so confinement and the denylist hold even when enumeration is skipped (a
-/// <c>paths[]</c> or a single-path read). The size is checked before any bytes are read (an oversized
+/// <c>paths[]</c> or a single-path read), and a scoped read tests the denylist against the anchor-relative
+/// path as well. The size is checked before any bytes are read (an oversized
 /// file is refused unread) and the read is bounded to the cap, and every filesystem exception is caught
 /// and mapped to a typed outcome so no absolute path from a .NET exception message can escape into
-/// model context.
+/// model context. A reader serves one tool call: it loads each directory's project ignore files once and reuses
+/// them for every later read, so the scope resolver builds a new reader for every call.
 /// </summary>
 public sealed class GatedFileReader(IRootResolver root, ISecretDenylist denylist, long maxBytes, IRootResolver anchor = null, string prefix = null, ISecretContentScanner scanner = null)
 {
     private readonly IRootResolver _root = root ?? throw new ArgumentNullException(nameof(root));
     private readonly ISecretDenylist _denylist = denylist ?? throw new ArgumentNullException(nameof(denylist));
-    private readonly IRootResolver _anchor = anchor ?? root;
+    private readonly PathIgnoreEvaluator _projectIgnore = new((anchor ?? root).CanonicalRoot);
     private readonly string _prefix = prefix ?? string.Empty;
     private readonly ISecretContentScanner _scanner = scanner ?? NullSecretContentScanner.Instance;
 
@@ -41,14 +43,14 @@ public sealed class GatedFileReader(IRootResolver root, ISecretDenylist denylist
             return ReadOutcome.NotFound();
         }
 
-        if (_denylist.IsDeniedFile(confined.RelativePath))
+        if (IsDenied(confined.RelativePath))
         {
             return ReadOutcome.Denied(confined.RelativePath);
         }
 
         // The project ignore boundary is anchored at the base root (not the effective scope), so a scoped
         // read still honors ancestor .gitignore/.mcpignore rules and no caller can read an ignored file.
-        if (PathIgnoreEvaluator.IsIgnored(_anchor.CanonicalRoot, ToBaseRelative(confined.RelativePath)))
+        if (_projectIgnore.IsIgnored(ToBaseRelative(confined.RelativePath)))
         {
             return ReadOutcome.Ignored(confined.RelativePath);
         }
@@ -64,6 +66,15 @@ public sealed class GatedFileReader(IRootResolver root, ISecretDenylist denylist
 
         return outcome;
     }
+
+    /// <summary>
+    /// Whether <paramref name="relativePath"/> (relative to this reader's root) is on the denylist, tested as given
+    /// and, for a scoped read, as its anchor-relative form too, so an extra deny entry anchored with a <c>/</c>
+    /// covers a call scoped at or inside the directory it names.
+    /// </summary>
+    private bool IsDenied(string relativePath)
+        => _denylist.IsDeniedFile(relativePath)
+            || (_prefix.Length > 0 && _denylist.IsDeniedFile(ToBaseRelative(relativePath)));
 
     /// <summary>Rebase a scope-relative path onto the base anchor for ignore evaluation.</summary>
     private string ToBaseRelative(string relativePath)

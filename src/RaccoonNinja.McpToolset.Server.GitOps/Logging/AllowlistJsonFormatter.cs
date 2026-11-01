@@ -41,8 +41,9 @@ public sealed class AllowlistJsonFormatter : ITextFormatter
 
             if (logEvent.Exception != null)
             {
-                // Exception text is server-emitted (control-stripped to avoid leaking weird bytes into JSON).
-                writer.WriteString(LogFields.StderrTail, LogScrubbing.ScrubStderrTail(System.Text.Encoding.UTF8.GetBytes(logEvent.Exception.ToString())));
+                // Only the type chain is written. The message and stack trace of an exception the host or the SDK
+                // attached can carry an absolute path, and nothing here can tell which ones do.
+                writer.WriteString(LogFields.StderrTail, LogScrubbing.ExceptionTypeChain(logEvent.Exception));
             }
 
             writer.WriteEndObject();

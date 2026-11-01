@@ -20,7 +20,7 @@ network round-trips beyond the local process the assistant already talks to.
 - **[text-search](src/RaccoonNinja.McpToolset.Server.TextSearch/README.md)**: Local, read-only, root-confined text search and inspection; `describe_scope`, `find_files`, `inspect_files`, `search_text`, `read_lines`, and `read_json` as typed tools that replace the `find`/`grep`/`cat` habit (and the python-to-pluck-a-JSON-property one). Every path is resolved through all symlinks and confined to its configured roots, a non-overridable denylist keeps secret files unread while content-based detection additionally withholds files whose contents match a known secret shape, and results stay root-relative so no absolute path from your machine reaches the model. Supports multiple named roots plus opt-in package roots for grepping cached dependency sources.
 - **[text-edit](src/RaccoonNinja.McpToolset.Server.TextEdit/README.md)**: The mutating counterpart to text-search: root-confined text edits (`normalize_files`, `replace_text`) with hash-gated undo (`list_recent_batches`, `undo_batch`/`undo_last_batch`). It confines edits to a base root (optionally scoped to one project per call with `cwd`), keeps its write tools on prompt, refuses secret files via the same non-overridable denylist, round-trips encodings and line endings faithfully, and journals every change to an append-only store sited outside the root so a batch can be rolled back even after a mid-batch crash.
 - **[skill-stats](src/RaccoonNinja.McpToolset.Server.SkillStats/README.md)**: Local, read-only skill-usage statistics over a SQLite store. Three typed tools: `top_skills` (most-used skills over an optional recent window), `skill_usage` (recent invocations of one skill, with the recorded input), and `usage_summary` (totals plus ingestion health). Read-only by construction (`Mode=ReadOnly`, `query_only`); it never creates or migrates the store, so it returns `StoreUnavailable` until the companion hook has written one.
-- **[skill-stats-cli](src/RaccoonNinja.McpToolset.Cli.SkillStats/README.md)** (hook binary, not an MCP server): A `PostToolUse` hook that records each Skill invocation into the store `skill-stats` reads. You wire it into `~/.claude/settings.json` and Claude Code runs it; you never talk to it over MCP. It cannot break your session: any failure is logged and surfaced on stderr, and the tool call has already run.
+- **[skill-stats-cli](src/RaccoonNinja.McpToolset.Cli.SkillStats/README.md)** (hook binary, not an MCP server): A hook on `UserPromptExpansion` and `PostToolUse` that records each skill you type and each skill the model invokes into the store `skill-stats` reads. You wire it into `~/.claude/settings.json` and Claude Code runs it; you never talk to it over MCP. It cannot block your session: a failure is logged and reported as a non-blocking hook error.
 
 ## Repository layout
 
@@ -152,11 +152,25 @@ approved while its write tools still prompt, allow only `mcp__text-edit__describ
 ### Recording skill usage
 
 The `skill-stats` server has data to read only if the `skill-stats-cli` hook is recording it. Add the hook to
-your `~/.claude/settings.json`, pointing `command` at the published binary (`skill-stats-cli.exe` on Windows):
+your `~/.claude/settings.json` on both events, pointing `command` at the published binary (on Windows, run it
+through `cmd.exe /c`; the CLI README has that form). `UserPromptExpansion` sees the skills you type and
+`PostToolUse` sees the skills the model invokes:
 
 ```json
 {
   "hooks": {
+    "UserPromptExpansion": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<path-to>/skill-stats-cli",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Skill",
@@ -164,7 +178,7 @@ your `~/.claude/settings.json`, pointing `command` at the published binary (`ski
           {
             "type": "command",
             "command": "<path-to>/skill-stats-cli",
-            "timeout": 30
+            "timeout": 10
           }
         ]
       }

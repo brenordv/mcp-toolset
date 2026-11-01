@@ -11,7 +11,8 @@ namespace RaccoonNinja.McpToolset.Common.Files.Selection;
 /// tested once its ancestors are known to be un-ignored. Every tool honors these rules, but they
 /// are not the secret control: ignore files are ordinary editable files, so secrets are guarded
 /// by <see cref="Security.SecretDenylist"/> and the content scan, which no ignore rule can
-/// override.
+/// override. Which ignore files a directory holds is read from its listing, so a directory the
+/// server cannot list fails the operation rather than reading as rule-free.
 /// </summary>
 public sealed class IgnoreRules
 {
@@ -39,6 +40,10 @@ public sealed class IgnoreRules
     /// </summary>
     public static IReadOnlyList<string> IgnoreFileNames { get; } =
         [GitIgnoreFileName, .. AgentIgnoreFileNames, McpIgnoreFileName];
+
+    // File names come from a directory listing, so matching is case-insensitive on every platform, the same
+    // rule IsIgnoreFileName applies on the write side.
+    private static readonly StringComparer IgnoreNameComparer = StringComparer.OrdinalIgnoreCase;
 
     private readonly IReadOnlyList<IgnoreRule> _rules;
 
@@ -98,29 +103,49 @@ public sealed class IgnoreRules
     }
 
     /// <summary>
-    /// Read every ignore-file kind in <see cref="IgnoreFileNames"/> from <paramref name="directory"/> and
-    /// compile them into one rule set anchored under <paramref name="basePath"/>. Absent files are skipped;
-    /// the kinds are read least-specific first, so <c>.mcpignore</c> rules come last and override the rest.
+    /// Read every ignore-file kind in <see cref="IgnoreFileNames"/> present in <paramref name="directory"/> and
+    /// compile them into one rule set anchored under <paramref name="basePath"/>. Which kinds are present comes
+    /// from one listing of the directory, so an absent kind costs no probe, a directory that does not exist holds
+    /// none, and a directory that exists but cannot be listed fails loudly rather than reading as empty. The kinds
+    /// are read least-specific first, so <c>.mcpignore</c> rules come last and override the rest.
     /// </summary>
     /// <param name="directory">The real absolute directory to read the ignore files from.</param>
     /// <param name="basePath">The root-relative POSIX path of that directory (<c>""</c> for the root).</param>
-    /// <returns>The combined rule set, or <see cref="Empty"/> when no ignore file is present.</returns>
+    /// <returns>The combined rule set, or <see cref="Empty"/> when no ignore file is present or the directory does not exist.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="directory"/> is null or blank.</exception>
-    /// <exception cref="IgnoreFileReadException">Thrown when an ignore file exists but cannot be read; the message carries only its root-relative path.</exception>
+    /// <exception cref="IgnoreDirectoryUnlistableException">Thrown when the directory exists but cannot be listed; the message carries only its root-relative path.</exception>
+    /// <exception cref="IgnoreFileReadException">Thrown when a listed ignore file cannot be read; the message carries only its root-relative path.</exception>
     public static IgnoreRules Load(string directory, string basePath = "")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
 
+        var present = ListIgnoreFiles(directory, basePath);
         var sets = new List<IgnoreRules>();
         foreach (var fileName in IgnoreFileNames)
         {
+            if (!present.TryGetValue(fileName, out var paths))
+            {
+                continue;
+            }
+
             var tier = fileName switch
             {
                 GitIgnoreFileName => IgnoreTier.GitIgnore,
                 McpIgnoreFileName => IgnoreTier.McpIgnore,
                 _ => IgnoreTier.AgentIgnore,
             };
-            AddFileIfPresent(sets, directory, fileName, basePath, tier);
+
+            // On a case-sensitive filesystem one kind can be present under several spellings; every one
+            // loads, in ordinal order so the result is deterministic, and none shadows another.
+            paths.Sort(StringComparer.Ordinal);
+            foreach (var path in paths)
+            {
+                var rules = ReadFile(path, Path.GetFileName(path), basePath, tier);
+                if (rules is not null)
+                {
+                    sets.Add(rules);
+                }
+            }
         }
 
         return sets.Count == 0 ? Empty : Combine(sets);
@@ -170,18 +195,59 @@ public sealed class IgnoreRules
         return ignored;
     }
 
-    private static void AddFileIfPresent(List<IgnoreRules> sets, string directory, string fileName, string basePath, IgnoreTier tier)
+    /// <summary>List the ignore files in <paramref name="directory"/>, grouped by kind under <see cref="IgnoreNameComparer"/>; empty when the directory does not exist.</summary>
+    /// <exception cref="IgnoreDirectoryUnlistableException">Thrown when the directory exists but cannot be listed.</exception>
+    private static Dictionary<string, List<string>> ListIgnoreFiles(string directory, string basePath)
     {
-        var path = Path.Combine(directory, fileName);
-        if (!File.Exists(path))
+        var present = new Dictionary<string, List<string>>(IgnoreNameComparer);
+        try
         {
-            return;
+            // The single-argument overload throws on a directory the caller cannot read and lists hidden
+            // files; the EnumerationOptions overload defaults to skipping both, which would read a denied
+            // directory as rule-free.
+            foreach (var path in Directory.EnumerateFiles(directory))
+            {
+                var name = Path.GetFileName(path);
+                if (!IgnoreFileNames.Contains(name, IgnoreNameComparer))
+                {
+                    continue;
+                }
+
+                if (!present.TryGetValue(name, out var paths))
+                {
+                    paths = [];
+                    present[name] = paths;
+                }
+
+                paths.Add(path);
+            }
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // A directory that does not exist holds no ignore files, and nothing beneath it can be opened.
+            return present;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var relativeDirectory = string.IsNullOrWhiteSpace(basePath) ? "." : basePath;
+            throw new IgnoreDirectoryUnlistableException(relativeDirectory, ex.GetType().Name);
         }
 
+        return present;
+    }
+
+    /// <summary>Read and compile one listed ignore file; <c>null</c> when it vanished between the listing and the read or is a dangling link.</summary>
+    /// <exception cref="IgnoreFileReadException">Thrown when the file exists but cannot be read.</exception>
+    private static IgnoreRules ReadFile(string path, string fileName, string basePath, IgnoreTier tier)
+    {
         try
         {
             // Parse enumerates the lines, so a read that fails partway through also lands in the catch.
-            sets.Add(Parse(File.ReadLines(path), basePath, tier));
+            return Parse(File.ReadLines(path), basePath, tier);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

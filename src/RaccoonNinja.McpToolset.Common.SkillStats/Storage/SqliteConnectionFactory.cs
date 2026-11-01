@@ -7,9 +7,9 @@ namespace RaccoonNinja.McpToolset.Common.SkillStats.Storage;
 
 /// <summary>
 /// Opens SQLite connections against the skill-usage database in one of two modes. The ingest CLI
-/// opens a writer (WAL journal, NORMAL synchronous, busy timeout); the read-only server opens a
-/// reader (<c>Mode=ReadOnly</c>, <c>query_only</c>, busy timeout). Pragmas are asserted per open;
-/// re-asserting is harmless and keeps behavior explicit across pooled reuse.
+/// opens a writer (WAL journal, NORMAL synchronous, short busy and command timeouts); the read-only
+/// server opens a reader (<c>Mode=ReadOnly</c>, <c>query_only</c>, busy timeout). Pragmas are asserted
+/// per open; re-asserting is harmless and keeps behavior explicit across pooled reuse.
 /// </summary>
 public sealed class SqliteConnectionFactory
 {
@@ -26,6 +26,7 @@ public sealed class SqliteConnectionFactory
             DataSource = config.DbPath,
             Mode = SqliteOpenMode.ReadWriteCreate,
             Pooling = true,
+            DefaultTimeout = SkillStatsConfig.WriterCommandTimeoutSeconds,
         }.ToString();
         _readerConnectionString = new SqliteConnectionStringBuilder
         {
@@ -43,7 +44,7 @@ public sealed class SqliteConnectionFactory
         connection.Open();
         connection.Execute(string.Create(
             CultureInfo.InvariantCulture,
-            $"PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout={SkillStatsConfig.BusyTimeoutMs};"));
+            $"PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout={SkillStatsConfig.WriterBusyTimeoutMs};"));
         return connection;
     }
 

@@ -9,7 +9,7 @@ public sealed record SkippedFile
     [JsonPropertyName("path")]
     public string Path { get; init; }
 
-    /// <summary>Why it was skipped (<c>out_of_root</c>, <c>denied</c>, <c>hash_mismatch</c>, or <c>io_error</c>).</summary>
+    /// <summary>Why it was skipped (<c>out_of_root</c>, <c>denied</c>, <c>ignore_file</c>, <c>hash_mismatch</c>, or <c>io_error</c>).</summary>
     [JsonPropertyName("reason")]
     public string Reason { get; init; }
 }

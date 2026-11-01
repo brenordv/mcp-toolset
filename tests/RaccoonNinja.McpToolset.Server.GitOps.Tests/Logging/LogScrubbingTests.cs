@@ -5,6 +5,8 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Logging;
 
 public class LogScrubbingTests
 {
+    private const string ProbeMessage = "x";
+
     [Fact]
     public void StderrTail_ReturnsEmptyForNullAndEmpty()
     {
@@ -38,19 +40,6 @@ public class LogScrubbingTests
     }
 
     [Fact]
-    public void DriverName_CapsAndStripsControls()
-    {
-        // Arrange
-        var big = new string('x', LogScrubbing.DriverNameMaxBytes * 2);
-
-        // Act
-        var scrubbed = LogScrubbing.ScrubDriverName(big);
-
-        // Assert
-        Assert.Equal(LogScrubbing.DriverNameMaxBytes, scrubbed.Length);
-    }
-
-    [Fact]
     public void HashedParameter_IsStableAndLowercaseHex()
     {
         // Act
@@ -62,4 +51,31 @@ public class LogScrubbingTests
         Assert.Equal(8, a.Length);
         Assert.Matches("^[0-9a-f]{8}$", a);
     }
+
+    [Fact]
+    public void ExceptionTypeChain_ChainDeeperThanCap_StopsWithEllipsis()
+    {
+        // Arrange
+        var exception = NestedChain(LogScrubbing.ExceptionChainMaxDepth + 2);
+
+        // Act
+        var chain = LogScrubbing.ExceptionTypeChain(exception);
+
+        // Assert
+        var expected = string.Join(
+            " -> ",
+            Enumerable.Repeat("System.InvalidOperationException", LogScrubbing.ExceptionChainMaxDepth)) + " -> ...";
+        Assert.Equal(expected, chain);
+    }
+
+    #region Test Helpers
+
+    private static InvalidOperationException NestedChain(int depth)
+    {
+        return depth == 1
+            ? new InvalidOperationException(ProbeMessage)
+            : new InvalidOperationException(ProbeMessage, NestedChain(depth - 1));
+    }
+
+    #endregion
 }

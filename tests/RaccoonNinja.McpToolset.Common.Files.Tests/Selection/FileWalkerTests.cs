@@ -1,5 +1,6 @@
 using RaccoonNinja.McpToolset.Common.Files.Security;
 using RaccoonNinja.McpToolset.Common.Files.Selection;
+using RaccoonNinja.McpToolset.Common.Files.Tests.TestSupport;
 
 namespace RaccoonNinja.McpToolset.Common.Files.Tests.Selection;
 
@@ -355,6 +356,32 @@ public sealed class FileWalkerTests : IDisposable
         Assert.Throws<ArgumentException>(() => _walker.Walk(new FileWalkOptions { Start = "missing" }));
     }
 
+    [Fact]
+    public void Walk_UnlistableSubdirectory_IsPrunedNotFailed()
+    {
+        // Arrange
+        UnixDirectoryModes.SkipUnlessApplicable();
+        Write("sub/.gitignore", "*.log\n");
+        Write("sub/a.txt", "a");
+        Write("top.txt", "t");
+        var sub = Path.Combine(_rootDir, "sub");
+        UnixDirectoryModes.MakeUnlistable(sub);
+        try
+        {
+            // Act
+            var result = _walker.Walk(new FileWalkOptions());
+
+            // Assert
+            Assert.Equal(["top.txt"], Paths(result));
+        }
+        finally
+        {
+            UnixDirectoryModes.MakeListable(sub);
+        }
+    }
+
+    #region Test Helpers
+
     private static string[] Paths(WalkResult result)
         => result.Entries.Select(entry => entry.RelativePath).ToArray();
 
@@ -423,4 +450,6 @@ public sealed class FileWalkerTests : IDisposable
             return false;
         }
     }
+
+    #endregion
 }

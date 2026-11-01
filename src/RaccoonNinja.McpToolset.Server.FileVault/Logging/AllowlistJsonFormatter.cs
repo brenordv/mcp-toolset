@@ -50,16 +50,10 @@ public sealed class AllowlistJsonFormatter : ITextFormatter
 
             if (logEvent.Exception is not null)
             {
-                // Domain and wire exceptions carry client-visible text; a conflict body embeds
-                // the base-to-current diff, i.e. raw note content. Our own code never logs them,
-                // but the MCP SDK logs failed handlers with the exception attached, so the sink
-                // itself must refuse their text: only the type name is recorded. Full text stays
-                // reserved for genuine internal failures (server/driver emitted).
-                writer.WriteString(
-                    LogFields.StderrTail,
-                    CarriesClientVisibleText(logEvent.Exception)
-                        ? logEvent.Exception.GetType().Name
-                        : LogScrubbing.ScrubExceptionText(logEvent.Exception.ToString()));
+                // Only the type chain is written, for every exception. A vault or MCP exception's message is client-facing
+                // and can embed note content (a conflict carries the diff), and any other exception's message or stack trace
+                // can carry an absolute path.
+                writer.WriteString(LogFields.StderrTail, LogScrubbing.ExceptionTypeChain(logEvent.Exception));
             }
 
             writer.WriteEndObject();
@@ -68,24 +62,6 @@ public sealed class AllowlistJsonFormatter : ITextFormatter
         buffer.Position = 0;
         var line = new StreamReader(buffer).ReadToEnd();
         output.WriteLine(line);
-    }
-
-    /// <summary>
-    /// <c>true</c> when the exception chain contains a domain (<see cref="Errors.VaultException"/>)
-    /// or wire (<see cref="ModelContextProtocol.McpException"/>) exception, whose messages are
-    /// client-facing and may embed vault content.
-    /// </summary>
-    private static bool CarriesClientVisibleText(Exception exception)
-    {
-        for (var current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is Errors.VaultException or ModelContextProtocol.McpException)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static void WriteValue(Utf8JsonWriter writer, LogEventPropertyValue value)

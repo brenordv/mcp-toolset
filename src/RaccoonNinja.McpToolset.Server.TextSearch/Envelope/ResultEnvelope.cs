@@ -35,6 +35,11 @@ public sealed record ResultEnvelope
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? SkippedSymlinks { get; private init; }
 
+    /// <summary>The number of matching lines across every file in the result set before paging; set only by <c>search_text</c> in count mode.</summary>
+    [JsonPropertyName("total_match_count")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? TotalMatchCount { get; private init; }
+
     /// <summary>An opaque continuation token, or <c>null</c> when there is no next page.</summary>
     [JsonPropertyName("cursor")]
     public string Cursor { get; private init; }
@@ -50,6 +55,7 @@ public sealed record ResultEnvelope
     /// <param name="truncated">Whether the result was capped.</param>
     /// <param name="cursor">The opaque continuation token, or <c>null</c>.</param>
     /// <param name="skippedSymlinks">The count of skipped symlinked entries, or <c>null</c> to omit.</param>
+    /// <param name="totalMatchCount">The matching-line total across every page, or <c>null</c> to omit.</param>
     /// <returns>The success envelope.</returns>
     public static ResultEnvelope Success(
         IReadOnlyList<object> results,
@@ -57,7 +63,8 @@ public sealed record ResultEnvelope
         IDictionary<string, object> filtersApplied = null,
         bool truncated = false,
         string cursor = null,
-        int? skippedSymlinks = null)
+        int? skippedSymlinks = null,
+        int? totalMatchCount = null)
     {
         ArgumentNullException.ThrowIfNull(results);
         return new ResultEnvelope
@@ -69,6 +76,7 @@ public sealed record ResultEnvelope
             Truncated = truncated,
             Cursor = cursor,
             SkippedSymlinks = skippedSymlinks,
+            TotalMatchCount = totalMatchCount,
             Error = null,
         };
     }

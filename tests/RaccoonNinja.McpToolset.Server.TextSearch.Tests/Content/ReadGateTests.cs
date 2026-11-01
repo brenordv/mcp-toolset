@@ -11,6 +11,11 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Tests.Content;
 /// </summary>
 public sealed class ReadGateTests
 {
+    private const string NotesFile = "notes.txt";
+    private const string NotesContent = "hello";
+    private const string GitIgnoreFile = ".gitignore";
+    private const string PackageName = "nuget";
+
     private static readonly string[] SecretPaths = ["ok.cs", ".env", ".git/config", ".ssh/id_rsa"];
 
     [Fact]
@@ -150,6 +155,43 @@ public sealed class ReadGateTests
     }
 
     [Fact]
+    public async Task ReadLines_IgnoreFileAddedBetweenWholeBaseCalls_RefusesTheLaterRead()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write(NotesFile, NotesContent);
+        var before = await harness.ReadLines.InvokeAsync(path: NotesFile, cancellationToken: TestContext.Current.CancellationToken);
+        harness.Write(GitIgnoreFile, NotesFile + "\n");
+
+        // Act
+        var after = await harness.ReadLines.InvokeAsync(path: NotesFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(before.Error);
+        Assert.NotNull(after.Error);
+        Assert.Equal(ErrorCodes.NotFound, after.Error.Code);
+    }
+
+    [Fact]
+    public async Task ReadLines_IgnoreFileAddedBetweenWholePackageCalls_RefusesTheLaterRead()
+    {
+        // Arrange
+        const string packageCwd = "@" + PackageName;
+        using var harness = new TextSearchHarness(packageRoots: [PackageName]);
+        harness.WritePackage(PackageName, NotesFile, NotesContent);
+        var before = await harness.ReadLines.InvokeAsync(path: NotesFile, cwd: packageCwd, cancellationToken: TestContext.Current.CancellationToken);
+        harness.WritePackage(PackageName, GitIgnoreFile, NotesFile + "\n");
+
+        // Act
+        var after = await harness.ReadLines.InvokeAsync(path: NotesFile, cwd: packageCwd, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(before.Error);
+        Assert.NotNull(after.Error);
+        Assert.Equal(ErrorCodes.NotFound, after.Error.Code);
+    }
+
+    [Fact]
     public async Task Inspect_AgentIgnoredFileInPaths_IsOmitted()
     {
         // Arrange
@@ -165,6 +207,34 @@ public sealed class ReadGateTests
         Assert.Equal(["ok.cs"], TextSearchHarness.Paths(envelope));
     }
 
+    [Fact]
+    public async Task ReadLines_FileInUnlistableDirectory_FailsClosedAsInternalError()
+    {
+        // Arrange
+        UnixDirectoryModes.SkipUnlessApplicable();
+        const string secretFile = "proj/secret.json";
+        using var harness = new TextSearchHarness();
+        harness.Write("proj/.gitignore", "secret.json\n");
+        harness.Write(secretFile, "{ \"secret\": true }");
+        var proj = Path.Combine(harness.Root, "proj");
+        UnixDirectoryModes.MakeUnlistable(proj);
+        try
+        {
+            // Act
+            var envelope = await harness.ReadLines.InvokeAsync(path: secretFile, cancellationToken: TestContext.Current.CancellationToken);
+
+            // Assert
+            Assert.Equal(ErrorCodes.InternalError, envelope.Error.Code);
+            Assert.DoesNotContain(harness.Root, TextSearchHarness.ToJson(envelope), StringComparison.Ordinal);
+        }
+        finally
+        {
+            UnixDirectoryModes.MakeListable(proj);
+        }
+    }
+
+    #region Test Helpers
+
     private static TextSearchHarness SeedSecrets()
     {
         var harness = new TextSearchHarness();
@@ -174,4 +244,6 @@ public sealed class ReadGateTests
         harness.Write(".ssh/id_rsa", "token PRIVATE KEY");
         return harness;
     }
+
+    #endregion
 }

@@ -23,6 +23,32 @@ public static class ServerEventLog
     public static void Start(ILogger serverLogger)
         => serverLogger.ForContext(LogFields.Event, "server_start").Information("server_start");
 
+    /// <summary>Emit the <c>git_version</c> record naming the git the server runs.</summary>
+    /// <param name="serverLogger">The server-scoped logger from <see cref="ForServer"/>.</param>
+    /// <param name="version">The text after <c>git version </c> in git's output, already allowlisted.</param>
+    public static void GitVersion(ILogger serverLogger, string version)
+        => serverLogger
+            .ForContext(LogFields.Event, "git_version")
+            .ForContext(LogFields.GitVersion, version)
+            .Information("git_version");
+
+    /// <summary>Emit the <c>git_version_unavailable</c> record when the startup <c>git version</c> call gives no version.</summary>
+    /// <param name="serverLogger">The server-scoped logger from <see cref="ForServer"/>.</param>
+    /// <param name="errorCode">The <c>ErrorCodes</c> value naming why no version was read.</param>
+    /// <param name="gitExitCode">git's exit code when git exited; <c>null</c> when it never started or was killed.</param>
+    public static void GitVersionUnavailable(ILogger serverLogger, string errorCode, int? gitExitCode)
+    {
+        var logger = serverLogger
+            .ForContext(LogFields.Event, "git_version_unavailable")
+            .ForContext(LogFields.ErrorCode, errorCode);
+        if (gitExitCode is not null)
+        {
+            logger = logger.ForContext(LogFields.GitExitCode, gitExitCode.Value);
+        }
+
+        logger.Warning("git_version_unavailable");
+    }
+
     /// <summary>Emit the <c>server_stop_failed</c> record carrying the fatal exception.</summary>
     /// <param name="serverLogger">The server-scoped logger from <see cref="ForServer"/>.</param>
     /// <param name="exception">The exception that aborted the host.</param>

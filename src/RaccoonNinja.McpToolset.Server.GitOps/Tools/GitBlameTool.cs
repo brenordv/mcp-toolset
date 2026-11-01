@@ -52,7 +52,8 @@ public sealed class GitBlameTool(ToolCommon common, IRefVerifier refVerifier)
                 Flags = ["--porcelain"],
                 AttachedOptions = attached,
                 VerifiedRefs = verifiedRefs,
-                Pathspecs = [rel],
+                // git blame takes a file argument, not a pathspec; a magic prefix would become part of the filename.
+                Pathspecs = [Pathspec.FileArgument(rel)],
             };
             var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
             var lines = BlameParser.Parse(result.Stdout);

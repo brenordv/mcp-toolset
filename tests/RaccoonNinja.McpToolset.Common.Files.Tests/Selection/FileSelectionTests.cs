@@ -5,6 +5,12 @@ namespace RaccoonNinja.McpToolset.Common.Files.Tests.Selection;
 
 public sealed class FileSelectionTests : IDisposable
 {
+    private const string PathShapedDenyEntry = "**/.claude/settings*.json";
+    private const string ScopedDirectory = "proj/.claude";
+    private const string ScopedAgentFile = "agents/a.md";
+    private const string DeniedSettingsFile = "settings.json";
+    private const string LaterIgnoredFile = "notes.txt";
+
     private readonly string _rootDir;
     private readonly FileSelection _selection;
     private readonly List<string> _cleanup = [];
@@ -61,6 +67,23 @@ public sealed class FileSelectionTests : IDisposable
 
         // Assert
         Assert.Equal(["UserTest.cs"], paths);
+    }
+
+    [Fact]
+    public void Select_IgnoreFileAddedBetweenPathsSelections_OmitsThePathFromTheLater()
+    {
+        // Arrange
+        Write(LaterIgnoredFile, "1");
+        var selector = FileSelector.Create(paths: [LaterIgnoredFile]);
+        var before = Paths(_selection.Select(selector));
+        Write(IgnoreRules.GitIgnoreFileName, LaterIgnoredFile + "\n");
+
+        // Act
+        var after = Paths(_selection.Select(selector));
+
+        // Assert
+        Assert.Equal([LaterIgnoredFile], before);
+        Assert.Empty(after);
     }
 
     [Fact]
@@ -306,8 +329,50 @@ public sealed class FileSelectionTests : IDisposable
         Assert.True(result.Truncated);
     }
 
+    [Fact]
+    public void Select_ScopedWalk_PathShapedExtraDeny_OmitsFileDeniedByBaseRelativePath()
+    {
+        // Arrange
+        var scoped = ScopedAtClaudeDirectory();
+
+        // Act
+        var result = scoped.Select(FileSelector.Create());
+
+        // Assert
+        Assert.Equal([ScopedAgentFile], Paths(result));
+    }
+
+    [Fact]
+    public void Select_ScopedPaths_PathShapedExtraDeny_OmitsFileDeniedByBaseRelativePath()
+    {
+        // Arrange
+        var scoped = ScopedAtClaudeDirectory();
+
+        // Act
+        var result = scoped.Select(FileSelector.Create(paths: [DeniedSettingsFile, ScopedAgentFile]));
+
+        // Assert
+        Assert.Equal([ScopedAgentFile], Paths(result));
+    }
+
     private static string[] Paths(WalkResult result)
         => result.Entries.Select(entry => entry.RelativePath).ToArray();
+
+    /// <summary>
+    /// Write <c>proj/.claude/settings.json</c> and <c>proj/.claude/agents/a.md</c>, then build a selection scoped
+    /// at <c>proj/.claude</c> under the base root whose denylist carries <see cref="PathShapedDenyEntry"/>.
+    /// </summary>
+    private FileSelection ScopedAtClaudeDirectory()
+    {
+        Write($"{ScopedDirectory}/{DeniedSettingsFile}", "{}");
+        Write($"{ScopedDirectory}/{ScopedAgentFile}", "x");
+        return new FileSelection(
+            new RootConfinement(Path.Combine(_rootDir, "proj", ".claude")),
+            new SecretDenylist([PathShapedDenyEntry]),
+            defaultIgnore: null,
+            anchor: new RootConfinement(_rootDir),
+            prefix: ScopedDirectory);
+    }
 
     private void Write(string relativePath, string content)
     {

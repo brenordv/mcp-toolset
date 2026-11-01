@@ -3,10 +3,14 @@ using System.Text.Json;
 namespace RaccoonNinja.McpToolset.Cli.SkillStats.Ingest;
 
 /// <summary>
-/// The fields extracted from a PostToolUse hook payload. Extraction walks the parsed JSON with
+/// The fields extracted from a Claude Code hook payload. Two shapes are read: the
+/// <c>UserPromptExpansion</c> shape, where the command name and the typed arguments are the root fields
+/// <c>command_name</c> and <c>command_args</c>, and the <c>PostToolUse</c> tool-call shape, where they sit
+/// under <c>tool_input</c> as <c>skill</c> or <c>name</c> and <c>args</c> or <c>input</c>. The tool-call
+/// shape is read first, so a root <c>command_name</c> never shadows a tool payload. The root
+/// <c>prompt</c> field, the whole typed line, is never read. Extraction walks the parsed JSON with
 /// <c>TryGetProperty</c> rather than deserializing into a type, so an unknown or missing field can
-/// never throw. The skill name comes from <c>tool_input.skill</c> then
-/// <c>tool_input.name</c>; the args from <c>tool_input.args</c> then <c>tool_input.input</c>.
+/// never throw.
 /// </summary>
 internal sealed record HookPayload
 {
@@ -24,6 +28,9 @@ internal sealed record HookPayload
 
     /// <summary>The top-level property names of <c>tool_input</c>, for shape-drift diagnosis in skip lines.</summary>
     public IReadOnlyList<string> ToolInputKeys { get; private init; } = [];
+
+    /// <summary>The property names of the root object, for shape-drift diagnosis in skip lines.</summary>
+    public IReadOnlyList<string> RootKeys { get; private init; }
 
     /// <summary>Extract the recorded fields from a parsed hook payload.</summary>
     /// <param name="root">The root element of the parsed payload.</param>
@@ -46,6 +53,12 @@ internal sealed record HookPayload
             keys.AddRange(toolInput.EnumerateObject().Select(property => property.Name));
         }
 
+        rawSkill ??= ReadString(root, "command_name");
+        args ??= ReadArgs(root, "command_args");
+        var rootKeys = root.ValueKind == JsonValueKind.Object
+            ? root.EnumerateObject().Select(property => property.Name).ToList()
+            : [];
+
         return new HookPayload
         {
             RawSkill = rawSkill,
@@ -53,6 +66,7 @@ internal sealed record HookPayload
             SessionId = sessionId,
             Cwd = cwd,
             ToolInputKeys = keys,
+            RootKeys = rootKeys,
         };
     }
 
@@ -63,9 +77,9 @@ internal sealed record HookPayload
                 ? value.GetString()
                 : null;
 
-    private static string ReadArgs(JsonElement toolInput, string name)
+    private static string ReadArgs(JsonElement element, string name)
     {
-        if (!toolInput.TryGetProperty(name, out var value))
+        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(name, out var value))
         {
             return null;
         }

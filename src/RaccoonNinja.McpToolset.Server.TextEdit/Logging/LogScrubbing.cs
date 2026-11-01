@@ -4,30 +4,39 @@ using System.Text;
 namespace RaccoonNinja.McpToolset.Server.TextEdit.Logging;
 
 /// <summary>
-/// Scrubbing helpers for the log fields that carry potentially sensitive bytes: an exception tail
-/// (control-stripped and capped) and an opaque-value hash used to correlate records about the same
-/// root without ever writing the absolute path.
+/// Scrubbing helpers for the log fields that carry derived values: an exception's type chain and an
+/// opaque-value hash used to correlate records about the same root without ever writing the absolute path.
 /// </summary>
 public static class LogScrubbing
 {
-    /// <summary>The maximum number of trailing bytes of an exception rendering that reach the log.</summary>
-    public const int ExceptionTailMaxBytes = 512;
+    /// <summary>The most exception types <see cref="ExceptionTypeChain"/> lists before it stops.</summary>
+    public const int ExceptionChainMaxDepth = 8;
 
-    /// <summary>Return at most <see cref="ExceptionTailMaxBytes"/> of raw text with control chars stripped.</summary>
-    /// <param name="raw">The raw bytes (for example an exception rendering) to cap and clean.</param>
-    /// <returns>The capped, control-stripped tail, or the empty string when there is nothing to emit.</returns>
-    public static string ScrubTail(byte[] raw)
+    /// <summary>
+    /// Render an exception as its type chain, outer to inner, for the log. A type's name is chosen by the code
+    /// that defines the type, never by request data, so unlike a message or a stack trace it cannot carry an
+    /// absolute path, a secret, or user content.
+    /// </summary>
+    /// <param name="exception">The logged exception.</param>
+    /// <returns>
+    /// The full type names joined by <c> -> </c>, with <c> -> ...</c> appended past
+    /// <see cref="ExceptionChainMaxDepth"/> entries.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <c>null</c>.</exception>
+    public static string ExceptionTypeChain(Exception exception)
     {
-        if (raw == null || raw.Length == 0)
+        ArgumentNullException.ThrowIfNull(exception);
+
+        var names = new List<string>();
+        var current = exception;
+        while (current is not null && names.Count < ExceptionChainMaxDepth)
         {
-            return string.Empty;
+            names.Add(current.GetType().FullName);
+            current = current.InnerException;
         }
 
-        var capped = raw.Length > ExceptionTailMaxBytes
-            ? raw.AsSpan(raw.Length - ExceptionTailMaxBytes).ToArray()
-            : raw;
-
-        return StripControls(Encoding.UTF8.GetString(capped));
+        var chain = string.Join(" -> ", names);
+        return current is null ? chain : chain + " -> ...";
     }
 
     /// <summary>
@@ -41,24 +50,5 @@ public static class LogScrubbing
         value ??= string.Empty;
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexStringLower(bytes)[..8];
-    }
-
-    private static string StripControls(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return text ?? string.Empty;
-        }
-
-        var builder = new StringBuilder(text.Length);
-        foreach (var ch in text)
-        {
-            if (ch == ' ' || !char.IsControl(ch))
-            {
-                builder.Append(ch);
-            }
-        }
-
-        return builder.ToString();
     }
 }

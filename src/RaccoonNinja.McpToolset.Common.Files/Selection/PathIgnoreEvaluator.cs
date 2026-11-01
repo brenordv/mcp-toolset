@@ -9,9 +9,14 @@ namespace RaccoonNinja.McpToolset.Common.Files.Selection;
 /// that matches the directory would never match <c>bin/x.dll</c> on its own. This evaluator restores the
 /// missing ancestor tests: it accumulates the project ignore-file chain (<c>.gitignore</c>, the agent-ignore files, <c>.mcpignore</c>) from the root down
 /// and reports the path ignored when any ancestor directory or the leaf itself matches. An instance
-/// remembers each directory's rule chain, for a caller that tests many paths under one root in a single
-/// operation (a filtered walk). Like <see cref="IgnoreRules"/>, it is not the secret control; secrets are
-/// guarded by <see cref="Security.SecretDenylist"/> and the content scan.
+/// remembers each directory's rule chain, so a caller that tests many paths under one root in one operation (a
+/// filtered walk, a read or write gate, an explicit path list) loads each directory's ignore files once; it never
+/// sees an ignore file that changes while it is alive, so each operation builds its own. A directory on the path
+/// that exists but cannot be listed throws
+/// <see cref="IgnoreDirectoryUnlistableException"/>: on this route the caller can open a file by name inside
+/// such a directory, so its rules must be known or the read must not happen. Like <see cref="IgnoreRules"/>,
+/// it is not the secret control; secrets are guarded by <see cref="Security.SecretDenylist"/> and the content
+/// scan.
 /// </summary>
 public sealed class PathIgnoreEvaluator
 {
@@ -34,26 +39,17 @@ public sealed class PathIgnoreEvaluator
     }
 
     /// <summary>
-    /// Whether <paramref name="relativePath"/> is ignored under the ignore files reachable from
-    /// <paramref name="rootDirectory"/>, testing each ancestor directory as a directory and then the leaf
-    /// as a file. Rules accumulate root-first and are ordered by <see cref="IgnoreRules.Combine"/>, exactly
-    /// as the walker composes them while descending.
-    /// </summary>
-    /// <param name="rootDirectory">The real absolute root directory the relative path is anchored under.</param>
-    /// <param name="relativePath">The <c>/</c>-separated root-relative path of the file to test.</param>
-    /// <returns><c>true</c> when any ancestor directory or the leaf is ignored; otherwise <c>false</c>.</returns>
-    /// <exception cref="ArgumentException">Thrown when either argument is null or blank.</exception>
-    public static bool IsIgnored(string rootDirectory, string relativePath)
-        => new PathIgnoreEvaluator(rootDirectory).IsIgnored(relativePath);
-
-    /// <summary>
-    /// Whether <paramref name="relativePath"/> is ignored under this evaluator's root, with the same answer
-    /// as <see cref="IsIgnored(string, string)"/>: each ancestor directory is tested as a directory, then
-    /// the leaf as a file.
+    /// Whether <paramref name="relativePath"/> is ignored under the ignore files reachable from this evaluator's root,
+    /// testing each ancestor directory as a directory and then the leaf as a file. Rules accumulate root-first and are
+    /// ordered by <see cref="IgnoreRules.Combine"/>, exactly as the walker composes them while descending. A directory's
+    /// ignore files are loaded on its first use and reused for every later path under it; a load that throws is not
+    /// remembered, so the next path under that directory loads it again.
     /// </summary>
     /// <param name="relativePath">The <c>/</c>-separated root-relative path of the file to test.</param>
     /// <returns><c>true</c> when any ancestor directory or the leaf is ignored; otherwise <c>false</c>.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="relativePath"/> is null or blank.</exception>
+    /// <exception cref="IgnoreDirectoryUnlistableException">Thrown when a directory on the path exists but cannot be listed.</exception>
+    /// <exception cref="IgnoreFileReadException">Thrown when a listed ignore file on the path cannot be read.</exception>
     public bool IsIgnored(string relativePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);

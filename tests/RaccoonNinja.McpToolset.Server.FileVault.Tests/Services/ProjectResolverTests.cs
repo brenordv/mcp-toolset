@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using RaccoonNinja.McpToolset.Server.FileVault.Configuration;
 using RaccoonNinja.McpToolset.Server.FileVault.Errors;
 using RaccoonNinja.McpToolset.Server.FileVault.Services;
@@ -7,6 +8,8 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Tests.Services;
 /// <summary>Tests for <see cref="ProjectResolver.Resolve"/>: priority order, trimming, validation, and cwd derivation.</summary>
 public sealed class ProjectResolverTests : IDisposable
 {
+    private const int GitInitTimeoutMilliseconds = 15_000;
+
     private readonly string _root =
         Path.Combine(Path.GetTempPath(), "filevault-tests", Guid.NewGuid().ToString("N"));
 
@@ -225,6 +228,24 @@ public sealed class ProjectResolverTests : IDisposable
     }
 
     [Fact]
+    public void Resolve_CwdUnderGitRepositoryRoot_DerivesRootSlashDirectory()
+    {
+        // Arrange
+        const string repositoryDirectory = "git-repo-root";
+        const string appDirectory = "git-app";
+        var root = CreateDir(repositoryDirectory);
+        InitGitRepository(root);
+        var cwd = CreateDir(repositoryDirectory, appDirectory);
+        var resolver = new ProjectResolver(ConfigWith(null), cwd);
+
+        // Act
+        var project = resolver.Resolve(null);
+
+        // Assert
+        Assert.Equal($"{repositoryDirectory}/{appDirectory}", project.Value);
+    }
+
+    [Fact]
     public void Resolve_InvalidCharsetDirectoryName_ThrowsAmbiguousProjectWithTried()
     {
         // Arrange
@@ -256,5 +277,25 @@ public sealed class ProjectResolverTests : IDisposable
         var path = Path.Combine([_root, .. segments]);
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private static void InitGitRepository(string directory)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = directory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        startInfo.ArgumentList.Add("init");
+        startInfo.ArgumentList.Add("--quiet");
+        using var process = Process.Start(startInfo);
+        if (!process.WaitForExit(GitInitTimeoutMilliseconds) || process.ExitCode != 0)
+        {
+            throw new InvalidOperationException("git init failed in the test directory");
+        }
     }
 }

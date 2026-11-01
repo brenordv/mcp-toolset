@@ -13,8 +13,10 @@ public sealed class GitLsFilesTool(ToolCommon common)
     [Description("Return the list of tracked paths (optionally restricted to a subset); with stage, return each index entry with its mode, object id, and stage.")]
     public Task<ResultEnvelope> InvokeAsync(
         [Description("Absolute working directory.")] string cwd,
-        [Description("Restrict to these repo-relative paths.")] string[] paths = null,
+        [Description("Literal repo-relative paths (a file, or a directory and its subtree). Wildcards (* ?) and pathspec magic are rejected here; use globs and excludePaths.")] string[] paths = null,
         [Description("Include each index entry's mode, object id, and stage number (git ls-files --stage). Results become {path, mode, object_id, stage} objects instead of path strings.")] bool stage = false,
+        [Description("Wildcard pathspecs, git's default matching: '*' and '?' also match '/', so '*.json' matches at any depth and 'projects/*/package.json' works. Repo-relative, forward slashes, no leading ':' or '-', no '..'.")] string[] globs = null,
+        [Description("Paths or wildcard patterns to exclude from the listing (git ':(exclude)'). A directory excludes its subtree. Works alone, or together with paths and globs.")] string[] excludePaths = null,
         CancellationToken cancellationToken = default)
     {
         var ctx = common.MakeContext("git_ls_files");
@@ -28,7 +30,12 @@ public sealed class GitLsFilesTool(ToolCommon common)
                 Subcommand = "ls-files",
                 RepoRoot = root,
                 Flags = stage ? ["-z", "--stage"] : ["-z"],
-                Pathspecs = ToolCommon.ConfinePaths(root, paths),
+                Pathspecs =
+                [
+                    .. ToolCommon.ConfinePaths(root, paths),
+                    .. ToolCommon.GlobPathspecs(globs),
+                    .. ToolCommon.ExcludePathspecs(excludePaths),
+                ],
             };
             var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
             IReadOnlyList<object> entries = stage
@@ -37,6 +44,8 @@ public sealed class GitLsFilesTool(ToolCommon common)
 
             var filtersApplied = FiltersAppliedBuilder.Create()
                 .Number("paths_count", paths?.Length ?? 0)
+                .Number("globs_count", globs?.Length ?? 0)
+                .Number("exclude_paths_count", excludePaths?.Length ?? 0)
                 .Flag("stage", stage)
                 .Build();
             return ToolCommon.ListSuccess(

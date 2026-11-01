@@ -8,10 +8,18 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Logging;
 /// Configures Serilog with the allowlist JSON formatter. The default sink is stderr (Rust parity;
 /// safe when a client spawns several vault instances concurrently); a rotating file sink is
 /// opt-in via <c>VAULT_MCP_LOG_FILE</c>. SDK and framework categories are capped at Information
-/// so a debug level cannot mirror JSON-RPC frames (which carry vault content) into the log.
+/// so a debug level cannot mirror JSON-RPC frames (which carry vault content) into the log. The host's
+/// lifetime category is held at Warning, since one of its Information lines names the working directory.
 /// </summary>
 public static class LoggingBootstrap
 {
+    /// <summary>
+    /// The generic host's lifetime log category. At Information it writes the startup and shutdown status lines, one of
+    /// which is <c>Content root path: ...</c>, the process working directory, so the category is held at Warning whatever
+    /// the configured level.
+    /// </summary>
+    private const string HostLifetimeCategory = "Microsoft.Hosting.Lifetime";
+
     /// <summary>Build a Serilog logger from the current environment.</summary>
     /// <returns>The configured root logger.</returns>
     public static Logger BuildLogger()
@@ -30,7 +38,8 @@ public static class LoggingBootstrap
             .MinimumLevel.Is(configuredLevel)
             .MinimumLevel.Override("ModelContextProtocol", LogEventLevel.Information)
             .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
-            .MinimumLevel.Override("System", LogEventLevel.Information);
+            .MinimumLevel.Override("System", LogEventLevel.Information)
+            .MinimumLevel.Override(HostLifetimeCategory, LogEventLevel.Warning);
 
         var fallbackToStderr = false;
         var configuredFile = Read(env, LoggingConstants.EnvLogFile);

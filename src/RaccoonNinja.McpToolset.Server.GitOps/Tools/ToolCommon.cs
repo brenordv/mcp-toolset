@@ -18,7 +18,8 @@ public sealed class ToolCommon(
     IRepoRootResolver resolver,
     IGitProcessRunner runner,
     SessionMetrics metrics,
-    ILoggerFactory loggerFactory)
+    ILoggerFactory loggerFactory,
+    string gitExecutable)
 {
     public CallContext MakeContext(string tool)
         => new(tool, loggerFactory.CreateLogger(tool));
@@ -44,7 +45,8 @@ public sealed class ToolCommon(
         Func<string, GitCheckException> stderrClassifier = null,
         CancellationToken cancellationToken = default)
     {
-        var (argv, env) = GitCommandBuilder.Build(intent);
+        var filterDrivers = await ReadFilterDriversAsync(intent, ctx, cancellationToken);
+        var (argv, env) = GitCommandBuilder.Build(intent, gitExecutable, filterDrivers);
         var masked = GitCommandBuilder.MaskedForLog(argv, intent);
         ctx.Log(
             LogLevel.Debug,
@@ -126,14 +128,69 @@ public sealed class ToolCommon(
             new Dictionary<string, object> { [LogFields.GitExitCode] = result.ExitCode });
     }
 
+    /// <summary>
+    /// For an intent whose subcommand <see cref="FilterDriverPins.AppliesTo"/>, list the filter drivers the config git reads
+    /// names, for <see cref="GitCommandBuilder.Build"/> to pin; for any other intent, return none without running
+    /// git. The listing runs through <see cref="ExecuteAsync"/>, so it reads config with the same <c>-c</c> prefix,
+    /// environment, and root as the command it precedes.
+    /// </summary>
+    /// <param name="intent">The command about to run.</param>
+    /// <param name="ctx">The call context; the listing logs under the same tool and call id.</param>
+    /// <param name="cancellationToken">Token to cancel the listing.</param>
+    /// <returns>The driver names, each once, in the order git listed them.</returns>
+    /// <exception cref="GitCommandException">
+    /// The listing hit the output cap, so a driver could be missing from it, or a name cannot be pinned.
+    /// </exception>
+    private async Task<IReadOnlyList<string>> ReadFilterDriversAsync(GitIntent intent, CallContext ctx, CancellationToken cancellationToken)
+    {
+        if (!FilterDriverPins.AppliesTo(intent.Subcommand))
+        {
+            return [];
+        }
+
+        var listing = await ExecuteAsync(
+            FilterDriverPins.ListIntent(intent.RepoRoot),
+            ctx,
+            allowedExitCodes: ConfigListExitCodes,
+            cancellationToken: cancellationToken);
+        if (listing.Truncated)
+        {
+            throw new GitCommandException("the repository's filter driver list was too long to read in full");
+        }
+
+        return FilterDriverPins.ParseDriverNames(listing.Stdout);
+    }
+
     private static readonly HashSet<int> OkOnly = [0];
 
-    /// <summary>Confine each user-supplied path under <paramref name="root"/>, yielding safe repo-relative pathspecs.</summary>
+    /// <summary><c>git config --get-regexp</c> exits 1 when no key matches.</summary>
+    private static readonly HashSet<int> ConfigListExitCodes = [0, 1];
+
+    /// <summary>Confine each user-supplied path under the root as a literal pathspec; an entry with wildcard characters or pathspec magic is rejected.</summary>
     /// <param name="root">The resolved repository root.</param>
     /// <param name="paths">The user-supplied paths; a null array yields an empty list.</param>
-    /// <returns>The confined pathspecs, in input order.</returns>
-    public static List<string> ConfinePaths(string root, string[] paths)
-        => paths is null ? [] : [.. paths.Select(path => PathConfinement.Confine(root, path))];
+    /// <returns>The confined literal pathspecs, in input order.</returns>
+    /// <exception cref="RejectedArgumentException">An entry is empty, contains '*' or '?', or starts with ':'.</exception>
+    public static List<Pathspec> ConfinePaths(string root, string[] paths)
+        => paths is null
+            ? []
+            : [.. paths.Select(path => Pathspec.Literal(PathConfinement.Confine(root, PathspecValidation.EnsureLiteral(path))))];
+
+    /// <summary>Validate each wildcard pattern as a bare pathspec (git's default matching).</summary>
+    /// <param name="globs">The user-supplied patterns; a null array yields an empty list.</param>
+    /// <returns>The glob pathspecs, in input order.</returns>
+    /// <exception cref="RejectedArgumentException">An entry fails <see cref="PathspecValidation.ValidatePattern"/>.</exception>
+    public static IReadOnlyList<Pathspec> GlobPathspecs(string[] globs)
+        => globs is null ? [] : [.. globs.Select(glob => Pathspec.Glob(PathspecValidation.ValidatePattern(nameof(globs), glob)))];
+
+    /// <summary>Validate each exclusion as an <c>:(exclude)</c> pathspec.</summary>
+    /// <param name="excludePaths">The user-supplied paths or patterns to exclude; a null array yields an empty list.</param>
+    /// <returns>The exclude pathspecs, in input order.</returns>
+    /// <exception cref="RejectedArgumentException">An entry fails <see cref="PathspecValidation.ValidatePattern"/>.</exception>
+    public static IReadOnlyList<Pathspec> ExcludePathspecs(string[] excludePaths)
+        => excludePaths is null
+            ? []
+            : [.. excludePaths.Select(value => Pathspec.Exclude(PathspecValidation.ValidatePattern("exclude_paths", value)))];
 
     /// <summary>
     /// Run <paramref name="body"/> and translate any <see cref="GitCheckException"/>

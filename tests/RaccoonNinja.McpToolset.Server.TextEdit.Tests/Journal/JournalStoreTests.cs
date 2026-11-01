@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using RaccoonNinja.McpToolset.Common.Files.Security;
 using RaccoonNinja.McpToolset.Server.TextEdit.Journal;
 
@@ -20,6 +21,7 @@ public sealed class JournalStoreTests : IDisposable
 
     public void Dispose()
     {
+        SqliteConnection.ClearAllPools();
         SafeDelete(_root);
         SafeDelete(_appData);
     }

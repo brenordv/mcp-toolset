@@ -55,6 +55,13 @@ public sealed class Replacer : ITextTransform
     /// <summary>Whether a regex pattern ran on the linear-time engine; <c>false</c> means it fell back to backtracking.</summary>
     public bool IsNonBacktracking { get; }
 
+    /// <summary>
+    /// How many <see cref="Transform"/> calls hit the regex match timeout. The write gate turns each into one file's
+    /// <c>regex_timeout</c> refusal, so this is the batch's timed-out file count, including files prepared before the
+    /// batch aborted.
+    /// </summary>
+    public int RegexTimeouts { get; private set; }
+
     /// <inheritdoc />
     /// <exception cref="RegexMatchTimeoutException">Thrown when a regex substitution exceeds its per-match timeout.</exception>
     public TransformResult Transform(string text)
@@ -65,8 +72,16 @@ public sealed class Replacer : ITextTransform
         string newText;
         if (_isRegex)
         {
-            count = _regex.Count(text);
-            newText = count == 0 ? text : _regex.Replace(text, _replacement);
+            try
+            {
+                count = _regex.Count(text);
+                newText = count == 0 ? text : _regex.Replace(text, _replacement);
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                RegexTimeouts++;
+                throw;
+            }
         }
         else
         {

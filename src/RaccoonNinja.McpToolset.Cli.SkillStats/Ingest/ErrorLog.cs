@@ -12,7 +12,7 @@ namespace RaccoonNinja.McpToolset.Cli.SkillStats.Ingest;
 internal static class ErrorLog
 {
     private const long RotateThresholdBytes = 5L * 1024 * 1024;
-    private const int MaxKeys = 16;
+    private const int MaxKeys = 32;
     private const int MaxKeyLength = 64;
 
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
@@ -24,17 +24,27 @@ internal static class ErrorLog
     public static void AppendFailure(string path, string stage, Exception exception)
         => Append(path, $"{Timestamp()} {stage} {exception.GetType().Name}: {exception.Message}");
 
-    /// <summary>Append one skip line: timestamp, reason, and the sanitized <c>tool_input</c> key names.</summary>
+    /// <summary>Append one skip line: timestamp, reason, and the sanitized <c>tool_input</c> and root key names.</summary>
     /// <param name="path">The error log path.</param>
     /// <param name="reason">The skip reason (for example <c>no_skill</c> or <c>oversize</c>).</param>
     /// <param name="toolInputKeys">The raw <c>tool_input</c> key names, or <c>null</c>; only names, never values.</param>
-    public static void AppendSkipped(string path, string reason, IReadOnlyList<string> toolInputKeys)
+    /// <param name="rootKeys">The raw root property names, or <c>null</c>; only names, never values.</param>
+    public static void AppendSkipped(
+        string path,
+        string reason,
+        IReadOnlyList<string> toolInputKeys,
+        IReadOnlyList<string> rootKeys)
     {
         var line = new StringBuilder();
         line.Append(Timestamp()).Append(" skipped reason=").Append(reason);
         if (toolInputKeys is { Count: > 0 })
         {
             line.Append(" tool_input_keys=[").Append(FormatKeys(toolInputKeys)).Append(']');
+        }
+
+        if (rootKeys is { Count: > 0 })
+        {
+            line.Append(" root_keys=[").Append(FormatKeys(rootKeys)).Append(']');
         }
 
         Append(path, line.ToString());

@@ -7,7 +7,8 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Repo;
 /// under the Layer 2 hardened env. Bootstrap exception: cannot use
 /// <see cref="Security.GitCommandBuilder"/> because the builder would re-require the repo root.
 /// </summary>
-public sealed class RefVerifier(string gitExecutable = "git") : IRefVerifier
+/// <param name="gitExecutable">The absolute path of git, or <c>null</c> when none was found on <c>PATH</c>.</param>
+public sealed class RefVerifier(string gitExecutable) : IRefVerifier
 {
     private static readonly TimeSpan BootstrapTimeout = TimeSpan.FromSeconds(10);
 

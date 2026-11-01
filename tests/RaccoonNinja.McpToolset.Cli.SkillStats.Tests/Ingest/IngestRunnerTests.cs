@@ -75,6 +75,7 @@ public sealed class IngestRunnerTests
         Assert.Empty(harness.Rows());
         Assert.Empty(stderr);
         Assert.Contains("skipped", log);
+        Assert.Contains("unrecognized_shape", log);
         Assert.Contains("foo", log);
         Assert.Contains("bar", log);
         Assert.DoesNotContain("SECRET_VALUE_MARKER", log);
@@ -118,7 +119,7 @@ public sealed class IngestRunnerTests
     }
 
     [Fact]
-    public void Run_MalformedJson_ExitsTwoWithLogAndStderr()
+    public void Run_MalformedJson_ExitsOneWithLogAndStderr()
     {
         // Arrange
         using var harness = new IngestHarness();
@@ -127,14 +128,15 @@ public sealed class IngestRunnerTests
         var (exitCode, stderr) = harness.Run("{ not json");
 
         // Assert
-        Assert.Equal(2, exitCode);
+        Assert.Equal(1, exitCode);
         Assert.Empty(harness.Rows());
+        Assert.StartsWith("skill-stats-cli: failed to record", stderr);
         Assert.Contains("ingest-errors.log", stderr);
         Assert.Contains("parse", harness.ReadErrorLog());
     }
 
     [Fact]
-    public void Run_EmptyStdin_ExitsTwo()
+    public void Run_EmptyStdin_ExitsOneWithStderr()
     {
         // Arrange
         using var harness = new IngestHarness();
@@ -143,13 +145,13 @@ public sealed class IngestRunnerTests
         var (exitCode, stderr) = harness.Run(string.Empty);
 
         // Assert
-        Assert.Equal(2, exitCode);
+        Assert.Equal(1, exitCode);
         Assert.Empty(harness.Rows());
         Assert.NotEmpty(stderr);
     }
 
     [Fact]
-    public void Run_ConfigLoaderThrows_ExitsTwoAndWritesNoLog()
+    public void Run_ConfigLoaderThrows_ExitsOneAndWritesNoLog()
     {
         // Arrange
         using var harness = new IngestHarness();
@@ -159,13 +161,13 @@ public sealed class IngestRunnerTests
         var (exitCode, stderr) = harness.Run("{\"tool_input\":{\"skill\":\"csharp\"}}", throwingLoader);
 
         // Assert
-        Assert.Equal(2, exitCode);
-        Assert.Contains("failed to record", stderr);
+        Assert.Equal(1, exitCode);
+        Assert.StartsWith("skill-stats-cli: failed to record", stderr);
         Assert.False(harness.ErrorLogExists());
     }
 
     [Fact]
-    public void Run_StorePathUnopenable_ExitsTwoWithLogAndStderr()
+    public void Run_StorePathUnopenable_ExitsOneWithLogAndStderr()
     {
         // Arrange
         using var harness = new IngestHarness();
@@ -176,7 +178,7 @@ public sealed class IngestRunnerTests
         var (exitCode, stderr) = harness.Run("{\"tool_input\":{\"skill\":\"csharp\"}}");
 
         // Assert
-        Assert.Equal(2, exitCode);
+        Assert.Equal(1, exitCode);
         Assert.Contains("ingest-errors.log", stderr);
         Assert.Contains("open-store", harness.ReadErrorLog());
     }
@@ -193,7 +195,115 @@ public sealed class IngestRunnerTests
         var (exitCode, _) = harness.Run("{ not json");
 
         // Assert
-        Assert.Equal(2, exitCode);
+        Assert.Equal(1, exitCode);
         Assert.True(harness.RotatedLogExists());
+    }
+
+    [Fact]
+    public void Run_UserPromptExpansionPayload_InsertsRowFromCommandFields()
+    {
+        // Arrange
+        using var harness = new IngestHarness();
+        const string payload = "{\"session_id\":\"s1\",\"cwd\":\"/work\",\"hook_event_name\":\"UserPromptExpansion\","
+            + "\"expansion_type\":\"slash_command\",\"command_name\":\"csharp\",\"command_args\":\"do the thing\","
+            + "\"command_source\":\"skill\",\"prompt\":\"/csharp do the thing\"}";
+
+        // Act
+        var (exitCode, stderr) = harness.Run(payload);
+
+        // Assert
+        Assert.Equal(0, exitCode);
+        Assert.Empty(stderr);
+        var row = Assert.Single(harness.Rows());
+        Assert.Equal("csharp", row.Skill);
+        Assert.Equal("do the thing", row.Args);
+        Assert.Equal("s1", row.SessionId);
+        Assert.Equal("/work", row.Cwd);
+    }
+
+    [Fact]
+    public void Run_UserPromptExpansionPayloadWithoutArgs_StoresNullArgsNotPrompt()
+    {
+        // Arrange
+        using var harness = new IngestHarness();
+        const string payload = "{\"session_id\":\"s1\",\"hook_event_name\":\"UserPromptExpansion\","
+            + "\"command_name\":\"csharp\",\"prompt\":\"/csharp SECRET_PROMPT_MARKER\"}";
+
+        // Act
+        var (exitCode, _) = harness.Run(payload);
+
+        // Assert
+        Assert.Equal(0, exitCode);
+        var row = Assert.Single(harness.Rows());
+        Assert.Equal("csharp", row.Skill);
+        Assert.Null(row.Args);
+    }
+
+    [Fact]
+    public void Run_PayloadWithBothShapes_PrefersToolInput()
+    {
+        // Arrange
+        using var harness = new IngestHarness();
+        const string payload = "{\"tool_input\":{\"skill\":\"from-tool\",\"args\":\"tool args\"},"
+            + "\"command_name\":\"from-root\",\"command_args\":\"root args\"}";
+
+        // Act
+        var (exitCode, _) = harness.Run(payload);
+
+        // Assert
+        Assert.Equal(0, exitCode);
+        var row = Assert.Single(harness.Rows());
+        Assert.Equal("from-tool", row.Skill);
+        Assert.Equal("tool args", row.Args);
+    }
+
+    [Fact]
+    public void Run_UnrecognizedShape_ExitsZeroAndLogsRootKeyNamesNotValues()
+    {
+        // Arrange
+        using var harness = new IngestHarness();
+        const string payload = "{\"session_id\":\"s1\",\"foo\":\"SECRET_VALUE_MARKER\"}";
+
+        // Act
+        var (exitCode, stderr) = harness.Run(payload);
+        var log = harness.ReadErrorLog();
+
+        // Assert
+        Assert.Equal(0, exitCode);
+        Assert.Empty(harness.Rows());
+        Assert.Empty(stderr);
+        Assert.Contains("skipped reason=unrecognized_shape root_keys=[session_id,foo]", log);
+        Assert.DoesNotContain("SECRET_VALUE_MARKER", log);
+    }
+
+    [Fact]
+    public void Run_SlashOnlyCommandName_SkipsAsNoSkill()
+    {
+        // Arrange
+        using var harness = new IngestHarness();
+
+        // Act
+        var (exitCode, _) = harness.Run("{\"command_name\":\"/\"}");
+
+        // Assert
+        Assert.Equal(0, exitCode);
+        Assert.Empty(harness.Rows());
+        Assert.Contains("skipped reason=no_skill", harness.ReadErrorLog());
+    }
+
+    [Fact]
+    public void Run_NonObjectPayload_SkipsAsUnrecognizedShape()
+    {
+        // Arrange
+        using var harness = new IngestHarness();
+
+        // Act
+        var (exitCode, stderr) = harness.Run("[\"csharp\"]");
+
+        // Assert
+        Assert.Equal(0, exitCode);
+        Assert.Empty(harness.Rows());
+        Assert.Empty(stderr);
+        Assert.Contains("skipped reason=unrecognized_shape", harness.ReadErrorLog());
     }
 }

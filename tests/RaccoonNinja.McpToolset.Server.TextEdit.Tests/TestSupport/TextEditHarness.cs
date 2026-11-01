@@ -1,3 +1,5 @@
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using RaccoonNinja.McpToolset.Common.Files.Security;
 using RaccoonNinja.McpToolset.Common.Files.Text;
@@ -19,7 +21,7 @@ public sealed class TextEditHarness : IDisposable
 {
     private readonly string _appData;
 
-    public TextEditHarness(EditConfig config = null, string defaultIgnore = null, string extraDeny = null)
+    public TextEditHarness(EditConfig config = null, string defaultIgnore = null, string extraDeny = null, ILoggerFactory loggerFactory = null)
     {
         Root = NewTempDir("root");
         _appData = NewTempDir("appdata");
@@ -34,7 +36,7 @@ public sealed class TextEditHarness : IDisposable
         Undoer = new Undoer(Confinement, Denylist, Journal, Config.MaxFileBytes);
 
         Metrics = new SessionMetrics();
-        var common = new ToolCommon(Metrics, NullLoggerFactory.Instance);
+        var common = new ToolCommon(Metrics, loggerFactory ?? NullLoggerFactory.Instance);
         Replace = new ReplaceTextTool(common, Config, Resolver, Writer);
         Normalize = new NormalizeFilesTool(common, Config, Resolver, Writer);
         Describe = new DescribeScopeTool(common, Config, Resolver);
@@ -135,6 +137,9 @@ public sealed class TextEditHarness : IDisposable
 
     public void Dispose()
     {
+        // The journal pools its connections, and a pooled connection keeps the db file open. Without this, the delete
+        // below fails on Windows and every leftover connection closes at process exit, after the test run has finished.
+        SqliteConnection.ClearAllPools();
         SafeDelete(Root);
         SafeDelete(_appData);
     }

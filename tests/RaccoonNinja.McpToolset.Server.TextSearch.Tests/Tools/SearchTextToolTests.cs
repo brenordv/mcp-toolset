@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using RaccoonNinja.McpToolset.Server.TextSearch.Content;
 using RaccoonNinja.McpToolset.Server.TextSearch.Errors;
 using RaccoonNinja.McpToolset.Server.TextSearch.Models;
@@ -7,6 +8,11 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Tests.Tools;
 
 public sealed class SearchTextToolTests
 {
+    private const string Needle = "needle";
+    private const string BacktrackingPattern = "(?=(a+)+$)";
+    private const int RegexTimeoutMs = 50;
+    private static readonly string BacktrackingInput = new string('a', 40) + "!";
+
     [Fact]
     public async Task Search_Literal_ReturnsLineAndColumn()
     {
@@ -137,16 +143,37 @@ public sealed class SearchTextToolTests
     public async Task Search_CatastrophicBacktracking_TripsMatchTimeoutAndRefuses()
     {
         // Arrange
-        using var harness = new TextSearchHarness(regexTimeoutMs: 50);
-        harness.Write("a.txt", new string('a', 40) + "!");
+        using var harness = new TextSearchHarness(regexTimeoutMs: RegexTimeoutMs);
+        harness.Write("a.txt", BacktrackingInput);
 
         // Act
-        var envelope = await harness.Search.InvokeAsync(pattern: "(?=(a+)+$)", is_regex: true, glob: "*.txt");
+        var envelope = await harness.Search.InvokeAsync(pattern: BacktrackingPattern, is_regex: true, glob: "*.txt");
 
         // Assert
         Assert.Null(envelope.Error);
         Assert.Empty(envelope.Results);
         Assert.True((long)harness.Metrics.Summary()["regex_timeouts_total"] >= 1);
+    }
+
+    [Fact]
+    public async Task Search_RegexTimeoutOnTwoFiles_LogsOneRegexTimeoutWarningPerFile()
+    {
+        // Arrange
+        var loggerFactory = new RecordingLoggerFactory();
+        using var harness = new TextSearchHarness(regexTimeoutMs: RegexTimeoutMs, loggerFactory: loggerFactory);
+        harness.Write("slow-a.txt", BacktrackingInput);
+        harness.Write("slow-b.txt", BacktrackingInput);
+        harness.Write("fast.txt", "hello");
+
+        // Act
+        await harness.Search.InvokeAsync(
+            pattern: BacktrackingPattern,
+            is_regex: true,
+            glob: "*.txt",
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(2, loggerFactory.Entries.Count(entry => entry == (LogLevel.Warning, "regex_timeout")));
     }
 
     [Fact]
@@ -219,5 +246,133 @@ public sealed class SearchTextToolTests
         // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.OperationBudgetExceeded, envelope.Error.Code);
+    }
+
+    [Fact]
+    public async Task Search_CountOnly_ReturnsMatchingLineCountPerFile()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("a.txt", "needle\nneedle needle\nx");
+        harness.Write("b.txt", "nothing");
+
+        // Act
+        var envelope = await harness.Search.InvokeAsync(pattern: Needle, glob: "*.txt", count_only: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var count = Assert.IsType<FileMatchCount>(Assert.Single(envelope.Results));
+        Assert.Equal("a.txt", count.Path);
+        Assert.Equal(2, count.MatchCount);
+        Assert.Equal(2, envelope.TotalMatchCount);
+        Assert.True((bool)envelope.FiltersApplied["count_only"]);
+    }
+
+    [Fact]
+    public async Task Search_CountOnly_IgnoresMaxMatchesPerFile()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("a.txt", "needle\nneedle\nneedle\nneedle\nneedle");
+
+        // Act
+        var envelope = await harness.Search.InvokeAsync(pattern: Needle, glob: "*.txt", max_matches_per_file: 2, count_only: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var count = Assert.IsType<FileMatchCount>(Assert.Single(envelope.Results));
+        Assert.Equal(5, count.MatchCount);
+    }
+
+    [Fact]
+    public async Task Search_CountOnly_WithFilesOnly_IsInvalidArgument()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("a.txt", "needle");
+
+        // Act
+        var envelope = await harness.Search.InvokeAsync(pattern: Needle, glob: "*.txt", files_only: true, count_only: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.InvalidArgument, envelope.Error.Code);
+    }
+
+    [Fact]
+    public async Task Search_CountOnly_Paginates_ByPath()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("a.txt", "needle");
+        harness.Write("b.txt", "needle");
+        harness.Write("c.txt", "needle");
+
+        // Act
+        var first = await harness.Search.InvokeAsync(pattern: Needle, glob: "*.txt", max_results: 2, count_only: true, cancellationToken: TestContext.Current.CancellationToken);
+        var second = await harness.Search.InvokeAsync(pattern: Needle, glob: "*.txt", max_results: 2, count_only: true, cursor: first.Cursor, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(first.Error);
+        Assert.Null(second.Error);
+        Assert.Equal(2, first.Results.Count);
+        Assert.NotNull(first.Cursor);
+        Assert.Single(second.Results);
+        Assert.Null(second.Cursor);
+        Assert.Equal(["a.txt", "b.txt", "c.txt"], TextSearchHarness.Paths(first).Concat(TextSearchHarness.Paths(second)));
+    }
+
+    [Fact]
+    public async Task Search_CountOnly_ReportsTotalMatchCountOnEveryPage()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("a.txt", "needle");
+        harness.Write("b.txt", "needle\nneedle");
+        harness.Write("c.txt", "needle\nneedle\nneedle");
+
+        // Act
+        var first = await harness.Search.InvokeAsync(pattern: Needle, glob: "*.txt", max_results: 2, count_only: true, cancellationToken: TestContext.Current.CancellationToken);
+        var second = await harness.Search.InvokeAsync(pattern: Needle, glob: "*.txt", max_results: 2, count_only: true, cursor: first.Cursor, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(2, first.Results.Count);
+        Assert.NotNull(first.Cursor);
+        Assert.Equal(6, first.TotalMatchCount);
+        Assert.Single(second.Results);
+        Assert.Null(second.Cursor);
+        Assert.Equal(6, second.TotalMatchCount);
+    }
+
+    [Fact]
+    public async Task Search_CountOnly_SerializesCountFields()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("a.txt", "needle\nneedle");
+
+        // Act
+        var envelope = await harness.Search.InvokeAsync(pattern: Needle, glob: "*.txt", count_only: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        var json = TextSearchHarness.ToJson(envelope);
+        Assert.Contains("\"match_count\":2", json);
+        Assert.Contains("\"total_match_count\":2", json);
+    }
+
+    [Fact]
+    public async Task Search_MatchMode_OmitsTotalMatchCount()
+    {
+        // Arrange
+        using var harness = new TextSearchHarness();
+        harness.Write("a.txt", "needle");
+
+        // Act
+        var envelope = await harness.Search.InvokeAsync(pattern: Needle, glob: "*.txt", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Null(envelope.TotalMatchCount);
+        Assert.DoesNotContain("\"total_match_count\"", TextSearchHarness.ToJson(envelope));
     }
 }

@@ -1,4 +1,5 @@
 using System.Text;
+using RaccoonNinja.McpToolset.Server.GitOps.Models;
 using RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Parsers;
@@ -212,6 +213,73 @@ public class OtherParsersTests
         var match = Assert.Single(matches);
         Assert.Equal("alpha.txt", match.Path);
         Assert.Equal(3, match.Line);
+    }
+
+    [Fact]
+    public void ParseCounts_NulSeparatedRecords_ReturnsPathAndCount()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes("a.cs\03\nb/c.cs\01\n");
+
+        // Act
+        var counts = GrepParser.ParseCounts(bytes, null);
+
+        // Assert
+        Assert.Collection(
+            counts,
+            count => Assert.Equal(new GrepFileCount { Path = "a.cs", MatchCount = 3 }, count),
+            count => Assert.Equal(new GrepFileCount { Path = "b/c.cs", MatchCount = 1 }, count));
+    }
+
+    [Fact]
+    public void ParseCounts_WithRef_StripsRefPrefix()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes("abc123:dir/x.cs\02\n");
+
+        // Act
+        var counts = GrepParser.ParseCounts(bytes, "abc123");
+
+        // Assert
+        var count = Assert.Single(counts);
+        Assert.Equal("dir/x.cs", count.Path);
+        Assert.Equal(2, count.MatchCount);
+    }
+
+    [Fact]
+    public void ParseCounts_RecordWithoutNul_IsSkipped()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes("a.cs:4\n");
+
+        // Act
+        var counts = GrepParser.ParseCounts(bytes, null);
+
+        // Assert
+        Assert.Empty(counts);
+    }
+
+    [Fact]
+    public void ParseCounts_MalformedCount_SkipsRecord()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes("a.cs\0x\n");
+
+        // Act
+        var counts = GrepParser.ParseCounts(bytes, null);
+
+        // Assert
+        Assert.Empty(counts);
+    }
+
+    [Fact]
+    public void ParseCounts_Empty_ReturnsEmpty()
+    {
+        // Act
+        var counts = GrepParser.ParseCounts([], null);
+
+        // Assert
+        Assert.Empty(counts);
     }
 
     [Fact]

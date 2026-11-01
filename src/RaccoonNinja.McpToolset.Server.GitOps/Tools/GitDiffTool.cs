@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using RaccoonNinja.McpToolset.Server.GitOps.Envelope;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
@@ -96,11 +97,21 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
         }
     }
 
-    /// <summary>Server-built diff flags: <c>--cached</c> when diffing the staged index.</summary>
+    /// <summary>
+    /// Server-built diff flags: <see cref="DiffParser.PatchShapeFlags"/> always, so the user's or the repository's config
+    /// can neither change the patch shape the parser reads nor hide a changed submodule, plus <c>--cached</c> when diffing
+    /// the staged index.
+    /// </summary>
+    /// <param name="staged">Whether the diff is of the staged index.</param>
+    /// <returns>The server-controlled flag list.</returns>
     private static List<string> BuildFlags(bool staged)
     {
-        var flags = new List<string>();
-        if (staged) flags.Add("--cached");
+        var flags = new List<string>(DiffParser.PatchShapeFlags);
+        if (staged)
+        {
+            flags.Add("--cached");
+        }
+
         return flags;
     }
 
@@ -128,7 +139,7 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
     /// assemble a counts-only result (no patch text) with the change types overlaid by path.
     /// </summary>
     private async Task<(DiffResult Model, bool Truncated)> ExecuteStatOnlyAsync(
-        string root, List<string> flags, List<string> verifiedRefs, List<string> pathspecs,
+        string root, List<string> flags, List<string> verifiedRefs, List<Pathspec> pathspecs,
         CallContext ctx, CancellationToken cancellationToken)
     {
         var numstatResult = await common.ExecuteAsync(
@@ -147,7 +158,7 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
     /// <summary>Run the patch and <c>--numstat</c> passes, then merge them into a unified diff result.</summary>
     private async Task<(DiffResult Model, bool Truncated)> ExecuteUnifiedAsync(
         string root, List<string> flags, List<AttachedOption> attached,
-        List<string> verifiedRefs, List<string> pathspecs, string mode,
+        List<string> verifiedRefs, List<Pathspec> pathspecs, string mode,
         CallContext ctx, CancellationToken cancellationToken)
     {
         var unifiedIntent = new GitIntent
@@ -165,13 +176,35 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
 
         var files = DiffParser.ParseUnified(unifiedResult.Stdout);
         var numstat = DiffParser.ParseNumstatZ(numstatResult.Stdout);
+        if (DiffParser.HasUnreadableUnmergedPath(unifiedResult.Stdout, numstat, numstatResult.Truncated))
+        {
+            throw new GitCommandException(numstatResult.Truncated
+                ? "the --numstat pass hit the output cap while a path is unmerged; the patch cannot be read safely"
+                : "a changed path holds a line break while a path is unmerged; the patch cannot be read safely");
+        }
+
+        // The numstat pass is never colored or reformatted, so a changed line it counts with no file read from the
+        // patch means the patch was in a shape the reader does not recognize; an empty success would hide that.
+        if (DiffParser.HasCountedLinesMissingFromPatch(files, numstat))
+        {
+            ctx.Log(LogLevel.Warning, "patch_parse_empty");
+        }
+
+        // A patch cut by the output cap can end inside its last file's header, so that file is left out, and a cut
+        // numstat pass lists too few paths to check against.
+        var checkedFiles = unifiedResult.Truncated ? files.SkipLast(1) : files;
+        if (!numstatResult.Truncated && DiffParser.HasPathMissingFromNumstat(checkedFiles, numstat))
+        {
+            ctx.Log(LogLevel.Warning, "patch_path_unmatched");
+        }
+
         var truncated = unifiedResult.Truncated || numstatResult.Truncated;
         var model = DiffParser.AssembleDiffResult(files, mode, truncated, numstat);
         return (model, truncated);
     }
 
     /// <summary>Build the companion <c>git diff --numstat -z</c> intent that backs every diff mode.</summary>
-    private static GitIntent NumstatIntent(string root, List<string> flags, List<string> verifiedRefs, List<string> pathspecs)
+    private static GitIntent NumstatIntent(string root, List<string> flags, List<string> verifiedRefs, List<Pathspec> pathspecs)
         => new()
         {
             Subcommand = "diff",
@@ -182,7 +215,7 @@ public sealed class GitDiffTool(ToolCommon common, IRefVerifier refVerifier)
         };
 
     /// <summary>Build the companion <c>git diff --name-status -z</c> intent that supplies change kinds for stat-only mode.</summary>
-    private static GitIntent NameStatusIntent(string root, List<string> flags, List<string> verifiedRefs, List<string> pathspecs)
+    private static GitIntent NameStatusIntent(string root, List<string> flags, List<string> verifiedRefs, List<Pathspec> pathspecs)
         => new()
         {
             Subcommand = "diff",

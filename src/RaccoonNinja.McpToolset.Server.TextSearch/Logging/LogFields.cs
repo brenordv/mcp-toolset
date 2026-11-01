@@ -49,7 +49,10 @@ public static class LogFields
     /// <summary>The free-text message.</summary>
     public const string Message = "message";
 
-    /// <summary>A capped, control-stripped exception tail; the only field allowed to carry raw text.</summary>
+    /// <summary>
+    /// The type chain of a logged exception, outer to inner; never its message or stack trace, which can carry
+    /// an absolute path.
+    /// </summary>
     public const string ExceptionTail = "exception_tail";
 
     /// <summary>The session metrics snapshot, emitted only on shutdown.</summary>

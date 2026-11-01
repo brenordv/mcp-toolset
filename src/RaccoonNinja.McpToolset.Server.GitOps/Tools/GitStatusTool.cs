@@ -31,6 +31,8 @@ public sealed class GitStatusTool(ToolCommon common)
                     "-z",
                     "--branch",
                     "--ahead-behind",
+                    // Without it, git runs git status inside each checked-out submodule, with that submodule's own config and filter drivers.
+                    "--ignore-submodules=dirty",
                 ],
             };
             var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);

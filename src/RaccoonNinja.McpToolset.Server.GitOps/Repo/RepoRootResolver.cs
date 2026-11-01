@@ -9,7 +9,8 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Repo;
 /// <c>git -C &lt;cwd&gt; rev-parse --show-toplevel</c>. Uses an in-process cache
 /// keyed by the normalized cwd (case-folded on Windows).
 /// </summary>
-public sealed class RepoRootResolver(string gitExecutable = "git") : IRepoRootResolver
+/// <param name="gitExecutable">The absolute path of git, or <c>null</c> when none was found on <c>PATH</c>.</param>
+public sealed class RepoRootResolver(string gitExecutable) : IRepoRootResolver
 {
     private static readonly TimeSpan BootstrapTimeout = TimeSpan.FromSeconds(10);
     private static readonly string[] ShowToplevelArgs = ["rev-parse", "--show-toplevel"];

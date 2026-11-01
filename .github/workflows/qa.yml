@@ -12,6 +12,11 @@ on:
 # Deny-all by default; each job opts in to the minimum it needs.
 permissions: {}
 
+# Opt the .NET SDK and Microsoft.Testing.Platform out of telemetry on every runner.
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  TESTINGPLATFORM_TELEMETRY_OPTOUT: 1
+
 # Collapse superseded runs for the same ref, but only for pull requests:
 # pushes to master and reusable-workflow gate runs always run to completion.
 concurrency:

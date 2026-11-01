@@ -10,6 +10,9 @@ public sealed class MachinePrivacyTests
     private const string ExpectedIgnoreReadLogLine =
         "unexpected error: RaccoonNinja.McpToolset.Common.Files.Selection.IgnoreFileReadException: could not read ignore file '.gitignore' (IOException)";
 
+    private const string ExpectedIgnoreUnlistableLogLine =
+        "unexpected error: RaccoonNinja.McpToolset.Common.Files.Selection.IgnoreDirectoryUnlistableException: could not list directory 'proj' for ignore files (UnauthorizedAccessException)";
+
     [Fact]
     public async Task Search_SuccessEnvelope_CarriesNoAbsolutePath()
     {
@@ -78,6 +81,34 @@ public sealed class MachinePrivacyTests
     }
 
     [Fact]
+    public async Task ReadLines_UnlistableDirectory_LogsRootRelativeNameOnly()
+    {
+        // Arrange
+        UnixDirectoryModes.SkipUnlessApplicable();
+        const string secretFile = "proj/secret.json";
+        var loggerFactory = new RecordingLoggerFactory();
+        using var harness = new TextSearchHarness(loggerFactory: loggerFactory);
+        harness.Write("proj/.gitignore", "secret.json\n");
+        harness.Write(secretFile, "{ \"secret\": true }");
+        var proj = Path.Combine(harness.Root, "proj");
+        UnixDirectoryModes.MakeUnlistable(proj);
+        try
+        {
+            // Act
+            var envelope = await harness.ReadLines.InvokeAsync(path: secretFile, cancellationToken: TestContext.Current.CancellationToken);
+
+            // Assert
+            Assert.Equal(ErrorCodes.InternalError, envelope.Error.Code);
+            Assert.Contains(ExpectedIgnoreUnlistableLogLine, loggerFactory.Messages);
+            Assert.All(loggerFactory.Messages, message => Assert.DoesNotContain(harness.Root, message, StringComparison.Ordinal));
+        }
+        finally
+        {
+            UnixDirectoryModes.MakeListable(proj);
+        }
+    }
+
+    [Fact]
     public async Task Search_PackageScope_SuccessEnvelopeCarriesNoAbsoluteCachePath()
     {
         // Arrange
@@ -92,10 +123,14 @@ public sealed class MachinePrivacyTests
         AssertNoAbsolutePath(harness.PackageDir("nuget"), envelope);
     }
 
+    #region Test Helpers
+
     private static void AssertNoAbsolutePath(string root, ResultEnvelope envelope)
     {
         var json = TextSearchHarness.ToJson(envelope);
         Assert.DoesNotContain(root, json, StringComparison.Ordinal);
         Assert.DoesNotContain(root.Replace("\\", "\\\\", StringComparison.Ordinal), json, StringComparison.Ordinal);
     }
+
+    #endregion
 }

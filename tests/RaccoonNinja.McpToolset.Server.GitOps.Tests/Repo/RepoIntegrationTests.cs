@@ -18,7 +18,7 @@ public class RepoIntegrationTests
     public async Task RepoRootResolver_ResolvesFixtureRepo()
     {
         // Arrange
-        var resolver = new RepoRootResolver();
+        var resolver = new RepoRootResolver(TestGit.Executable);
         resolver.ResetCache();
 
         // Act
@@ -35,7 +35,7 @@ public class RepoIntegrationTests
     public async Task RepoRootResolver_RejectsRelativeCwd()
     {
         // Arrange
-        var resolver = new RepoRootResolver();
+        var resolver = new RepoRootResolver(TestGit.Executable);
 
         // Act & Assert
         await Assert.ThrowsAsync<RejectedArgumentException>(async () =>
@@ -50,7 +50,7 @@ public class RepoIntegrationTests
         Directory.CreateDirectory(temp);
         try
         {
-            var resolver = new RepoRootResolver();
+            var resolver = new RepoRootResolver(TestGit.Executable);
             resolver.ResetCache();
 
             // Act & Assert
@@ -67,7 +67,7 @@ public class RepoIntegrationTests
     public async Task RefVerifier_ResolvesHeadToSha()
     {
         // Arrange
-        var verifier = new RefVerifier();
+        var verifier = new RefVerifier(TestGit.Executable);
 
         // Act
         var sha = await verifier.VerifyAsync("HEAD", _fixture.RepoPath);
@@ -80,7 +80,7 @@ public class RepoIntegrationTests
     public async Task RefVerifier_ThrowsForBadRef()
     {
         // Arrange
-        var verifier = new RefVerifier();
+        var verifier = new RefVerifier(TestGit.Executable);
 
         // Act & Assert
         await Assert.ThrowsAsync<RefNotFoundException>(async () =>
@@ -91,7 +91,7 @@ public class RepoIntegrationTests
     public async Task RefVerifier_RejectsEmptyAndDashPrefixed()
     {
         // Arrange
-        var verifier = new RefVerifier();
+        var verifier = new RefVerifier(TestGit.Executable);
 
         // Act & Assert
         await Assert.ThrowsAsync<RejectedArgumentException>(async () =>

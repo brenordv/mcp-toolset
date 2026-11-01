@@ -12,6 +12,19 @@ namespace RaccoonNinja.McpToolset.Server.TextEdit.Logging;
 /// </summary>
 public static class LoggingBootstrap
 {
+    /// <summary>
+    /// The generic host's lifetime log category. At Information it writes the startup and shutdown status lines, one of
+    /// which is <c>Content root path: ...</c>, the process working directory, so the category is held at Warning whatever
+    /// the configured level.
+    /// </summary>
+    private const string HostLifetimeCategory = "Microsoft.Hosting.Lifetime";
+
+    /// <summary>
+    /// The MCP SDK's log categories. At Trace the SDK writes every JSON-RPC frame verbatim (every tool argument and
+    /// result), so the categories are held at Information or the configured level, whichever is higher.
+    /// </summary>
+    private const string McpSdkCategory = "ModelContextProtocol";
+
     /// <summary>Build a Serilog logger from the current process environment.</summary>
     /// <returns>The configured logger.</returns>
     public static Logger BuildLogger()
@@ -24,8 +37,13 @@ public static class LoggingBootstrap
     {
         ArgumentNullException.ThrowIfNull(env);
 
+        var configuredLevel = ParseLevel(Read(env, LoggingConstants.EnvLogLevel));
+        var sdkLevel = configuredLevel > LogEventLevel.Information ? configuredLevel : LogEventLevel.Information;
+
         var configuration = new LoggerConfiguration()
-            .MinimumLevel.Is(ParseLevel(Read(env, LoggingConstants.EnvLogLevel)));
+            .MinimumLevel.Is(configuredLevel)
+            .MinimumLevel.Override(McpSdkCategory, sdkLevel)
+            .MinimumLevel.Override(HostLifetimeCategory, LogEventLevel.Warning);
 
         var configuredFile = Read(env, LoggingConstants.EnvLogFile);
         var target = string.IsNullOrWhiteSpace(configuredFile) ? DefaultLogPath() : configuredFile;

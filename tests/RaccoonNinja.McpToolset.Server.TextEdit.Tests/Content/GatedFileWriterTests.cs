@@ -221,6 +221,26 @@ public sealed class GatedFileWriterTests : IDisposable
     }
 
     [Fact]
+    public void Apply_CancelledBudget_ThrowsOperationBudgetExceededWithoutWriting()
+    {
+        // Arrange
+        const string path = "a.txt";
+        const string original = "hello world";
+        _harness.WriteText(path, original);
+        var replacer = Replace("world", "x");
+        using var budget = new CancellationTokenSource();
+        budget.Cancel();
+
+        // Act
+        var act = () => _harness.Writer.Apply("replace_text", [path], replacer, "t", expectedMatchCount: null, dryRun: false, sourceEncoding: null, skippedSymlinks: 0, truncated: false, _harness.Confinement, budget.Token);
+
+        // Assert
+        var exception = Assert.Throws<TextEditException>(act);
+        Assert.Equal(ErrorCodes.OperationBudgetExceeded, exception.Code);
+        Assert.Equal(original, _harness.ReadText(path));
+    }
+
+    [Fact]
     public void Apply_DryRun_WritesNothingAndReturnsDiff()
     {
         // Arrange
@@ -400,6 +420,27 @@ public sealed class GatedFileWriterTests : IDisposable
         Assert.True(file.Changed);
         Assert.Equal("hello text\n", _harness.ReadText("rules.txt"));
         Assert.Equal("hello world\n", _harness.ReadText(".mcpignore"));
+    }
+
+    [Fact]
+    public void Apply_IgnoreFileAddedBetweenBatches_RefusesTheLaterBatchAsIgnored()
+    {
+        // Arrange
+        const string tool = "replace_text";
+        const string notesFile = "notes.txt";
+        const string replacedWord = "text";
+        _harness.WriteText(notesFile, "hello world\n");
+        var before = _harness.Apply(tool, Replace("world", replacedWord), notesFile);
+        _harness.WriteText(IgnoreRules.GitIgnoreFileName, notesFile + "\n");
+
+        // Act
+        var after = _harness.Apply(tool, Replace(replacedWord, "again"), notesFile);
+
+        // Assert
+        Assert.True(Assert.Single(before.Files).Changed);
+        var file = Assert.Single(after.Files);
+        Assert.Equal(RefusalReason.Ignored, file.Reason);
+        Assert.Equal("hello text\n", _harness.ReadText(notesFile));
     }
 
     #region Test Helpers

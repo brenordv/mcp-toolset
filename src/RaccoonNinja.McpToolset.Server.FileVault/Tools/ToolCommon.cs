@@ -13,7 +13,8 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Tools;
 /// Shared per-tool plumbing: the outcome/duration/metrics wrapper and the domain-error
 /// translation. Domain failures become <see cref="McpException"/>s whose message is
 /// the structured JSON error body (the SDK surfaces it as a failed tool result); everything else
-/// is logged in full and surfaced generically.
+/// is logged by type (the <c>tool_call</c> line's <c>exception_type</c>, and the type chain on the
+/// <c>internal_error</c> line) and surfaced generically.
 /// </summary>
 public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFactory)
 {
@@ -241,7 +242,10 @@ public sealed class ToolCommon(SessionMetrics metrics, ILoggerFactory loggerFact
     private static void LogSlowCall(ILogger logger, string tool, int durationMs)
         => LogSlowCallMessage(logger, tool, durationMs, null);
 
-    /// <summary>Non-domain exceptions are logged in full: SQLite/IO text carries paths and error codes, not vault content.</summary>
+    /// <summary>
+    /// Attach a non-domain exception to an <c>internal_error</c> line. The formatter writes only its type chain, because
+    /// SQLite and IO messages can name a file by its absolute path.
+    /// </summary>
     private static void LogInternalException(ILogger logger, string tool, long callId, Exception exception)
     {
         var scope = new Dictionary<string, object>

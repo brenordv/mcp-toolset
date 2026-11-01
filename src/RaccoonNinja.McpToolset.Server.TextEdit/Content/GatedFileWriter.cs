@@ -58,7 +58,10 @@ public sealed class GatedFileWriter
         _rootName = rootName ?? throw new ArgumentNullException(nameof(rootName));
     }
 
-    /// <summary>Apply <paramref name="transform"/> to each selected path, journaling and writing the files that change.</summary>
+    /// <summary>
+    /// Apply <paramref name="transform"/> to each selected path, journaling and writing the files that change. The project
+    /// ignore rules are read once per call and shared by every path in it.
+    /// </summary>
     /// <param name="tool">The tool producing the batch (recorded in the journal).</param>
     /// <param name="relativePaths">The root-relative candidate paths from selection.</param>
     /// <param name="transform">The text transform to apply.</param>
@@ -69,9 +72,9 @@ public sealed class GatedFileWriter
     /// <param name="skippedSymlinks">The selector's skipped-symlink count, echoed into the outcome.</param>
     /// <param name="truncated">Whether selection hit its ceiling, echoed into the outcome.</param>
     /// <param name="effective">The per-call effective confiner (the base root, or a <c>cwd</c> beneath it); every candidate is confined to it, so a scoped call cannot write outside its <c>cwd</c>.</param>
-    /// <param name="cancellationToken">Checked between files so the operation budget can bound the batch.</param>
+    /// <param name="cancellationToken">The operation budget, checked before each file; once it is cancelled the batch aborts with <c>OperationBudgetExceeded</c> before any write.</param>
     /// <returns>The batch outcome.</returns>
-    /// <exception cref="TextEditException">Thrown for an unknown source encoding or an expected-match-count mismatch (before any write).</exception>
+    /// <exception cref="TextEditException">Thrown for an unknown source encoding, an expected-match-count mismatch, or (as <c>OperationBudgetExceeded</c>) a cancelled budget token, always before any write.</exception>
     public BatchOutcome Apply(
         string tool,
         IReadOnlyList<string> relativePaths,
@@ -94,10 +97,17 @@ public sealed class GatedFileWriter
         var prepared = new List<PreparedWrite>();
         var totalMatches = 0;
 
+        // The writer serves every call, so the project ignore rules are cached for this batch only.
+        var projectIgnore = new PathIgnoreEvaluator(_baseRoot.CanonicalRoot);
+
         foreach (var relativePath in relativePaths)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var preparation = PrepareFile(relativePath, transform, codec, dryRun, effective);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw TextEditException.OperationBudgetExceeded((int)_config.OperationBudget.TotalMilliseconds);
+            }
+
+            var preparation = PrepareFile(relativePath, transform, codec, dryRun, effective, projectIgnore);
             totalMatches += preparation.MatchCount;
             outcomes.Add(preparation.Outcome);
             if (preparation.Write is not null)
@@ -187,7 +197,13 @@ public sealed class GatedFileWriter
         return batchId;
     }
 
-    private Preparation PrepareFile(string relativePath, ITextTransform transform, SourceCodec codec, bool dryRun, IRootResolver effective)
+    private Preparation PrepareFile(
+        string relativePath,
+        ITextTransform transform,
+        SourceCodec codec,
+        bool dryRun,
+        IRootResolver effective,
+        PathIgnoreEvaluator projectIgnore)
     {
         ConfinedPath confined;
         try
@@ -233,7 +249,7 @@ public sealed class GatedFileWriter
             return Refusal(baseRelative, RefusalReason.IgnoreFile);
         }
 
-        if (PathIgnoreEvaluator.IsIgnored(_baseRoot.CanonicalRoot, baseRelative))
+        if (projectIgnore.IsIgnored(baseRelative))
         {
             return Refusal(baseRelative, RefusalReason.Ignored);
         }

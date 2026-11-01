@@ -1,10 +1,13 @@
 using System.Globalization;
 using RaccoonNinja.McpToolset.Common.Files.Selection;
+using RaccoonNinja.McpToolset.Common.Files.Tests.TestSupport;
 
 namespace RaccoonNinja.McpToolset.Common.Files.Tests.Selection;
 
 public sealed class IgnoreRulesTests
 {
+    private const string UpperCaseGitIgnoreFileName = ".GITIGNORE";
+
     private static readonly string[] BracketShapeTemplates =
         ["[{0}]", "[!{0}]", "[{0}", "[a{0}z]", "a{0}b", "[{0}-x]", "[x-{0}]", "[]{0}]", "{0}"];
 
@@ -410,6 +413,123 @@ public sealed class IgnoreRulesTests
                 Assert.Equal("could not read ignore file 'sub/.gitignore' (IOException)", exception.Message);
                 Assert.DoesNotContain(dir.FullName, exception.Message, StringComparison.Ordinal);
             }
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_UnlistableDirectory_ThrowsWithRootRelativeNameOnly()
+    {
+        // Arrange
+        UnixDirectoryModes.SkipUnlessApplicable();
+        const string subdirectory = "sub";
+        var dir = Directory.CreateTempSubdirectory("ignorerules-unlistable-");
+        var sub = Directory.CreateDirectory(Path.Combine(dir.FullName, subdirectory));
+        try
+        {
+            File.WriteAllText(Path.Combine(sub.FullName, IgnoreRules.GitIgnoreFileName), "*.log\n");
+            UnixDirectoryModes.MakeUnlistable(sub.FullName);
+
+            // Act
+            var act = () => IgnoreRules.Load(sub.FullName, subdirectory);
+
+            // Assert
+            var exception = Assert.Throws<IgnoreDirectoryUnlistableException>(act);
+            Assert.Equal("could not list directory 'sub' for ignore files (UnauthorizedAccessException)", exception.Message);
+            Assert.DoesNotContain(dir.FullName, exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            UnixDirectoryModes.MakeListable(sub.FullName);
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_MissingDirectory_ReturnsEmpty()
+    {
+        // Arrange
+        const string missing = "missing";
+        var dir = Directory.CreateTempSubdirectory("ignorerules-missing-");
+        try
+        {
+            // Act
+            var rules = IgnoreRules.Load(Path.Combine(dir.FullName, missing), missing);
+
+            // Assert
+            Assert.Same(IgnoreRules.Empty, rules);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_DirectoryNamedLikeIgnoreFile_IsNotRead()
+    {
+        // Arrange
+        const string subdirectory = "sub";
+        var dir = Directory.CreateTempSubdirectory("ignorerules-dirname-");
+        try
+        {
+            var sub = Directory.CreateDirectory(Path.Combine(dir.FullName, subdirectory));
+            var namedLikeIgnoreFile = Directory.CreateDirectory(Path.Combine(sub.FullName, IgnoreRules.GitIgnoreFileName));
+            File.WriteAllText(Path.Combine(namedLikeIgnoreFile.FullName, "x.txt"), "*.log\n");
+
+            // Act
+            var rules = IgnoreRules.Load(sub.FullName, subdirectory);
+
+            // Assert
+            Assert.Same(IgnoreRules.Empty, rules);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_IgnoreFileNameCasing_IsCaseInsensitive()
+    {
+        // Arrange
+        var dir = Directory.CreateTempSubdirectory("ignorerules-casing-");
+        try
+        {
+            File.WriteAllText(Path.Combine(dir.FullName, UpperCaseGitIgnoreFileName), "*.log\n");
+
+            // Act
+            var rules = IgnoreRules.Load(dir.FullName);
+
+            // Assert
+            Assert.True(rules.IsIgnored("a.log", isDirectory: false));
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_CaseVariantSiblings_BothApply()
+    {
+        // Arrange
+        var dir = Directory.CreateTempSubdirectory("ignorerules-variants-");
+        try
+        {
+            File.WriteAllText(Path.Combine(dir.FullName, IgnoreRules.GitIgnoreFileName), "*.log\n");
+            File.WriteAllText(Path.Combine(dir.FullName, UpperCaseGitIgnoreFileName), "*.bak\n");
+            Assert.SkipUnless(Directory.EnumerateFiles(dir.FullName).Count() == 2, "The filesystem folds case.");
+
+            // Act
+            var rules = IgnoreRules.Load(dir.FullName);
+
+            // Assert
+            Assert.True(rules.IsIgnored("a.log", isDirectory: false));
+            Assert.True(rules.IsIgnored("a.bak", isDirectory: false));
         }
         finally
         {

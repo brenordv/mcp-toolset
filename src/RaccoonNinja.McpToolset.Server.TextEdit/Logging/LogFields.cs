@@ -31,7 +31,7 @@ public static class LogFields
     /// <summary>Whether the result was capped.</summary>
     public const string Truncated = "truncated";
 
-    /// <summary>The reason a call was refused, for example <c>cwd_outside_base</c> or <c>cwd_denylisted</c>. Per-file refusal reasons go only to the tool result.</summary>
+    /// <summary>The reason a call was refused, for example <c>cwd_outside_base</c> or <c>cwd_denylisted</c>. Per-file refusal reasons go only to the tool result, except <c>regex_timeout</c>, which is also logged once per file as the <c>regex_timeout</c> event.</summary>
     public const string RefusalReason = "refusal_reason";
 
     /// <summary>Whether an agent regex fell back from the non-backtracking engine to backtracking.</summary>
@@ -67,7 +67,10 @@ public static class LogFields
     /// <summary>The free-text message.</summary>
     public const string Message = "message";
 
-    /// <summary>A capped, control-stripped exception tail; the only field allowed to carry raw text.</summary>
+    /// <summary>
+    /// The type chain of a logged exception, outer to inner; never its message or stack trace, which can carry
+    /// an absolute path.
+    /// </summary>
     public const string ExceptionTail = "exception_tail";
 
     /// <summary>The session metrics snapshot, emitted only on shutdown.</summary>
