@@ -775,7 +775,7 @@ Add an entry to your MCP configuration (e.g. `.mcp.json` at your project root, o
       "command": "c:\\path\\to\\git-ops.exe",
       "args": [],
       "env": {
-        "MCP_GITOPS_LOG_FILE": "Z:\\logs\\mcp-gitops.log",
+        "MCP_GITOPS_LOG_FILE": "c:\\path\\to\\mcp-gitops.log",
         "MCP_GITOPS_LOG_LEVEL": "INFO"
       }
     }

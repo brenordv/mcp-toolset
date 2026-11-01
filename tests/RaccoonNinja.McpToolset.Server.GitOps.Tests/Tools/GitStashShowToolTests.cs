@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using RaccoonNinja.McpToolset.Server.GitOps.Metrics;
 using RaccoonNinja.McpToolset.Server.GitOps.Models;
@@ -12,6 +13,8 @@ public sealed class GitStashShowToolTests : IDisposable
 {
     private const string ChangedFile = "a.txt";
     private const string SubmodulePath = "sub";
+    private const string PatchFlag = "-p";
+    private const string NumstatFlag = "--numstat";
 
     private readonly TempGitRepo _repo;
     private readonly GitStashShowTool _tool;
@@ -28,13 +31,7 @@ public sealed class GitStashShowToolTests : IDisposable
         _repo.WriteFile(ChangedFile, "one\ntwo\nthree\n");
         _repo.Run("stash", "push", "-m", "wip");
 
-        var common = new ToolCommon(
-            new RepoRootResolver(TestGit.Executable),
-            new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
-            new SessionMetrics(),
-            NullLoggerFactory.Instance,
-            TestGit.Executable);
-        _tool = new GitStashShowTool(common);
+        _tool = BuildTool(new GitProcessRunner(NullLogger<GitProcessRunner>.Instance), NullLoggerFactory.Instance);
     }
 
     public void Dispose() => _repo.Dispose();
@@ -78,4 +75,58 @@ public sealed class GitStashShowToolTests : IDisposable
         Assert.Equal(1, file.Additions);
         Assert.Equal(1, file.Deletions);
     }
+
+    [Fact]
+    public async Task StashShow_PatchPassYieldsNoFile_LogsPatchParseEmptyWarning()
+    {
+        // Arrange
+        var loggerFactory = new RecordingLoggerFactory();
+        var tool = BuildTool(new StdoutDroppingRunner(argv => argv.Contains(PatchFlag)), loggerFactory);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, index: 0, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var warning = Assert.Single(loggerFactory.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Equal("patch_parse_empty", warning.Message);
+    }
+
+    [Fact]
+    public async Task StashShow_PatchFileMissingFromNumstat_LogsPatchPathUnmatchedWarning()
+    {
+        // Arrange
+        var loggerFactory = new RecordingLoggerFactory();
+        var tool = BuildTool(new StdoutDroppingRunner(argv => argv.Contains(NumstatFlag)), loggerFactory);
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, index: 0, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var warning = Assert.Single(loggerFactory.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Equal("patch_path_unmatched", warning.Message);
+    }
+
+    #region Test Helpers
+
+    /// <summary>
+    /// Build the tool under test over <paramref name="runner"/>, logging through <paramref name="loggerFactory"/>, with the
+    /// real root resolver.
+    /// </summary>
+    /// <param name="runner">The runner every git process of the call goes through.</param>
+    /// <param name="loggerFactory">The factory the call's log lines go to.</param>
+    /// <returns>The tool.</returns>
+    private static GitStashShowTool BuildTool(IGitProcessRunner runner, ILoggerFactory loggerFactory)
+    {
+        var common = new ToolCommon(
+            new RepoRootResolver(TestGit.Executable),
+            runner,
+            new SessionMetrics(),
+            loggerFactory,
+            TestGit.Executable);
+        return new GitStashShowTool(common);
+    }
+
+    #endregion
 }

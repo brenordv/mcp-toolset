@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using RaccoonNinja.McpToolset.Server.TextSearch.Content;
 using RaccoonNinja.McpToolset.Server.TextSearch.Errors;
 using RaccoonNinja.McpToolset.Server.TextSearch.Models;
@@ -8,6 +9,9 @@ namespace RaccoonNinja.McpToolset.Server.TextSearch.Tests.Tools;
 public sealed class SearchTextToolTests
 {
     private const string Needle = "needle";
+    private const string BacktrackingPattern = "(?=(a+)+$)";
+    private const int RegexTimeoutMs = 50;
+    private static readonly string BacktrackingInput = new string('a', 40) + "!";
 
     [Fact]
     public async Task Search_Literal_ReturnsLineAndColumn()
@@ -139,16 +143,37 @@ public sealed class SearchTextToolTests
     public async Task Search_CatastrophicBacktracking_TripsMatchTimeoutAndRefuses()
     {
         // Arrange
-        using var harness = new TextSearchHarness(regexTimeoutMs: 50);
-        harness.Write("a.txt", new string('a', 40) + "!");
+        using var harness = new TextSearchHarness(regexTimeoutMs: RegexTimeoutMs);
+        harness.Write("a.txt", BacktrackingInput);
 
         // Act
-        var envelope = await harness.Search.InvokeAsync(pattern: "(?=(a+)+$)", is_regex: true, glob: "*.txt");
+        var envelope = await harness.Search.InvokeAsync(pattern: BacktrackingPattern, is_regex: true, glob: "*.txt");
 
         // Assert
         Assert.Null(envelope.Error);
         Assert.Empty(envelope.Results);
         Assert.True((long)harness.Metrics.Summary()["regex_timeouts_total"] >= 1);
+    }
+
+    [Fact]
+    public async Task Search_RegexTimeoutOnTwoFiles_LogsOneRegexTimeoutWarningPerFile()
+    {
+        // Arrange
+        var loggerFactory = new RecordingLoggerFactory();
+        using var harness = new TextSearchHarness(regexTimeoutMs: RegexTimeoutMs, loggerFactory: loggerFactory);
+        harness.Write("slow-a.txt", BacktrackingInput);
+        harness.Write("slow-b.txt", BacktrackingInput);
+        harness.Write("fast.txt", "hello");
+
+        // Act
+        await harness.Search.InvokeAsync(
+            pattern: BacktrackingPattern,
+            is_regex: true,
+            glob: "*.txt",
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(2, loggerFactory.Entries.Count(entry => entry == (LogLevel.Warning, "regex_timeout")));
     }
 
     [Fact]

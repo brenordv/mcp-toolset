@@ -177,8 +177,8 @@ stale-`base_version` `conflict` for one, is never rewritten. Only argument names
   (project, name, versions, sizes, durations, error codes). Summaries, tags, content, diffs, headings, and queries
   are never logged; search terms appear only as hashes. A logged exception is recorded only as its type chain, never
   its message or stack trace, which can carry note content or an absolute path; a startup failure's reason is printed
-  to stderr as `vault-mcp: fatal error: ...`. The host's status lines (category `Microsoft.Hosting.Lifetime`, one of
-  which names the working directory) are not logged.
+  to stderr as `vault-mcp: fatal error: ...`. The host's lifetime category (`Microsoft.Hosting.Lifetime`) is not logged
+  below Warning, so its status lines, one of which names the working directory, are not logged.
 
 > **Plaintext store caveat:** the vault stores content as plain text on disk. It is not a secret store; do not save
 > credentials or other secrets in it.
@@ -209,7 +209,7 @@ or via `claude mcp add`). On Windows:
       "args": [],
       "env": {
         "VAULT_MCP_LOG": "info",
-        "VAULT_MCP_LOG_FILE": "Z:\\logs\\mcp-filevault.log"
+        "VAULT_MCP_LOG_FILE": "c:\\path\\to\\mcp-filevault.log"
       }
     }
   }

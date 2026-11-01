@@ -4,17 +4,20 @@ using Microsoft.Extensions.Logging;
 namespace RaccoonNinja.McpToolset.Server.TextSearch.Tests.TestSupport;
 
 /// <summary>
-/// A hand-rolled <see cref="ILoggerFactory"/> that keeps every formatted message its loggers receive, so a
-/// test can assert on what a tool writes to the server log.
+/// A hand-rolled <see cref="ILoggerFactory"/> that keeps the level and formatted message of every record its loggers
+/// receive, so a test can assert on what a tool writes to the server log.
 /// </summary>
 internal sealed class RecordingLoggerFactory : ILoggerFactory
 {
-    private readonly ConcurrentQueue<string> _messages = new();
+    private readonly ConcurrentQueue<(LogLevel Level, string Message)> _entries = new();
+
+    /// <summary>Every record's level and formatted message, in arrival order, across every category.</summary>
+    public IReadOnlyList<(LogLevel Level, string Message)> Entries => [.. _entries];
 
     /// <summary>Every formatted message logged through this factory, in arrival order.</summary>
-    public IReadOnlyCollection<string> Messages => _messages;
+    public IReadOnlyCollection<string> Messages => [.. _entries.Select(entry => entry.Message)];
 
-    public ILogger CreateLogger(string categoryName) => new RecordingLogger(_messages);
+    public ILogger CreateLogger(string categoryName) => new RecordingLogger(_entries);
 
     public void AddProvider(ILoggerProvider provider)
     {
@@ -24,12 +27,12 @@ internal sealed class RecordingLoggerFactory : ILoggerFactory
     {
     }
 
-    private sealed class RecordingLogger(ConcurrentQueue<string> messages) : ILogger
+    private sealed class RecordingLogger(ConcurrentQueue<(LogLevel Level, string Message)> entries) : ILogger
     {
         public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
-            => messages.Enqueue(formatter(state, exception));
+            => entries.Enqueue((logLevel, formatter(state, exception)));
 
         IDisposable ILogger.BeginScope<TState>(TState state) => null;
     }
