@@ -51,6 +51,8 @@ public static class GitCommandBuilder
     /// the formats the server prints use <c>%an</c> and <c>%ae</c>, which git never maps.
     /// <c>core.useReplaceRefs=false</c> keeps a repository's <c>core.useReplaceRefs=true</c> from turning replace refs
     /// back on in git 2.19.0 to 2.41.x, where the key wins over <c>GIT_NO_REPLACE_OBJECTS</c>.
+    /// <c>submodule.recurse=false</c> keeps a repository's <c>submodule.recurse=true</c> from making <c>git grep</c>
+    /// search each checked-out submodule, whose git directory the superproject's checks never looked at.
     /// </summary>
     private static readonly IReadOnlyList<(string Key, string Value)> FixedConfig =
     [
@@ -68,7 +70,8 @@ public static class GitCommandBuilder
         ("log.showRoot", "true"),
         ("i18n.logOutputEncoding", "UTF-8"),
         ("log.mailmap", "false"),
-        ("core.useReplaceRefs", "false")
+        ("core.useReplaceRefs", "false"),
+        ("submodule.recurse", "false")
     ];
 
     private static readonly HashSet<string> DiffBearingSubcommands = new(StringComparer.Ordinal)

@@ -5,10 +5,25 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 /// <summary>Parser for <c>git status --porcelain=v2 -z --branch --ahead-behind</c>.</summary>
 public static class StatusParser
 {
-    /// <summary>Parse porcelain v2 -z output. Spec: https://git-scm.com/docs/git-status#_porcelain_format_version_2</summary>
-    public static StatusResult Parse(byte[] raw)
+    /// <summary>
+    /// Parse porcelain v2 -z output. Spec: https://git-scm.com/docs/git-status#_porcelain_format_version_2. git ends every
+    /// header and entry with NUL, and a rename or copy entry with a second NUL after its original path, so in output the
+    /// output cap cut, the text after the last NUL never ended, and a rename whose original path never arrived is cut.
+    /// </summary>
+    /// <param name="raw">The raw stdout bytes.</param>
+    /// <param name="truncated">
+    /// Whether the output hit the output cap. The text after the last NUL is then left out, and so is a last rename or copy
+    /// entry missing its original path, since a path cut short can be the whole name of another file.
+    /// </param>
+    /// <returns>The status.</returns>
+    public static StatusResult Parse(byte[] raw, bool truncated)
     {
         var tokens = TextDecoding.Decode(raw).Split('\0');
+        if (truncated)
+        {
+            tokens = tokens[..^1];
+        }
+
         var state = new ParseState();
 
         var i = 0;
@@ -20,7 +35,7 @@ public static class StatusParser
             if (line.StartsWith("# ", StringComparison.Ordinal))
                 ApplyBranchHeader(line[2..], state);
             else
-                ApplyEntry(line, tokens, ref i, state);
+                ApplyEntry(line, tokens, ref i, truncated, state);
         }
 
         return BuildResult(state);
@@ -57,9 +72,10 @@ public static class StatusParser
 
     /// <summary>
     /// Dispatch a working-tree entry line by its leading kind code. The rename case (<c>2</c>)
-    /// consumes a trailing token for the original path, so the token cursor is passed by ref.
+    /// consumes a trailing token for the original path, so the token cursor is passed by ref;
+    /// in a cut output a rename with no such token left is skipped.
     /// </summary>
-    private static void ApplyEntry(string line, string[] tokens, ref int i, ParseState state)
+    private static void ApplyEntry(string line, string[] tokens, ref int i, bool truncated, ParseState state)
     {
         switch (line[0])
         {
@@ -70,6 +86,11 @@ public static class StatusParser
                 AddTrackedChange(line, fieldCount: 9, pathIndex: 8, origPath: null, state);
                 break;
             case '2':
+                if (truncated && i >= tokens.Length)
+                {
+                    break;
+                }
+
                 var origPath = i < tokens.Length ? tokens[i++] : string.Empty;
                 AddTrackedChange(line, fieldCount: 10, pathIndex: 9, origPath, state);
                 break;

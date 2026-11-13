@@ -72,7 +72,9 @@ A few rules apply to every call that runs git:
   (`the blamed commits' author pass hit the output cap`), since a missing author would go unread. `git_diff` also fails
   when its `--numstat` pass hits the cap while the patch lists an unmerged path (see [`git_diff`](#git_diff)).
   `git_show` fails when the cap cuts its metadata pass before the commit's author
-  (`the commit's metadata pass hit the output cap`).
+  (`the commit's metadata pass hit the output cap`). `git_ls_files` and `git_status` leave out a last path whose
+  NUL did not arrive (for a `git_status` rename or copy, its original path's NUL), since a path cut short can be the
+  whole name of another file.
 - **stdout protection**: a sentinel guards the stdio transport so stray writes can't corrupt the MCP protocol stream.
   All logging goes to a file or stderr.
 
@@ -627,12 +629,17 @@ git's exit code and `truncated`. `git_version` fails with `GitCommandError` when
 exited non-zero or printed no version line the server accepts: it carries `git_exit_code` (0 in the second case),
 its Warning is the startup `git_version_unavailable` line (see [Logging](#logging)), and it does not count in
 `git_command_errors_total`. An unexpected error inside the server is `GitCommandError` too, with the message
-`unexpected error inside tool. see server logs`.
+`unexpected error inside tool. see server logs`: its `tool_error` line carries the exception's type chain in
+`stderr_tail`, it has no `git_exit_code` and logs no `subprocess_exit` Warning, and it counts only in
+`tool_calls_total`, as `<tool>:error`.
 
 `NotAGitRepository` also covers a `cwd` whose repository's own `core.worktree` names a work tree in which git finds
 another repository, or none, and every `cwd` when the server runs a git older than 2.13.0, which has no
 `--absolute-git-dir` (see [Requirements](#requirements)); the message is then `the work tree git reports for cwd
-leads to another repository or to none` (see [Security model (long version)](#security-model-long-version)).
+leads to another repository or to none` (see [Security model (long version)](#security-model-long-version)). It
+also covers a `cwd` whose `.git` file, `.git` link, or `commondir` file leads to a git directory that belongs to
+another checkout, and a linked worktree moved or copied by hand until `git worktree repair` runs; the message is then
+`the git directory git reads for cwd belongs to another checkout`.
 
 Client-facing error detail is data-free (exit code, parameter name). The scrubbed git stderr tail is logged
 server-side only, since it can echo user-controlled paths or refs.
@@ -690,7 +697,7 @@ flowchart TD
 - **One argv producer.** Tools declare a typed `GitIntent`; a single `GitCommandBuilder` is the only code that
   serializes it to argv. It prepends fixed `-c` neutralizers (disable hooks, pager, fsmonitor, credential helpers,
   askpass, auto-gc, signature verification, rename following from config, the index refresh in `git diff`, the mailmap
-  in `git log`, replace refs) and,
+  in `git log`, replace refs, submodule recursion in `git grep`) and,
   before any positional ref, inserts `--end-of-options` so no user value can be read as an option (git grep excepted:
   its pattern is a glued `-e` token and its refs are pre-resolved SHAs). `log.showSignature=false` is there because
   verifying a signed commit runs the program `gpg.program`, `gpg.ssh.program`, or `gpg.x509.program` names, and a
@@ -707,7 +714,9 @@ flowchart TD
   `UTF-16` leaves no readable commit id. `log.mailmap=false` is there because a repository's mailmap otherwise rewrites
   the author `git log --author` matches, while `git_log` prints the recorded author; `git blame` has no such switch
   (see [`git_blame`](#git_blame)). `core.useReplaceRefs=false` is there for git 2.19.0 to 2.41.x (see the Replace refs
-  and grafts ignored bullet below).
+  and grafts ignored bullet below). `submodule.recurse=false` is there because a repository's `submodule.recurse=true`
+  makes `git grep` search each checked-out submodule's repository too, one the work-tree check below never looked at;
+  `git_grep` searches the superproject only, that setting of your own included.
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
 - **The work tree is checked.** A repository's own config (`.git/config`, or a worktree's `config.worktree`) can set
@@ -718,9 +727,22 @@ flowchart TD
   own real path, so a `cwd` reached through a symbolic link or a junction compares like its target. A submodule,
   whose git directory under `.git/modules/` names its checkout through `core.worktree`, and a linked worktree pass,
   since the `.git` file at their top level names the same git directory. git's environment carries no `GIT_DIR` or
-  `GIT_WORK_TREE`. A `.git` file whose `gitdir:` line names another repository's git directory, or a `commondir`
-  file inside a git directory, passes the check (both discoveries read the same file), so in a folder you did not
-  clone yourself, read its `.git`, and check that `cwd` is not a link, before you trust what the tools report there.
+  `GIT_WORK_TREE`. A `.git` file (`gitdir: <path>`), a `.git` symbolic link or junction, or a `commondir` file can name
+  any git directory, another repository's included, and both discoveries then read the same thing, so the server also
+  runs `git rev-parse --path-format=absolute --git-common-dir` and checks that the git directory belongs to the
+  checkout. It accepts the checkout's own `.git` directory with no `commondir`; a linked worktree's directory under
+  the common directory's `worktrees/`, whose `gitdir` file must name the checkout's `.git` back (a file that is
+  missing, empty, a link, or over 4 KB names nothing); a git directory whose own config sets `core.worktree`, as an
+  absorbed submodule's does; and otherwise a git directory git would not treat as another checkout's, so none of its
+  path segments is `.git` and no `.git` sits beside it. Anything else fails the call with `NotAGitRepository`. A
+  linked worktree moved or copied by hand keeps the old backlink and fails the same way until you run
+  `git worktree repair` in it. What the check cannot see: a `.git` file naming another checkout's separate git
+  directory (`git init --separate-git-dir`, which names no checkout back) by its path, a git directory the folder
+  brings whose `objects`, `refs`, or `packed-refs` are links into another repository or whose
+  `objects/info/alternates` names another object store, an alias of `.git` (an 8.3 short name) in an earlier path
+  segment on Windows past the 260-character path limit, and a `cwd` that is itself a symbolic link, which every tool
+  follows. So in a folder you did not clone yourself, read its `.git`, and check that `cwd` is not a link, before you
+  trust what the tools report there.
 - **Records are framed by NUL.** `git_log`, the `git_show` metadata pass, `git_blame`'s author pass, `git_reflog`, and
   `git_stash_list` print their fields with `%x00` between them and `-z`, which ends each record with NUL.
   `git_branch_list` prints `%00` after each `git for-each-ref` field; that command has no `-z` and ends each ref with

@@ -24,6 +24,9 @@ public sealed class GitGrepToolFramingTests : IDisposable
     private const string GrepSubcommand = "grep";
     private const int KeptBytesInsideTheSecondPath = 15;
     private const int KeptBytesInsideTheSecondCount = 15;
+    private const string SubmoduleFile = "s.txt";
+    private const string SubmodulePath = "sub";
+    private const string SubmoduleRecurseKey = "submodule.recurse";
 
     private readonly TempGitRepo _repo;
     private readonly GitGrepTool _tool;
@@ -149,6 +152,25 @@ public sealed class GitGrepToolFramingTests : IDisposable
         Assert.True(envelope.Truncated);
         var count = Assert.IsType<GrepFileCount>(Assert.Single(envelope.Results));
         Assert.Equal(new GrepFileCount { Path = FirstFile, MatchCount = 1 }, count);
+    }
+
+    [Fact]
+    public async Task Grep_WithSubmoduleRecurseConfig_DoesNotSearchTheSubmodule()
+    {
+        // Arrange
+        using var source = new TempGitRepo();
+        source.WriteFile(SubmoduleFile, NeedlePattern + "\n");
+        source.Run("add", ".");
+        source.Run("commit", "-m", "needle in the submodule");
+        _repo.AddSubmoduleFrom(source.RepoPath, SubmodulePath);
+        _repo.Run("config", SubmoduleRecurseKey, "true");
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, NeedlePattern, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.Empty(envelope.Results);
     }
 
     #region Test Helpers

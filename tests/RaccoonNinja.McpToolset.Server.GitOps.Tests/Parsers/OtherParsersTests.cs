@@ -29,7 +29,7 @@ public class OtherParsersTests
         var bytes = Encoding.UTF8.GetBytes("a.txt\0src/b.cs\0\0c\0");
 
         // Act
-        var result = LsFilesParser.Parse(bytes);
+        var result = LsFilesParser.Parse(bytes, truncated: false);
 
         // Assert
         Assert.Equal(LsFilesExpected, result);
@@ -42,7 +42,7 @@ public class OtherParsersTests
         var bytes = Encoding.UTF8.GetBytes($"100644 {ObjectIdA} 0\tsrc/a.cs\0100755 {ObjectIdB} 0\tscripts/run.sh\0");
 
         // Act
-        var result = LsFilesParser.ParseStage(bytes);
+        var result = LsFilesParser.ParseStage(bytes, truncated: false);
 
         // Assert
         Assert.Equal(2, result.Count);
@@ -62,7 +62,7 @@ public class OtherParsersTests
         var bytes = Encoding.UTF8.GetBytes("junk\0100644 abc 0\tok.txt\0");
 
         // Act
-        var result = LsFilesParser.ParseStage(bytes);
+        var result = LsFilesParser.ParseStage(bytes, truncated: false);
 
         // Assert
         var entry = Assert.Single(result);
@@ -77,7 +77,7 @@ public class OtherParsersTests
             $"100644 {ObjectIdA} 1\tc.txt\0100644 {ObjectIdB} 2\tc.txt\0100644 {ObjectIdC} 3\tc.txt\0");
 
         // Act
-        var result = LsFilesParser.ParseStage(bytes);
+        var result = LsFilesParser.ParseStage(bytes, truncated: false);
 
         // Assert
         Assert.Equal([1, 2, 3], result.Select(entry => entry.Stage));
@@ -91,7 +91,7 @@ public class OtherParsersTests
         var bytes = Array.Empty<byte>();
 
         // Act
-        var result = LsFilesParser.ParseStage(bytes);
+        var result = LsFilesParser.ParseStage(bytes, truncated: false);
 
         // Assert
         Assert.Empty(result);

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors;
@@ -10,11 +11,28 @@ using RaccoonNinja.McpToolset.Server.GitOps.Runner;
 using RaccoonNinja.McpToolset.Server.GitOps.Security;
 using RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
 using RaccoonNinja.McpToolset.Server.GitOps.Tools;
+using Serilog.Extensions.Logging;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Tools;
 
-public class ToolCommonTests
+public sealed class ToolCommonTests : IDisposable
 {
+    private const string UnexpectedErrorMessage = "unexpected error inside tool. see server logs";
+    private const string UnexpectedFailureText = "unexpected-failure-probe";
+    private const string InnerPathLikeText = "<repo-root>/secret.txt";
+    private const string TypeChain = "System.InvalidOperationException -> System.IO.IOException";
+    private const string StackFrameMarker = " at ";
+
+    private readonly string _logPath = Path.Combine(Path.GetTempPath(), $"mcp-gitops-toolcommon-{Guid.NewGuid():N}.log");
+
+    public void Dispose()
+    {
+        if (File.Exists(_logPath))
+        {
+            File.Delete(_logPath);
+        }
+    }
+
     private static ToolCommon Build(
         IGitProcessRunner runner = null,
         IRepoRootResolver resolver = null,
@@ -75,6 +93,40 @@ public class ToolCommonTests
 
         // Assert
         Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
+    }
+
+    [Fact]
+    public async Task WrapAsync_UnexpectedException_WritesTheTypeChainAndNotTheMessages()
+    {
+        // Arrange
+        var env = new Dictionary<string, string> { [LoggingConstants.EnvLogFile] = _logPath };
+
+        // Act
+        using (var logger = LoggingBootstrap.Build(env))
+        {
+            using var factory = new SerilogLoggerFactory(logger);
+            var common = new ToolCommon(
+                new RepoRootResolver(TestGit.Executable),
+                new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
+                new SessionMetrics(),
+                factory,
+                TestGit.Executable);
+            await common.WrapAsync(common.MakeContext("git_test"), new RootHolder(), () =>
+                throw new InvalidOperationException(UnexpectedFailureText, new IOException(InnerPathLikeText)));
+        }
+
+        // Assert
+        var content = File.ReadAllText(_logPath);
+        var toolError = content
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => JsonDocument.Parse(line).RootElement)
+            .Single(line => line.TryGetProperty(LogFields.Event, out var value) && value.GetString() == "tool_error");
+        Assert.Equal(ErrorCodes.GitCommandError, toolError.GetProperty(LogFields.ErrorCode).GetString());
+        Assert.Contains(UnexpectedErrorMessage, toolError.GetProperty(LogFields.Message).GetString(), StringComparison.Ordinal);
+        Assert.Equal(TypeChain, toolError.GetProperty(LogFields.StderrTail).GetString());
+        Assert.DoesNotContain(UnexpectedFailureText, content, StringComparison.Ordinal);
+        Assert.DoesNotContain(InnerPathLikeText, content, StringComparison.Ordinal);
+        Assert.DoesNotContain(StackFrameMarker, content, StringComparison.Ordinal);
     }
 
     [Fact]

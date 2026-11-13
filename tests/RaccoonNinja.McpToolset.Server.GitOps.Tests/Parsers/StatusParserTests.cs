@@ -13,7 +13,7 @@ public class StatusParserTests
             "# branch.head main\0# branch.upstream origin/main\0# branch.ab +2 -1\0");
 
         // Act
-        var status = StatusParser.Parse(bytes);
+        var status = StatusParser.Parse(bytes, truncated: false);
 
         // Assert
         Assert.Equal("main", status.Branch);
@@ -30,7 +30,7 @@ public class StatusParserTests
         var bytes = Encoding.UTF8.GetBytes("# branch.head (detached)\0");
 
         // Act & Assert
-        Assert.Null(StatusParser.Parse(bytes).Branch);
+        Assert.Null(StatusParser.Parse(bytes, truncated: false).Branch);
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class StatusParserTests
             "? src/new.txt\0");
 
         // Act
-        var status = StatusParser.Parse(bytes);
+        var status = StatusParser.Parse(bytes, truncated: false);
 
         // Assert
         Assert.Single(status.Staged, s => s.Path == "src/staged.txt");
@@ -60,7 +60,7 @@ public class StatusParserTests
             "2 R. N... 100644 100644 100644 abc abc R100 src/new.txt\0src/old.txt\0");
 
         // Act
-        var status = StatusParser.Parse(bytes);
+        var status = StatusParser.Parse(bytes, truncated: false);
 
         // Assert
         var entry = Assert.Single(status.Staged);

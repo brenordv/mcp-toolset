@@ -1,3 +1,30 @@
+## v2.28.0
+- Fixed: a `.git` file (`gitdir: <path>`), a `.git` symbolic link or junction, or a `commondir` file inside `.git` can
+  name another repository's git directory, and every call then read that repository's history, refs, and index under
+  the folder's `repo_root`; the `core.worktree` check from 2.27.0 passed it, since both of its discoveries read the
+  same file. The server now also runs `git rev-parse --path-format=absolute --git-common-dir` and accepts the git
+  directory only when it is the checkout's own `.git` directory with no `commondir`, a linked worktree's directory
+  under the common directory's `worktrees/` whose `gitdir` file names the checkout's `.git` back, a git directory whose
+  own config sets `core.worktree` (an absorbed submodule), or one git would not treat as another checkout's (no path
+  segment named `.git`, no `.git` beside it). Behavior change: such a `cwd` fails every tool with `NotAGitRepository`
+  and the message `the git directory git reads for cwd belongs to another checkout`, and so does a linked worktree
+  moved or copied by hand until `git worktree repair` runs (its `gitdir` backlink is stale); `repo_root` is unchanged
+  for plain repositories, submodules, linked worktrees, `git init --separate-git-dir` checkouts, and a `.git` linked to
+  a git directory not named `.git`. Resolving a new `cwd` runs one more `git rev-parse` process, and one more
+  `git config` for a checkout whose `.git` names a git directory with no `commondir`.
+- Fixed: when the 8 MB cap cut `git ls-files -z` or `git status --porcelain=v2 -z`, `git_ls_files` and `git_status`
+  returned the text after the last NUL as a whole path, and a path cut short can be the whole name of another file.
+  Behavior change: a truncated reply leaves out a last record whose NUL did not arrive, and a `git_status` rename or
+  copy whose original path did not arrive; `truncated` stays `true`.
+- Fixed: a repository's `submodule.recurse=true` made `git_grep` search every checked-out submodule's repository too.
+  Behavior change: every git call passes `-c submodule.recurse=false`, so `git_grep` searches the superproject only,
+  that setting of your own included.
+- Log change: the `tool_error` Error line of an unexpected error inside the server (message
+  `unexpected error inside tool. see server logs`) now carries `stderr_tail` with the exception's type chain, outer to
+  inner, and never its message or stack trace; it named no exception before. A refused git directory logs only the
+  existing `tool_error` Error line with `error_code` `NotAGitRepository` and the new message. Every `argv_built` debug
+  line shows `-c submodule.recurse=false` (`argv_len` 2 higher).
+
 ## v2.27.0
 - Fixed: `git_grep` split `git grep -z` output on newlines before reading the NUL after each path, while `-z` prints a
   path unquoted, so a tracked path holding a newline (a tree entry can hold one on any OS, which `ref` reaches) made the

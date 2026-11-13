@@ -10,6 +10,7 @@ public class GitCommandBuilderTests
     private const string LogOutputEncodingPin = "i18n.logOutputEncoding=UTF-8";
     private const string MailmapPin = "log.mailmap=false";
     private const string UseReplaceRefsPin = "core.useReplaceRefs=false";
+    private const string SubmoduleRecursePin = "submodule.recurse=false";
 
     private static readonly string GitExecutable = Path.Combine(Path.GetTempPath(), "git");
 
@@ -41,6 +42,7 @@ public class GitCommandBuilderTests
         Assert.Contains(LogOutputEncodingPin, argv);
         Assert.Contains(MailmapPin, argv);
         Assert.Contains(UseReplaceRefsPin, argv);
+        Assert.Contains(SubmoduleRecursePin, argv);
     }
 
     [Fact]
@@ -389,6 +391,7 @@ public class GitCommandBuilderTests
         Assert.Contains(LogOutputEncodingPin, prefix);
         Assert.Contains(MailmapPin, prefix);
         Assert.Contains(UseReplaceRefsPin, prefix);
+        Assert.Contains(SubmoduleRecursePin, prefix);
     }
 
     [Fact]
