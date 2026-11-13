@@ -74,6 +74,13 @@ public static class LogFields
     /// <summary>The type chain of a logged exception, outer to inner; never its message or stack trace, which can carry note content or an absolute path.</summary>
     public const string StderrTail = "stderr_tail";
 
+    /// <summary>
+    /// SQLite's extended result code from the first <c>SqliteException</c> among the exceptions <see cref="StderrTail"/>
+    /// lists. Its low 8 bits are the primary code: 5 busy (another connection holds the lock), 8 read-only, 11 corrupt,
+    /// 14 cannot open. An integer only, never SQLite's message text.
+    /// </summary>
+    public const string SqliteErrorCode = "sqlite_error_code";
+
     /// <summary>Server-controlled session metrics. Emitted only on shutdown.</summary>
     public const string MetricsSummary = "metrics_summary";
 
@@ -91,6 +98,6 @@ public static class LogFields
         QueryHash, QueryTokens, QueryBytes, HeadingHash,
         QueryMode, PageItems, Truncated, CursorHash, NotesScanned, NotesMatched,
         BytesScanned, SkippedUnreadable, Reason,
-        Message, StderrTail, MetricsSummary, Service,
+        Message, StderrTail, SqliteErrorCode, MetricsSummary, Service,
     };
 }

@@ -10,5 +10,6 @@ public interface IGitProcessRunner
         int? timeoutMs = null,
         int? outputCapBytes = null,
         int? callId = null,
+        byte[] standardInput = null,
         CancellationToken cancellationToken = default);
 }

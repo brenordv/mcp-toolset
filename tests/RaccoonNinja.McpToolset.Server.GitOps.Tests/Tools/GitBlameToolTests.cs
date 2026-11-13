@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors;
 using RaccoonNinja.McpToolset.Server.GitOps.Metrics;
+using RaccoonNinja.McpToolset.Server.GitOps.Models;
 using RaccoonNinja.McpToolset.Server.GitOps.Repo;
 using RaccoonNinja.McpToolset.Server.GitOps.Runner;
 using RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
@@ -10,6 +12,12 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Tools;
 public sealed class GitBlameToolTests : IDisposable
 {
     private const string TrackedFile = "a.txt";
+    private const string UncommittedCommit = "0000000000000000000000000000000000000000";
+    private const string StdinFlag = "--stdin";
+    private const string TwoLines = "one\ntwo\n";
+    private const string AuthorListMismatchMessage = "git log returned an author list that does not match the blamed commits";
+    private const int CutAuthorBytes = 10;
+    private const string AuthorPassCutMessage = "the blamed commits' author pass hit the output cap";
 
     private readonly TempGitRepo _repo;
     private readonly GitBlameTool _tool;
@@ -21,13 +29,7 @@ public sealed class GitBlameToolTests : IDisposable
         _repo.Run("add", ".");
         _repo.Run("commit", "-m", "first");
 
-        var common = new ToolCommon(
-            new RepoRootResolver(TestGit.Executable),
-            new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
-            new SessionMetrics(),
-            NullLoggerFactory.Instance,
-            TestGit.Executable);
-        _tool = new GitBlameTool(common, new RefVerifier(TestGit.Executable));
+        _tool = BuildTool(new GitProcessRunner(NullLogger<GitProcessRunner>.Instance));
     }
 
     public void Dispose() => _repo.Dispose();
@@ -46,4 +48,126 @@ public sealed class GitBlameToolTests : IDisposable
         Assert.Equal(1, envelope.Count);
         Assert.False(File.Exists(marker));
     }
+
+    [Fact]
+    public async Task Blame_WithMailmapRenamingTheAuthor_ReturnsRecordedAndMappedNames()
+    {
+        // Arrange
+        _repo.CommitMailmap();
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, TrackedFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var line = Assert.IsType<BlameLine>(Assert.Single(envelope.Results));
+        Assert.Equal(TempGitRepo.IdentityName, line.AuthorName);
+        Assert.Equal(TempGitRepo.MailmapName, line.MailmapAuthorName);
+    }
+
+    [Fact]
+    public async Task Blame_WorktreeLineNotCommitted_HasNoMailmapName()
+    {
+        // Arrange
+        _repo.CommitMailmap();
+        _repo.WriteFile(TrackedFile, TwoLines);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, TrackedFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var lines = envelope.Results.Cast<BlameLine>().ToList();
+        Assert.Equal(2, lines.Count);
+        Assert.Equal(TempGitRepo.IdentityName, lines[0].AuthorName);
+        Assert.Equal(TempGitRepo.MailmapName, lines[0].MailmapAuthorName);
+        Assert.Equal(UncommittedCommit, lines[1].CommitHash);
+        Assert.Null(lines[1].MailmapAuthorName);
+    }
+
+    [Fact]
+    public async Task Blame_NoLineCommitted_RunsNoAuthorPass()
+    {
+        // Arrange
+        _repo.WriteFile(TrackedFile, "uncommitted\n");
+        var tool = BuildTool(new StdoutDroppingRunner(argv => argv.Contains(StdinFlag)));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, TrackedFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var line = Assert.IsType<BlameLine>(Assert.Single(envelope.Results));
+        Assert.Equal(UncommittedCommit, line.CommitHash);
+    }
+
+    [Fact]
+    public async Task Blame_AuthorPassOutputUnreadable_FailsWithGitCommandError()
+    {
+        // Arrange
+        var tool = BuildTool(new StdoutDroppingRunner(argv => argv.Contains(StdinFlag)));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, TrackedFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
+        Assert.Equal(AuthorListMismatchMessage, envelope.Error.Message);
+    }
+
+    [Fact]
+    public async Task Blame_AuthorNameHoldingSeparatorBytes_ReturnsTheRecordedName()
+    {
+        // Arrange
+        var first = _repo.Run("rev-parse", "HEAD");
+        var name = $"Evil\u001e{first}\u001fForged Name";
+        _repo.WriteFile(TrackedFile, TwoLines);
+        _repo.Run("add", TrackedFile);
+        _repo.CommitWithAuthorName(name);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, TrackedFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var lines = envelope.Results.Cast<BlameLine>().ToList();
+        Assert.Equal(2, lines.Count);
+        Assert.Equal(TempGitRepo.IdentityName, lines[0].AuthorName);
+        Assert.Equal(name, lines[1].AuthorName);
+        Assert.Null(lines[1].MailmapAuthorName);
+    }
+
+    [Fact]
+    public async Task Blame_AuthorPassCut_FailsWithGitCommandError()
+    {
+        // Arrange
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(StdinFlag), CutAuthorBytes));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, TrackedFile, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
+        Assert.Equal(AuthorPassCutMessage, envelope.Error.Message);
+    }
+
+    #region Test Helpers
+
+    /// <summary>Build the tool under test over <paramref name="runner"/>, with the real root resolver and ref verifier.</summary>
+    /// <param name="runner">The runner every git process of the call goes through.</param>
+    /// <returns>The tool.</returns>
+    private static GitBlameTool BuildTool(IGitProcessRunner runner)
+    {
+        var common = new ToolCommon(
+            new RepoRootResolver(TestGit.Executable),
+            runner,
+            new SessionMetrics(),
+            NullLoggerFactory.Instance,
+            TestGit.Executable);
+        return new GitBlameTool(common, new RefVerifier(TestGit.Executable));
+    }
+
+    #endregion
 }

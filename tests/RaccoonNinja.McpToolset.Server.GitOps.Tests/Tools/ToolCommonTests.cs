@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using RaccoonNinja.McpToolset.Server.GitOps.Errors;
@@ -10,11 +11,41 @@ using RaccoonNinja.McpToolset.Server.GitOps.Runner;
 using RaccoonNinja.McpToolset.Server.GitOps.Security;
 using RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
 using RaccoonNinja.McpToolset.Server.GitOps.Tools;
+using Serilog.Extensions.Logging;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Tools;
 
-public class ToolCommonTests
+public sealed class ToolCommonTests : IDisposable
 {
+    private const string UnexpectedErrorMessage = "unexpected error inside tool. see server logs";
+    private const string UnexpectedFailureText = "unexpected-failure-probe";
+    private const string InnerPathLikeText = "<repo-root>/secret.txt";
+    private const string TypeChain = "System.InvalidOperationException -> System.IO.IOException";
+    private const string StackFrameMarker = " at ";
+    private const string LogFileName = "out.log";
+
+    private readonly string _logRoot;
+    private readonly string _logPath;
+
+    public ToolCommonTests()
+    {
+        _logRoot = Path.Combine(Path.GetTempPath(), "gitops-toolcommon-" + Guid.NewGuid().ToString("N"));
+        _logPath = Path.Combine(_logRoot, LogFileName);
+        Directory.CreateDirectory(_logRoot);
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_logRoot, recursive: true);
+        }
+        catch (IOException)
+        {
+            // Best-effort temp cleanup.
+        }
+    }
+
     private static ToolCommon Build(
         IGitProcessRunner runner = null,
         IRepoRootResolver resolver = null,
@@ -30,7 +61,7 @@ public class ToolCommonTests
         var runner = Substitute.For<IGitProcessRunner>();
         runner.RunAsync(
                 Arg.Any<IList<string>>(), Arg.Any<IDictionary<string, string>>(), Arg.Any<string>(),
-                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new RunResult
             {
                 Argv = new List<string>(),
@@ -78,13 +109,47 @@ public class ToolCommonTests
     }
 
     [Fact]
+    public async Task WrapAsync_UnexpectedException_WritesTheTypeChainAndNotTheMessages()
+    {
+        // Arrange
+        var env = new Dictionary<string, string> { [LoggingConstants.EnvLogFile] = _logPath };
+
+        // Act
+        using (var logger = LoggingBootstrap.Build(env))
+        {
+            using var factory = new SerilogLoggerFactory(logger);
+            var common = new ToolCommon(
+                new RepoRootResolver(TestGit.Executable),
+                new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
+                new SessionMetrics(),
+                factory,
+                TestGit.Executable);
+            await common.WrapAsync(common.MakeContext("git_test"), new RootHolder(), () =>
+                throw new InvalidOperationException(UnexpectedFailureText, new IOException(InnerPathLikeText)));
+        }
+
+        // Assert
+        var content = File.ReadAllText(_logPath);
+        var toolError = content
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => JsonDocument.Parse(line).RootElement)
+            .Single(line => line.TryGetProperty(LogFields.Event, out var value) && value.GetString() == "tool_error");
+        Assert.Equal(ErrorCodes.GitCommandError, toolError.GetProperty(LogFields.ErrorCode).GetString());
+        Assert.Contains(UnexpectedErrorMessage, toolError.GetProperty(LogFields.Message).GetString(), StringComparison.Ordinal);
+        Assert.Equal(TypeChain, toolError.GetProperty(LogFields.StderrTail).GetString());
+        Assert.DoesNotContain(UnexpectedFailureText, content, StringComparison.Ordinal);
+        Assert.DoesNotContain(InnerPathLikeText, content, StringComparison.Ordinal);
+        Assert.DoesNotContain(StackFrameMarker, content, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_RecordsMetricsAndCallsRunner()
     {
         // Arrange
         var runner = Substitute.For<IGitProcessRunner>();
         runner.RunAsync(
                 Arg.Any<IList<string>>(), Arg.Any<IDictionary<string, string>>(), Arg.Any<string>(),
-                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new RunResult
             {
                 Argv = new List<string>(),
@@ -106,7 +171,7 @@ public class ToolCommonTests
         Assert.Equal(0, result.ExitCode);
         await runner.Received(1).RunAsync(
             Arg.Any<IList<string>>(), Arg.Any<IDictionary<string, string>>(), Arg.Any<string>(),
-            Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+            Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -374,6 +439,7 @@ public class ToolCommonTests
             int? timeoutMs = null,
             int? outputCapBytes = null,
             int? callId = null,
+            byte[] standardInput = null,
             CancellationToken cancellationToken = default)
         {
             _calls.Add(argv);

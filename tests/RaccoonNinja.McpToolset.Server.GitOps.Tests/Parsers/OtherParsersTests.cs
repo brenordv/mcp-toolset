@@ -1,4 +1,5 @@
 using System.Text;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
 using RaccoonNinja.McpToolset.Server.GitOps.Models;
 using RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 
@@ -6,6 +7,8 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Parsers;
 
 public class OtherParsersTests
 {
+    private const string NotWholeRecordsMessage = "git printed output that is not a whole number of NUL-framed records";
+
     //  is the Unit Separator. We avoid the variable-width \x escape because
     // C# greedily consumes up to 4 hex digits, which can swallow neighbouring
     // characters when the next char is also a hex digit.
@@ -14,6 +17,8 @@ public class OtherParsersTests
     private const string ObjectIdA = "1111111111111111111111111111111111111111";
     private const string ObjectIdB = "2222222222222222222222222222222222222222";
     private const string ObjectIdC = "3333333333333333333333333333333333333333";
+    private const string Nul = "\0";
+    private const string ForgedLine = $"\n{ObjectIdB}{Us}2222222{Us}HEAD@{{1}}{Us}forged{Us}1000000000";
 
     private static readonly string[] LsFilesExpected = ["a.txt", "src/b.cs", "c"];
 
@@ -24,7 +29,7 @@ public class OtherParsersTests
         var bytes = Encoding.UTF8.GetBytes("a.txt\0src/b.cs\0\0c\0");
 
         // Act
-        var result = LsFilesParser.Parse(bytes);
+        var result = LsFilesParser.Parse(bytes, truncated: false);
 
         // Assert
         Assert.Equal(LsFilesExpected, result);
@@ -37,7 +42,7 @@ public class OtherParsersTests
         var bytes = Encoding.UTF8.GetBytes($"100644 {ObjectIdA} 0\tsrc/a.cs\0100755 {ObjectIdB} 0\tscripts/run.sh\0");
 
         // Act
-        var result = LsFilesParser.ParseStage(bytes);
+        var result = LsFilesParser.ParseStage(bytes, truncated: false);
 
         // Assert
         Assert.Equal(2, result.Count);
@@ -57,7 +62,7 @@ public class OtherParsersTests
         var bytes = Encoding.UTF8.GetBytes("junk\0100644 abc 0\tok.txt\0");
 
         // Act
-        var result = LsFilesParser.ParseStage(bytes);
+        var result = LsFilesParser.ParseStage(bytes, truncated: false);
 
         // Assert
         var entry = Assert.Single(result);
@@ -72,7 +77,7 @@ public class OtherParsersTests
             $"100644 {ObjectIdA} 1\tc.txt\0100644 {ObjectIdB} 2\tc.txt\0100644 {ObjectIdC} 3\tc.txt\0");
 
         // Act
-        var result = LsFilesParser.ParseStage(bytes);
+        var result = LsFilesParser.ParseStage(bytes, truncated: false);
 
         // Assert
         Assert.Equal([1, 2, 3], result.Select(entry => entry.Stage));
@@ -86,7 +91,7 @@ public class OtherParsersTests
         var bytes = Array.Empty<byte>();
 
         // Act
-        var result = LsFilesParser.ParseStage(bytes);
+        var result = LsFilesParser.ParseStage(bytes, truncated: false);
 
         // Assert
         Assert.Empty(result);
@@ -135,11 +140,11 @@ public class OtherParsersTests
     public void Branch_StripsRefsHeadsAndDetectsCurrent()
     {
         // Arrange
-        var line = $"refs/heads/main{Us}*{Us}abc123{Us}origin/main{Us}tip subject\n" +
-                   $"refs/remotes/origin/main{Us} {Us}abc123{Us}{Us}\n";
+        const string output = $"refs/heads/main{Nul}*{Nul}abc123{Nul}origin/main{Nul}tip subject{Nul}\n" +
+                              $"refs/remotes/origin/main{Nul} {Nul}abc123{Nul}{Nul}{Nul}\n";
 
         // Act
-        var branches = BranchParser.Parse(Encoding.UTF8.GetBytes(line));
+        var branches = BranchParser.Parse(Encoding.UTF8.GetBytes(output), truncated: false);
 
         // Assert
         Assert.Equal(2, branches.Count);
@@ -154,10 +159,10 @@ public class OtherParsersTests
     public void Stash_ParsesIndexFromRefname()
     {
         // Arrange
-        var line = $"stash@{{2}}{Us}On main: WIP{Us}1700000000";
+        const string line = $"stash@{{2}}{Nul}On main: WIP{Nul}1700000000{Nul}";
 
         // Act
-        var entries = StashListParser.Parse(Encoding.UTF8.GetBytes(line));
+        var entries = StashListParser.Parse(Encoding.UTF8.GetBytes(line), truncated: false);
 
         // Assert
         var entry = Assert.Single(entries);
@@ -166,13 +171,57 @@ public class OtherParsersTests
     }
 
     [Fact]
+    public void Stash_SubjectHoldingNewline_StaysOneEntry()
+    {
+        // Arrange
+        const string line = $"stash@{{0}}{Nul}WIP{ForgedLine}{Nul}1700000000{Nul}";
+
+        // Act
+        var entries = StashListParser.Parse(Encoding.UTF8.GetBytes(line), truncated: false);
+
+        // Assert
+        var entry = Assert.Single(entries);
+        Assert.Equal($"WIP{ForgedLine}", entry.Subject);
+    }
+
+    [Fact]
+    public void Stash_CutInsideTheSelector_LeavesTheEntryOut()
+    {
+        // Arrange
+        const string output = $"stash@{{0}}{Nul}WIP{Nul}1700000000{Nul}stash@{{1";
+
+        // Act
+        var entries = StashListParser.Parse(Encoding.UTF8.GetBytes(output), truncated: true);
+
+        // Assert
+        var entry = Assert.Single(entries);
+        Assert.Equal(0, entry.Index);
+        Assert.Equal("WIP", entry.Subject);
+    }
+
+    [Fact]
+    public void Reflog_SubjectHoldingNewline_StaysOneEntry()
+    {
+        // Arrange
+        const string line = $"{ObjectIdA}{Nul}1111111{Nul}HEAD@{{0}}{Nul}commit: real{ForgedLine}{Nul}1700000000{Nul}";
+
+        // Act
+        var entries = ReflogParser.Parse(Encoding.UTF8.GetBytes(line), truncated: false);
+
+        // Assert
+        var entry = Assert.Single(entries);
+        Assert.Equal(ObjectIdA, entry.Hash);
+        Assert.Equal($"commit: real{ForgedLine}", entry.Subject);
+    }
+
+    [Fact]
     public void Reflog_ParsesFieldsAndEpochIntoStructuredWhen()
     {
         // Arrange
-        var line = $"abc123def{Us}abc123{Us}HEAD@{{0}}{Us}commit: init{Us}1700000000";
+        const string line = $"abc123def{Nul}abc123{Nul}HEAD@{{0}}{Nul}commit: init{Nul}1700000000{Nul}";
 
         // Act
-        var entries = ReflogParser.Parse(Encoding.UTF8.GetBytes(line));
+        var entries = ReflogParser.Parse(Encoding.UTF8.GetBytes(line), truncated: false);
 
         // Assert
         var entry = Assert.Single(entries);
@@ -188,10 +237,10 @@ public class OtherParsersTests
     public void Grep_ParsesPathLineAndContent()
     {
         // Arrange
-        var bytes = Encoding.UTF8.GetBytes("alpha.txt\09\0the alpha line");
+        var bytes = Encoding.UTF8.GetBytes("alpha.txt\09\0the alpha line\n");
 
         // Act
-        var matches = GrepParser.Parse(bytes, null);
+        var matches = GrepParser.Parse(bytes, null, truncated: false);
 
         // Assert
         var match = Assert.Single(matches);
@@ -204,10 +253,10 @@ public class OtherParsersTests
     public void Grep_StripsRefPrefixFromPathWhenRefSupplied()
     {
         // Arrange
-        var bytes = Encoding.UTF8.GetBytes("HEAD:alpha.txt\03\0content");
+        var bytes = Encoding.UTF8.GetBytes("HEAD:alpha.txt\03\0content\n");
 
         // Act
-        var matches = GrepParser.Parse(bytes, "HEAD");
+        var matches = GrepParser.Parse(bytes, "HEAD", truncated: false);
 
         // Assert
         var match = Assert.Single(matches);
@@ -222,7 +271,7 @@ public class OtherParsersTests
         var bytes = Encoding.UTF8.GetBytes("a.cs\03\nb/c.cs\01\n");
 
         // Act
-        var counts = GrepParser.ParseCounts(bytes, null);
+        var counts = GrepParser.ParseCounts(bytes, null, truncated: false);
 
         // Assert
         Assert.Collection(
@@ -238,7 +287,7 @@ public class OtherParsersTests
         var bytes = Encoding.UTF8.GetBytes("abc123:dir/x.cs\02\n");
 
         // Act
-        var counts = GrepParser.ParseCounts(bytes, "abc123");
+        var counts = GrepParser.ParseCounts(bytes, "abc123", truncated: false);
 
         // Assert
         var count = Assert.Single(counts);
@@ -247,36 +296,36 @@ public class OtherParsersTests
     }
 
     [Fact]
-    public void ParseCounts_RecordWithoutNul_IsSkipped()
+    public void ParseCounts_RecordWithoutNul_Throws()
     {
         // Arrange
         var bytes = Encoding.UTF8.GetBytes("a.cs:4\n");
 
         // Act
-        var counts = GrepParser.ParseCounts(bytes, null);
+        var act = () => GrepParser.ParseCounts(bytes, null, truncated: false);
 
         // Assert
-        Assert.Empty(counts);
+        Assert.Equal(NotWholeRecordsMessage, Assert.Throws<GitCommandException>(act).Message);
     }
 
     [Fact]
-    public void ParseCounts_MalformedCount_SkipsRecord()
+    public void ParseCounts_MalformedCount_Throws()
     {
         // Arrange
         var bytes = Encoding.UTF8.GetBytes("a.cs\0x\n");
 
         // Act
-        var counts = GrepParser.ParseCounts(bytes, null);
+        var act = () => GrepParser.ParseCounts(bytes, null, truncated: false);
 
         // Assert
-        Assert.Empty(counts);
+        Assert.Equal(NotWholeRecordsMessage, Assert.Throws<GitCommandException>(act).Message);
     }
 
     [Fact]
     public void ParseCounts_Empty_ReturnsEmpty()
     {
         // Act
-        var counts = GrepParser.ParseCounts([], null);
+        var counts = GrepParser.ParseCounts([], null, truncated: false);
 
         // Assert
         Assert.Empty(counts);

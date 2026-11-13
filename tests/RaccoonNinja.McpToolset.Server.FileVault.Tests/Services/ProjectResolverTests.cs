@@ -246,6 +246,20 @@ public sealed class ProjectResolverTests : IDisposable
     }
 
     [Fact]
+    public void BuildGitStartInfo_AnyDirectory_RedirectsStandardInput()
+    {
+        // Arrange
+        var cwd = CreateDir("start-info");
+        var gitPath = Path.Combine(cwd, "git");
+
+        // Act
+        var startInfo = ProjectResolver.BuildGitStartInfo(gitPath, cwd);
+
+        // Assert
+        Assert.True(startInfo.RedirectStandardInput);
+    }
+
+    [Fact]
     public void Resolve_InvalidCharsetDirectoryName_ThrowsAmbiguousProjectWithTried()
     {
         // Arrange

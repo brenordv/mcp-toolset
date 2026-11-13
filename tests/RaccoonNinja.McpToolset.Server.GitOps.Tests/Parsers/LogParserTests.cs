@@ -5,27 +5,26 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Parsers;
 
 public class LogParserTests
 {
-    private const char Us = '\x1f';
-    private const char Rs = '\x1e';
+    private const string Nul = "\0";
+    private const string FirstRecord = $"abc123{Nul}abc{Nul}{Nul}Alice{Nul}alice@example.com{Nul}1700000000{Nul}1700000005{Nul}subject one{Nul}body one{Nul}";
 
     [Fact]
     public void Parse_ReturnsEmptyForEmptyBytes()
     {
         // Act & Assert
-        Assert.Empty(LogParser.Parse(Array.Empty<byte>()));
-        Assert.Empty(LogParser.Parse(null));
+        Assert.Empty(LogParser.Parse(Array.Empty<byte>(), truncated: false));
+        Assert.Empty(LogParser.Parse(null, truncated: false));
     }
 
     [Fact]
     public void Parse_SplitsRecordsAndMapsFields()
     {
         // Arrange
-        var commit1 = $"abc123{Us}abc{Us}{Us}Alice{Us}alice@example.com{Us}1700000000{Us}1700000005{Us}subject one{Us}body one{Rs}";
-        var commit2 = $"def456{Us}def{Us}abc123{Us}Bob{Us}bob@example.com{Us}1700000100{Us}1700000200{Us}subject two{Us}{Rs}";
-        var bytes = Encoding.UTF8.GetBytes(commit1 + "\n" + commit2);
+        const string commit2 = $"def456{Nul}def{Nul}abc123{Nul}Bob{Nul}bob@example.com{Nul}1700000100{Nul}1700000200{Nul}subject two{Nul}{Nul}";
+        var bytes = Encoding.UTF8.GetBytes(FirstRecord + commit2);
 
         // Act
-        var result = LogParser.Parse(bytes);
+        var result = LogParser.Parse(bytes, truncated: false);
 
         // Assert
         Assert.Equal(2, result.Count);
@@ -44,18 +43,33 @@ public class LogParserTests
     }
 
     [Fact]
-    public void Parse_PadsMissingTrailingFields()
+    public void Parse_TruncatedInsideTheShortHash_LeavesTheCutRecordOut()
     {
         // Arrange
-        var partial = $"abc{Us}a{Us}{Us}Alice{Us}alice@example.com{Us}1{Us}2{Rs}";
+        const string output = FirstRecord + $"def456{Nul}de";
 
         // Act
-        var result = LogParser.Parse(Encoding.UTF8.GetBytes(partial));
+        var result = LogParser.Parse(Encoding.UTF8.GetBytes(output), truncated: true);
 
         // Assert
-        Assert.Single(result);
-        Assert.Equal(string.Empty, result[0].Subject);
-        Assert.Null(result[0].Body);
+        var commit = Assert.Single(result);
+        Assert.Equal("abc123", commit.Hash);
+    }
+
+    [Fact]
+    public void Parse_TruncatedInsideTheSubject_PadsTheCutRecord()
+    {
+        // Arrange
+        const string output = FirstRecord + $"def456{Nul}def{Nul}abc123{Nul}Bob{Nul}bob@example.com{Nul}1700000100{Nul}1700000200{Nul}subj";
+
+        // Act
+        var result = LogParser.Parse(Encoding.UTF8.GetBytes(output), truncated: true);
+
+        // Assert
+        Assert.Equal(2, result.Count);
+        Assert.Equal("def456", result[1].Hash);
+        Assert.Equal("subj", result[1].Subject);
+        Assert.Null(result[1].Body);
     }
 
     [Fact]
@@ -71,6 +85,7 @@ public class LogParserTests
         Assert.Contains("%ct", LogParser.LogPrettyFormat);
         Assert.Contains("%s", LogParser.LogPrettyFormat);
         Assert.Contains("%b", LogParser.LogPrettyFormat);
-        Assert.Contains("%x1e", LogParser.LogPrettyFormat);
+        Assert.Contains("%x00", LogParser.LogPrettyFormat);
+        Assert.Equal(["-z", $"--pretty=tformat:{LogParser.LogPrettyFormat}"], LogParser.FormatFlags);
     }
 }

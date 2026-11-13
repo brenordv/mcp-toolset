@@ -36,7 +36,7 @@ public sealed class GitStatusTool(ToolCommon common)
                 ],
             };
             var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
-            var status = StatusParser.Parse(result.Stdout);
+            var status = StatusParser.Parse(result.Stdout, result.Truncated);
             return ToolCommon.SingleSuccess(status, root, truncated: result.Truncated);
         });
     }

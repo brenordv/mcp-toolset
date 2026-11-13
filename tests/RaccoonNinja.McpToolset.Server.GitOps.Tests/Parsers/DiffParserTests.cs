@@ -62,11 +62,11 @@ public class DiffParserTests
         var ns = DiffParser.ParseNumstatZ(bytes);
 
         // Assert
-        Assert.Equal((2, 1), ns["src/file.cs"]);
+        Assert.Equal((2, 1, false), ns["src/file.cs"]);
     }
 
     [Fact]
-    public void ParseNumstatZ_HandlesBinaryMarkersAsZero()
+    public void ParseNumstatZ_BinaryMarkers_ReadAsZeroCountsAndBinary()
     {
         // Arrange
         var bytes = Encoding.UTF8.GetBytes("-\t-\tsrc/binary.bin\0");
@@ -75,7 +75,7 @@ public class DiffParserTests
         var ns = DiffParser.ParseNumstatZ(bytes);
 
         // Assert
-        Assert.Equal((0, 0), ns["src/binary.bin"]);
+        Assert.Equal((0, 0, true), ns["src/binary.bin"]);
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public class DiffParserTests
         var ns = DiffParser.ParseNumstatZ(bytes);
 
         // Assert
-        Assert.Equal((3, 0), ns["new/path.cs"]);
+        Assert.Equal((3, 0, false), ns["new/path.cs"]);
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public class DiffParserTests
         // Assert
         var entry = Assert.Single(ns);
         Assert.Equal("a\tb.txt", entry.Key);
-        Assert.Equal((1, 0), entry.Value);
+        Assert.Equal((1, 0, false), entry.Value);
     }
 
     [Fact]
@@ -117,9 +117,9 @@ public class DiffParserTests
 
         // Assert
         Assert.Equal(3, ns.Count);
-        Assert.Equal((1, 0), ns[" "]);
-        Assert.Equal((2, 0), ns["b.txt"]);
-        Assert.Equal((3, 0), ns["c.txt"]);
+        Assert.Equal((1, 0, false), ns[" "]);
+        Assert.Equal((2, 0, false), ns["b.txt"]);
+        Assert.Equal((3, 0, false), ns["c.txt"]);
     }
 
     [Fact]
@@ -341,9 +341,9 @@ public class DiffParserTests
         {
             new() { Path = "foo.txt", Additions = 0, Deletions = 0 },
         };
-        var numstat = new Dictionary<string, (int Additions, int Deletions)>
+        var numstat = new Dictionary<string, (int Additions, int Deletions, bool IsBinary)>
         {
-            ["foo.txt"] = (5, 2),
+            ["foo.txt"] = (5, 2, false),
         };
 
         // Act
@@ -547,7 +547,7 @@ public class DiffParserTests
     public void HasUnreadableUnmergedPath_PatchAndNumstat_ReturnsExpected(string patch, string numstatPath, bool numstatTruncated, bool expected)
     {
         // Arrange
-        var numstat = new Dictionary<string, (int Additions, int Deletions)> { [numstatPath] = (0, 0) };
+        var numstat = new Dictionary<string, (int Additions, int Deletions, bool IsBinary)> { [numstatPath] = (0, 0, false) };
 
         // Act
         var result = DiffParser.HasUnreadableUnmergedPath(Encoding.UTF8.GetBytes(patch), numstat, numstatTruncated);

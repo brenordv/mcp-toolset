@@ -25,10 +25,10 @@ public sealed class GitStashListTool(ToolCommon common)
                 Subcommand = "stash",
                 SubSubcommand = "list",
                 RepoRoot = root,
-                Flags = ["--format=%gd%x1f%gs%x1f%at"],
+                Flags = [.. StashListParser.FormatFlags],
             };
             var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
-            var entries = StashListParser.Parse(result.Stdout);
+            var entries = StashListParser.Parse(result.Stdout, result.Truncated);
             var items = new List<object>(entries.Count);
             items.AddRange(entries);
             return ToolCommon.ListSuccess(items, root, truncated: result.Truncated);

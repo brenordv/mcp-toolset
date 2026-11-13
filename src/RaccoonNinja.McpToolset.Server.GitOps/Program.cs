@@ -17,7 +17,7 @@ namespace RaccoonNinja.McpToolset.Server.GitOps;
 /// 2. Find git once in the absolute PATH entries; every git process starts from that path.
 /// 3. Build the host with MCP server registration.
 /// 4. Install the stdout sentinel AFTER the host has captured Console.OpenStandardOutput().
-/// 5. Log the git version (first statement in the try).
+/// 5. Read the git version once (first statement in the try): log it, and register it for the git_version tool.
 /// 6. Run the host.
 /// 7. On shutdown, emit a server_stop summary with metrics.
 /// </summary>
@@ -59,7 +59,8 @@ public static class Program
         var reason = "graceful";
         try
         {
-            await GitVersionReader.LogAsync(bootstrapLogger, gitExecutable, CancellationToken.None);
+            var gitVersion = await GitVersionReader.ReadAsync(bootstrapLogger, gitExecutable, CancellationToken.None);
+            builder.Services.AddSingleton(gitVersion);
             await builder.Build().RunAsync();
         }
         catch (OperationCanceledException)

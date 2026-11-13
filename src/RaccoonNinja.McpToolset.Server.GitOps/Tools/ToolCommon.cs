@@ -57,7 +57,7 @@ public sealed class ToolCommon(
         RunResult result;
         try
         {
-            result = await runner.RunAsync(argv, env, intent.RepoRoot, timeoutMs, outputCapBytes, ctx.CallId, cancellationToken);
+            result = await runner.RunAsync(argv, env, intent.RepoRoot, timeoutMs, outputCapBytes, ctx.CallId, intent.StandardInput, cancellationToken);
         }
         catch (GitTimeoutException)
         {
@@ -219,7 +219,7 @@ public sealed class ToolCommon(
             var wrapped = new GitCommandException(
                 "unexpected error inside tool. see server logs",
                 new Dictionary<string, object> { ["detail"] = ex.GetType().Name });
-            ctx.Log(LogLevel.Error, "tool_error", message: wrapped.Message, extras: BuildErrorExtras(wrapped));
+            ctx.Log(LogLevel.Error, "tool_error", message: wrapped.Message, extras: BuildErrorExtras(wrapped), exception: ex);
             return ResultEnvelope.Failure(wrapped, holder?.Value);
         }
     }

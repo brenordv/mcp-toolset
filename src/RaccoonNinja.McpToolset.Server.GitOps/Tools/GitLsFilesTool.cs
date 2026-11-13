@@ -39,8 +39,8 @@ public sealed class GitLsFilesTool(ToolCommon common)
             };
             var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
             IReadOnlyList<object> entries = stage
-                ? LsFilesParser.ParseStage(result.Stdout)
-                : LsFilesParser.Parse(result.Stdout);
+                ? LsFilesParser.ParseStage(result.Stdout, result.Truncated)
+                : LsFilesParser.Parse(result.Stdout, result.Truncated);
 
             var filtersApplied = FiltersAppliedBuilder.Create()
                 .Number("paths_count", paths?.Length ?? 0)

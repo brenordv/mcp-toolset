@@ -7,9 +7,9 @@ using Serilog;
 namespace RaccoonNinja.McpToolset.Server.GitOps.Repo;
 
 /// <summary>
-/// Runs <c>git version</c> once at startup and writes the result to the log, never to a tool. <c>version</c> is not a
-/// <c>RUN_SETUP</c> builtin, so git discovers no repository and reads no repository config; the directory passed to
-/// <c>-C</c> only satisfies <see cref="BootstrapGitRunner"/>.
+/// Runs <c>git version</c> once at startup, writes the result to the log, and returns it for the <c>git_version</c> tool,
+/// which never starts git. <c>version</c> is not a <c>RUN_SETUP</c> builtin, so git discovers no repository and reads no
+/// repository config; the directory passed to <c>-C</c> only satisfies <see cref="BootstrapGitRunner"/>.
 /// </summary>
 internal static class GitVersionReader
 {
@@ -52,14 +52,17 @@ internal static class GitVersionReader
     }
 
     /// <summary>
-    /// Run <c>git version</c> and log <c>git_version</c>, or <c>git_version_unavailable</c> when git is missing, times
-    /// out, exits non-zero, or prints a line that does not parse. Never throws for those cases.
+    /// Run <c>git version</c>, log <c>git_version</c>, or <c>git_version_unavailable</c> when git is missing, times out,
+    /// exits non-zero, or prints a line that does not parse, and return what it found. Never throws for those cases.
     /// </summary>
     /// <param name="serverLogger">The server-scoped logger.</param>
     /// <param name="gitExecutable">The absolute path of git, or <c>null</c> when none was found on <c>PATH</c>.</param>
     /// <param name="cancellationToken">Cancels the call; a cancellation is rethrown, not logged.</param>
-    /// <returns>A task that completes once the line is written.</returns>
-    public static async Task LogAsync(ILogger serverLogger, string gitExecutable, CancellationToken cancellationToken)
+    /// <returns>
+    /// The version read, or the error code the <c>git_version_unavailable</c> line carries and git's exit code when git
+    /// exited.
+    /// </returns>
+    public static async Task<GitVersionProbe> ReadAsync(ILogger serverLogger, string gitExecutable, CancellationToken cancellationToken)
     {
         try
         {
@@ -72,26 +75,36 @@ internal static class GitVersionReader
                 cancellationToken);
             if (exitCode != 0)
             {
-                ServerEventLog.GitVersionUnavailable(serverLogger, ErrorCodes.GitCommandError, exitCode);
-                return;
+                return Unavailable(serverLogger, ErrorCodes.GitCommandError, exitCode);
             }
 
             var version = ParseVersion(stdout);
             if (version is null)
             {
-                ServerEventLog.GitVersionUnavailable(serverLogger, ErrorCodes.GitCommandError, exitCode);
-                return;
+                return Unavailable(serverLogger, ErrorCodes.GitCommandError, exitCode);
             }
 
             ServerEventLog.GitVersion(serverLogger, version);
+            return new GitVersionProbe { Version = version };
         }
         catch (GitNotInstalledException)
         {
-            ServerEventLog.GitVersionUnavailable(serverLogger, ErrorCodes.GitNotInstalled, null);
+            return Unavailable(serverLogger, ErrorCodes.GitNotInstalled, null);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            ServerEventLog.GitVersionUnavailable(serverLogger, ErrorCodes.GitTimeout, null);
+            return Unavailable(serverLogger, ErrorCodes.GitTimeout, null);
         }
+    }
+
+    /// <summary>Log <c>git_version_unavailable</c> and return the probe that records why no version was read.</summary>
+    /// <param name="serverLogger">The server-scoped logger.</param>
+    /// <param name="errorCode">The <see cref="ErrorCodes"/> value naming why.</param>
+    /// <param name="gitExitCode">git's exit code when git exited; <c>null</c> when it never started or was killed.</param>
+    /// <returns>The probe.</returns>
+    private static GitVersionProbe Unavailable(ILogger serverLogger, string errorCode, int? gitExitCode)
+    {
+        ServerEventLog.GitVersionUnavailable(serverLogger, errorCode, gitExitCode);
+        return new GitVersionProbe { ErrorCode = errorCode, GitExitCode = gitExitCode };
     }
 }

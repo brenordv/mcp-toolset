@@ -75,6 +75,7 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
             {
                 Subcommand = "grep",
                 RepoRoot = root,
+                ConfigPins = GrepParser.OutputShapeConfig,
                 Flags = BuildFlags(ignoreCase, fixedString, countOnly),
                 AttachedOptions = BuildAttachedOptions(pattern, maxCount),
                 VerifiedRefs = verifiedRefs,
@@ -97,11 +98,11 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
                 cancellationToken: cancellationToken);
 
             IReadOnlyList<object> entries = countOnly
-                ? GrepParser.ParseCounts(result.Stdout, @ref)
-                : GrepParser.Parse(result.Stdout, @ref);
+                ? GrepParser.ParseCounts(result.Stdout, @ref, result.Truncated)
+                : GrepParser.Parse(result.Stdout, @ref, result.Truncated);
 
-            // In count mode exit 0 means git printed at least one record, so nothing parsed means the
-            // output shape was not understood; an empty success would hide that.
+            // In count mode exit 0 means git matched at least one file, and ParseCounts fails the call on output it cannot
+            // read, so nothing parsed means git printed no whole count; an empty success would hide that.
             if (countOnly && result.ExitCode == 0 && entries.Count == 0)
             {
                 ctx.Log(LogLevel.Warning, "count_parse_empty");
@@ -138,7 +139,9 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
     /// <c>always</c> in the user's or the repository's config would wrap paths and line numbers in escape
     /// codes the parsers cannot read. <c>-P</c> is used for regex search because callers expect <c>\s</c>,
     /// <c>\w</c>, <c>\d</c> and bare quantifiers; git's default BRE silently ignores them. The two matchers
-    /// are mutually exclusive, so only one is ever emitted.
+    /// are mutually exclusive, so only one is ever emitted. In line mode <c>-I</c> leaves out files git treats as
+    /// binary: git reports a match in one as a <c>Binary file &lt;path&gt; matches</c> line that carries no NUL and the path
+    /// raw, so no reader can tell where it ends. Count mode prints no such line and counts binary files, so it keeps them.
     /// </summary>
     /// <param name="ignoreCase">Whether to add <c>-i</c> for case-insensitive matching.</param>
     /// <param name="fixedString">When true, emit <c>-F</c>; otherwise emit <c>-P</c>.</param>
@@ -147,6 +150,11 @@ public sealed class GitGrepTool(ToolCommon common, IRefVerifier refVerifier)
     private static List<string> BuildFlags(bool ignoreCase, bool fixedString, bool countOnly)
     {
         var flags = new List<string> { countOnly ? "-c" : "-n", "-z", "--no-color" };
+        if (!countOnly)
+        {
+            flags.Add("-I");
+        }
+
         if (ignoreCase)
         {
             flags.Add("-i");

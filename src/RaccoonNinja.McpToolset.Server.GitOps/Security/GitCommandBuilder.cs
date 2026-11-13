@@ -46,6 +46,13 @@ public static class GitCommandBuilder
     /// <c>i18n.logOutputEncoding=UTF-8</c> keeps a repository's config from re-encoding what <c>git log</c> and
     /// <c>git show</c> print: git converts each formatted record, commit id included, into that key's encoding, or into
     /// <c>i18n.commitEncoding</c>'s when the key is unset, so a value such as <c>UTF-16</c> leaves no readable id.
+    /// <c>log.mailmap=false</c> keeps a repository's mailmap (a <c>.mailmap</c> file at the top of the working tree, or
+    /// <c>mailmap.file</c> or <c>mailmap.blob</c> in config) from rewriting the author <c>git log --author</c> matches;
+    /// the formats the server prints use <c>%an</c> and <c>%ae</c>, which git never maps.
+    /// <c>core.useReplaceRefs=false</c> keeps a repository's <c>core.useReplaceRefs=true</c> from turning replace refs
+    /// back on in git 2.19.0 to 2.41.x, where the key wins over <c>GIT_NO_REPLACE_OBJECTS</c>.
+    /// <c>submodule.recurse=false</c> keeps a repository's <c>submodule.recurse=true</c> from making <c>git grep</c>
+    /// search each checked-out submodule, whose git directory the superproject's checks never looked at.
     /// </summary>
     private static readonly IReadOnlyList<(string Key, string Value)> FixedConfig =
     [
@@ -61,7 +68,10 @@ public static class GitCommandBuilder
         ("fetch.bundleURI", string.Empty),
         ("diff.autoRefreshIndex", "false"),
         ("log.showRoot", "true"),
-        ("i18n.logOutputEncoding", "UTF-8")
+        ("i18n.logOutputEncoding", "UTF-8"),
+        ("log.mailmap", "false"),
+        ("core.useReplaceRefs", "false"),
+        ("submodule.recurse", "false")
     ];
 
     private static readonly HashSet<string> DiffBearingSubcommands = new(StringComparer.Ordinal)

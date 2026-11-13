@@ -6,6 +6,9 @@ namespace RaccoonNinja.McpToolset.Common.Files.Tests.Security;
 
 public sealed class SecretContentScannerTests
 {
+    private const int AsciiPaddingLength = 2000;
+    private const byte StrayLatin1Byte = 0xE9;
+
     private readonly SecretContentScanner _scanner = new(new EncodingDetector());
 
     [Theory]
@@ -71,6 +74,19 @@ public sealed class SecretContentScannerTests
     }
 
     [Fact]
+    public void Scan_SecretInsideIso2022EscapeBeforeLateHighByte_IsWithheld()
+    {
+        // Arrange
+        var content = Iso2022JpSpanHoldingSecret();
+
+        // Act
+        var result = _scanner.Scan(content);
+
+        // Assert
+        Assert.True(result.IsSecret);
+    }
+
+    [Fact]
     public void Scan_BinaryContent_IsNotScanned()
     {
         // Arrange
@@ -117,4 +133,11 @@ public sealed class SecretContentScannerTests
         // Assert
         Assert.Throws<ArgumentNullException>(() => _scanner.Scan(null));
     }
+
+    #region Test Helpers
+
+    private static byte[] Iso2022JpSpanHoldingSecret()
+        => [.. "\e$B"u8, .. "aws = \"AKIAIOSFODNN7EXAMPLE\""u8, .. "\e(B"u8, .. Encoding.ASCII.GetBytes(new string('a', AsciiPaddingLength)), StrayLatin1Byte];
+
+    #endregion
 }

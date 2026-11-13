@@ -12,6 +12,8 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tools;
 [McpServerToolType]
 public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
 {
+    private const string MetadataPassCutMessage = "the commit's metadata pass hit the output cap";
+
     [McpServerTool(Name = "git_show")]
     [Description("Inspect a commit, or the commit an annotated tag points to: returns its metadata plus per-file diffs. A ref naming a tree or a blob is rejected.")]
     public Task<ResultEnvelope> InvokeAsync(
@@ -42,12 +44,17 @@ public sealed class GitShowTool(ToolCommon common, IRefVerifier refVerifier)
             {
                 Subcommand = "log",
                 RepoRoot = root,
-                Flags = [$"--pretty=format:{LogParser.LogPrettyFormat}"],
+                Flags = [.. LogParser.FormatFlags],
                 AttachedOptions = [new AttachedOption("--max-count", "1")],
                 VerifiedRefs = [sha],
             };
             var metaResult = await common.ExecuteAsync(metaIntent, ctx, cancellationToken: cancellationToken);
-            var commits = LogParser.Parse(metaResult.Stdout);
+            var commits = LogParser.Parse(metaResult.Stdout, metaResult.Truncated);
+            if (commits.Count == 0 && metaResult.Truncated)
+            {
+                throw new GitCommandException(MetadataPassCutMessage);
+            }
+
             if (commits.Count == 0)
             {
                 throw new RejectedArgumentException(

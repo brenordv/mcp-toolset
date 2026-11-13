@@ -9,9 +9,6 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tools;
 [McpServerToolType]
 public sealed class GitBranchListTool(ToolCommon common)
 {
-    private const string Format =
-        "%(refname)\x1f%(HEAD)\x1f%(objectname)\x1f%(upstream:short)\x1f%(contents:subject)";
-
     [McpServerTool(Name = "git_branch_list")]
     [Description("List local branches; include remotes when 'include_remote' is true.")]
     public Task<ResultEnvelope> InvokeAsync(
@@ -32,11 +29,11 @@ public sealed class GitBranchListTool(ToolCommon common)
             {
                 Subcommand = "for-each-ref",
                 RepoRoot = root,
-                Flags = [$"--format={Format}"],
+                Flags = [BranchParser.FormatFlag],
                 PositionalServerArgs = positional,
             };
             var result = await common.ExecuteAsync(intent, ctx, cancellationToken: cancellationToken);
-            var branches = BranchParser.Parse(result.Stdout);
+            var branches = BranchParser.Parse(result.Stdout, result.Truncated);
 
             var filtersApplied = FiltersAppliedBuilder.Create()
                 .Flag("include_remote", includeRemote)

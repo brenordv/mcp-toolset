@@ -10,6 +10,8 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Runner;
 /// (never the joined string) so per-token quoting cannot leak meta-characters
 /// to the shell. Stdout/stderr are drained concurrently with a per-stream byte cap
 /// (truncate-then-flag), and a hard wall-clock timeout kills the process.
+/// Standard input is closed at once, or, when the caller passes bytes for it, written while both
+/// output streams drain and then closed.
 /// </summary>
 public sealed class GitProcessRunner(ILogger<GitProcessRunner> logger) : IGitProcessRunner
 {
@@ -25,6 +27,7 @@ public sealed class GitProcessRunner(ILogger<GitProcessRunner> logger) : IGitPro
         int? timeoutMs = null,
         int? outputCapBytes = null,
         int? callId = null,
+        byte[] standardInput = null,
         CancellationToken cancellationToken = default)
     {
         if (argv == null || argv.Count == 0)
@@ -77,8 +80,11 @@ public sealed class GitProcessRunner(ILogger<GitProcessRunner> logger) : IGitPro
                 new Dictionary<string, object> { ["executable"] = GitNotInstalledException.ExecutableDisplayName });
         }
 
-        // Close stdin immediately so git never blocks on it.
-        try { process.StandardInput.Close(); } catch { /* ignore */ }
+        if (standardInput is null)
+        {
+            // Close stdin immediately so git never blocks on it.
+            try { process.StandardInput.Close(); } catch { /* ignore */ }
+        }
 
         var stdoutBuf = new CappedBuffer(capBytes);
         var stderrBuf = new CappedBuffer(capBytes);
@@ -88,11 +94,14 @@ public sealed class GitProcessRunner(ILogger<GitProcessRunner> logger) : IGitPro
 
         var stdoutTask = PumpAsync(process.StandardOutput.BaseStream, stdoutBuf, timeoutCts.Token);
         var stderrTask = PumpAsync(process.StandardError.BaseStream, stderrBuf, timeoutCts.Token);
+        var stdinTask = standardInput is null
+            ? Task.CompletedTask
+            : WriteStandardInputAsync(process.StandardInput, standardInput, timeoutCts.Token);
 
         try
         {
             await process.WaitForExitAsync(timeoutCts.Token);
-            await Task.WhenAll(stdoutTask, stderrTask);
+            await Task.WhenAll(stdoutTask, stderrTask, stdinTask);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -128,6 +137,36 @@ public sealed class GitProcessRunner(ILogger<GitProcessRunner> logger) : IGitPro
         catch { /* swallow. process may already be gone */ }
         try { process.WaitForExit(1000); }
         catch { /* swallow */ }
+    }
+
+    /// <summary>
+    /// Write <paramref name="content"/> to git's standard input, then close it so git reads to the end. It runs beside the
+    /// output pumps, so a git that writes while it reads cannot block on a full pipe.
+    /// </summary>
+    /// <remarks>
+    /// The bytes go to the base stream, but closing the writer still flushes it, and a <see cref="StreamWriter"/> writes
+    /// its encoding's preamble on its first flush. The default standard input encoding has an empty preamble, so nothing
+    /// follows the bytes as long as <see cref="ProcessStartInfo.StandardInputEncoding"/> stays unset.
+    /// </remarks>
+    /// <param name="standardInput">The process's standard input writer.</param>
+    /// <param name="content">The bytes to write.</param>
+    /// <param name="cancellationToken">Token that stops the write when the call times out or is cancelled.</param>
+    /// <returns>A task that completes once the input is written and closed, or git closed its end first.</returns>
+    private static async Task WriteStandardInputAsync(StreamWriter standardInput, byte[] content, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await standardInput.BaseStream.WriteAsync(content.AsMemory(), cancellationToken);
+            await standardInput.BaseStream.FlushAsync(cancellationToken);
+        }
+        catch (IOException)
+        {
+            // git closed its end before reading everything; its exit code reports why.
+        }
+        finally
+        {
+            try { standardInput.Close(); } catch (IOException) { /* the pipe is already gone */ }
+        }
     }
 
     private static async Task PumpAsync(Stream stream, CappedBuffer sink, CancellationToken cancellationToken)

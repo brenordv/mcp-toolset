@@ -22,7 +22,8 @@ wired up, so the assistant can't mutate your repository through this server.
 
 ### What's in the toolset
 
-`status`, `diff`, `log`, `show`, `blame`, `grep`, `ls-files`, `branch list`, `reflog`, and `stash` inspection.
+`status`, `diff`, `log`, `show`, `blame`, `grep`, `ls-files`, `branch list`, `reflog`, and `stash` inspection, plus
+the version of the git the server runs.
 There's no `commit`, `push`, `checkout`, `reset`, or any other writing subcommand aren't implemented.
 
 Collection-returning tools wrap their payload in a uniform [result envelope](#the-result-envelope) carrying `count`,
@@ -33,15 +34,15 @@ Argument handling is centralized. Tools declare a typed intent; one builder turn
 hardening prefix, an `--end-of-options` barrier, a scrubbed environment, and repo-confined pathspecs. See
 [Security model](#security-model).
 
-Every tool takes an absolute `cwd`. The server resolves the repo root via `git rev-parse --show-toplevel` (cached per
-`cwd`), so the assistant doesn't need to know the repo layout.
+Every tool but `git_version` takes an absolute `cwd`. The server resolves the repo root via
+`git rev-parse --show-toplevel` (cached per `cwd`), so the assistant doesn't need to know the repo layout.
 
 ---
 
 ## How a call works
 
-Every tool runs through the same pipeline. The only things that change are which git subcommand fires and how the
-output gets parsed.
+Every tool but `git_version` runs through the same pipeline. The only things that change are which git subcommand
+fires and how the output gets parsed.
 
 ```mermaid
 flowchart TD
@@ -60,14 +61,20 @@ flowchart TD
     I --> L
 ```
 
-A few rules apply to every call regardless of tool:
+A few rules apply to every call that runs git:
 
 - **Timeout**: 30 s wall-clock. If the subprocess runs longer, the process tree is killed and a `GitTimeout` error is
   returned.
 - **Output cap**: 8 MB per stream, truncate-then-flag. Oversized output sets `truncated: true` on the envelope instead
-  of blowing up memory. The one exception is the filter-driver listing that runs before `git status`, `git diff`, and
-  `git blame` (see [Security model (long version)](#security-model-long-version)): a listing that hits the cap fails
-  the call with `GitCommandError`, since a driver past the cap would go unpinned.
+  of blowing up memory. Two passes fail the call with `GitCommandError` instead: the filter-driver listing that runs
+  before `git status`, `git diff`, and `git blame` (see [Security model (long version)](#security-model-long-version)),
+  since a driver past the cap would go unpinned, and `git_blame`'s author pass
+  (`the blamed commits' author pass hit the output cap`), since a missing author would go unread. `git_diff` also fails
+  when its `--numstat` pass hits the cap while the patch lists an unmerged path (see [`git_diff`](#git_diff)).
+  `git_show` fails when the cap cuts its metadata pass before the commit's author
+  (`the commit's metadata pass hit the output cap`). `git_ls_files` and `git_status` leave out a last path whose
+  NUL did not arrive (for a `git_status` rename or copy, its original path's NUL), since a path cut short can be the
+  whole name of another file.
 - **stdout protection**: a sentinel guards the stdio transport so stray writes can't corrupt the MCP protocol stream.
   All logging goes to a file or stderr.
 
@@ -89,6 +96,7 @@ A few rules apply to every call regardless of tool:
 | [`git_reflog`](#git_reflog)           | Recent reflog entries                                     | `cwd`, `maxCount`                                                                                  |
 | [`git_stash_list`](#git_stash_list)   | List stash entries                                        | `cwd`                                                                                              |
 | [`git_stash_show`](#git_stash_show)   | Diff for a single stash entry                             | `cwd`, `index`                                                                                     |
+| [`git_version`](#git_version)         | Version of the git the server runs                        | none |
 
 ---
 
@@ -124,7 +132,7 @@ Returns a unified diff in one of four modes, picked by the parameters you pass (
 - **worktree**: unstaged changes (default)
 - **staged**: index vs `HEAD` (`staged: true` adds `--cached`)
 - **ref_to_ref**: `fromRef` to `toRef` (any branch/tag/SHA; `toRef` defaults to the working tree)
-- **stat_only**: per-file add/delete counts and change kind, no patch text
+- **stat_only**: per-file add/delete counts, change kind, and `is_binary`, no patch text
 
 `fromRef` also accepts a git range expression: `A..B` (two-dot, the same diff as `fromRef: A, toRef: B`)
 or `A...B` (three-dot, the diff from the merge base of `A` and `B` to `B`). A range must be the sole ref;
@@ -167,14 +175,19 @@ file's content matches the index but its timestamps do not (a touched file, an e
 repository), git's own `git diff` refreshes the timestamps in the index and leaves the file out; the server runs git
 with `-c diff.autoRefreshIndex=false` instead. The patch modes still leave such a file out, since it has no changed
 line, and so does `statOnly: true` for a text file, since git's `--numstat` omits a modified text file with no
-changed line. `statOnly: true` lists a binary one as `modified` with 0 additions and 0 deletions, as it lists a
-mode-only or binary change. To tell them apart, call `git_diff` for those paths without `statOnly`: a mode or binary
-change has an entry there, a binary file whose timestamps alone changed does not. Every call compares such files'
-content again, so in a large copied repository a call can hit the 30 s timeout, or a pass that lists them
-(`--numstat` lists the binary ones, the `statOnly` `--name-status` pass lists all of them) can reach the 8 MB cap
-and return `truncated: true`; passing `paths` narrows every pass. In a repository you trust, a `git status` or
-`git update-index -q --refresh` in your own shell refreshes the timestamps and clears them; both can run commands the
-repository's config names (filter drivers, `core.fsmonitor`), which the server pins off.
+changed line. `statOnly: true` lists a binary one as `modified` with 0 additions, 0 deletions, and
+`is_binary: true`, as it lists a binary change (git's `--numstat` prints `-` for both counts of a binary file); a
+mode-only change is listed the same way with `is_binary: false`. To tell a binary change from a binary file whose
+timestamps alone changed, call `git_diff` for those paths without `statOnly`: a binary change has an entry there, the
+other does not. Every call compares those stat-dirty files' content again, so in a large copied repository a call
+can hit the 30 s timeout, or a pass that lists them (`--numstat` lists the binary ones, the `statOnly`
+`--name-status` pass lists all of them) can reach the 8 MB cap and return `truncated: true`; passing `paths` narrows
+every pass. In a repository you trust, a `git status` or `git update-index -q --refresh` in your own shell refreshes
+the timestamps and clears them; both can run commands the repository's config names (filter drivers,
+`core.fsmonitor`), which the server pins off.
+
+`is_binary` is git's verdict: a `.gitattributes` `-diff` or `binary` entry, or a `diff.<driver>.binary` key in the
+repository's config, makes git treat a text file as binary, so a file with `is_binary: true` may still be text.
 
 ```mermaid
 flowchart TD
@@ -194,8 +207,9 @@ flowchart TD
 
 ### `git_log`
 
-Returns commits matching the given filters, parsed from a fixed `--pretty=format` directive into `Commit` records
-(hash, short hash, author, authored/committed timestamps, relative time, subject, body, parents).
+Returns commits matching the given filters, parsed from a fixed `-z --pretty=tformat:` directive, fields separated by
+NUL (see [Security model (long version)](#security-model-long-version)), into `Commit` records (hash, short hash,
+author, authored/committed timestamps, relative time, subject, body, parents).
 
 Filters: `author`, `since`, `until`, `grep` (message match; a basic regular expression by default, passed as
 `--basic-regexp` so a `grep.patternType` in the user's or the repository's git config does not change it;
@@ -206,6 +220,10 @@ uses, so `A|B` alternation and `\d` work; a git without PCRE2 returns `PcreUnava
 cannot be combined with `ref`), `follow` (track renames, only when scoped to a single path; a `log.follow` setting in
 git config does not turn it on), and `maxCount` (default 50).
 
+`author` matches the author recorded in each commit, the one the result prints: every call passes
+`-c log.mailmap=false`, so a repository's `.mailmap` (or `mailmap.file` or `mailmap.blob` in config), which git
+2.23.0 and later apply to `--author` by default, cannot change what it matches.
+
 Every call also passes `--ignore-submodules=dirty`, so a submodule ignore setting cannot drop a submodule's commit
 change from the diff git builds for `pickaxe` or `follow`; see
 [Security model (long version)](#security-model-long-version).
@@ -215,7 +233,7 @@ flowchart LR
     A[git_log: cwd + filters] --> B[Resolve root]
     B --> C[Verify ref → SHA if provided]
     C --> D[Confine paths]
-    D --> E["git log --pretty=format:… <br/>--author --since --until --grep -S<br/>--basic-regexp or -P [--all]<br/>--ignore-submodules=dirty<br/>--max-count [--follow] ref -- pathspecs"]
+    D --> E["git log -z --pretty=tformat:… <br/>--author --since --until --grep -S<br/>--basic-regexp or -P [--all]<br/>--ignore-submodules=dirty<br/>--max-count [--follow] ref -- pathspecs"]
     E --> F[LogParser → Commit records]
     F --> G[ResultEnvelope · filters_applied]
 ```
@@ -237,6 +255,9 @@ submodule keys in your git config cannot change the header each file is read fro
 `--ignore-submodules=dirty`, so a submodule ignore setting cannot hide a submodule whose recorded commit changed; see
 [Security model (long version)](#security-model-long-version).
 
+If the 8 MB cap cuts the metadata pass before the commit's author, the call fails with `GitCommandError`
+(`the commit's metadata pass hit the output cap`) instead of reading as a tree or a blob.
+
 A `ref` in `<rev>:<path>` form (`HEAD:README.md`, `:README.md`, or `HEAD:` for the root tree) names a file or tree,
 not a commit, and is rejected with a
 `RejectedArgument` that points at `git_file_at_ref`. A colon inside `@{...}` or `^{...}` is part of the commit-ish,
@@ -248,9 +269,10 @@ flowchart TD
     B --> R{ref is rev:path?}
     R -- yes --> X[RejectedArgument → use git_file_at_ref]
     R -- no --> C[Verify ref → SHA<br/>required]
-    C --> D["git log -1 --pretty=format:… SHA<br/>(metadata)"]
+    C --> D["git log -1 -z --pretty=tformat:… SHA<br/>(metadata)"]
     D --> N{commit listed?}
     N -- no --> Y[RejectedArgument: tree or blob]
+    N -- cut by the cap --> Z[GitCommandError<br/>metadata pass hit the output cap]
     N -- yes --> E["git show --format= --no-color --src-prefix=a/<br/>--dst-prefix=b/ --submodule=short<br/>--ignore-submodules=dirty commit id -- pathspecs<br/>(patch)"]
     D --> F[Commit record]
     E --> G[FileDiff list]
@@ -331,6 +353,19 @@ Returns per-line attribution (author, commit, timestamp) for one file, optionall
 range and optionally at a specific `ref`. Uses `--porcelain` output for parseability. The line range is validated
 (`start >= 1`, `end >= start`); invalid ranges return a `RejectedArgument` error.
 
+Each line is `{line_no, content, commit_hash, author_name, mailmap_author_name, authored_at, relative_time}`.
+`author_name` is the author recorded in the commit, the name `git_log` and `git_show` report. `git blame` shows every
+author through the repository's mailmap (a `.mailmap` at the top of the working tree, or `mailmap.file` or
+`mailmap.blob` in config) and has no switch to stop it, so the server reads the recorded authors with one more git
+process, `git log --no-walk --stdin`, given the blamed commit ids on standard input. When the mailmap shows a line's
+author under another name, the line also carries that name in `mailmap_author_name`; a line the mailmap leaves alone
+has no `mailmap_author_name`, and neither does a line not committed yet (`commit_hash` all zeros, which `git blame`
+without `ref` reports for uncommitted changes). If that pass's output does not name each blamed commit exactly once,
+the call fails with `GitCommandError`, and the server log's `tool_error` line says
+`git log returned an author list that does not match the blamed commits`; if the pass hits the 8 MB cap, it says
+`the blamed commits' author pass hit the output cap`. The pass separates its fields with NUL, so an author name holding
+any other byte comes back as recorded (see [Security model (long version)](#security-model-long-version)).
+
 ```mermaid
 flowchart LR
     A[git_blame: cwd, path, range, ref] --> B[Resolve root]
@@ -342,7 +377,9 @@ flowchart LR
     F --> H["git blame --porcelain [-L …] [ref] -- path"]
     G --> H
     H --> I[BlameParser → BlameLine list]
-    I --> J[ResultEnvelope]
+    I --> K["git log --no-walk --stdin<br/>-z --pretty=tformat:%H%x00%an<br/>(commit ids on stdin)"]
+    K --> L[author_name = recorded author<br/>mailmap_author_name when it differs]
+    L --> J[ResultEnvelope]
 ```
 
 ---
@@ -350,8 +387,14 @@ flowchart LR
 ### `git_grep`
 
 Searches tracked content, optionally at a historical `ref`, so you can grep a past revision without checking it out.
-Uses `-n -z` (line numbers, NUL-delimited), or `-c -z` in count mode, plus `--no-color`, so a `color.ui` or
-`color.grep` setting of `always` in your git config cannot put escape codes in paths and line numbers.
+Uses `-n -z` (a NUL after each path and line number), or `-c -z` in count mode, plus `--no-color`, so a `color.ui`
+or `color.grep` setting of `always` in your git config cannot put escape codes in paths and line numbers, and
+`-c grep.column=false`, so a `grep.column` setting cannot add a column field. With `-z` git prints a path as stored,
+unquoted, so it can hold a newline (a tree entry can on any OS, and `ref` reads trees); the server reads each field
+up to the NUL or newline that ends it (see [Security model (long version)](#security-model-long-version)). Line mode
+also passes `-I`, so a file git treats as binary (by its content, or because a `binary` or `-diff` attribute in the
+repository says so) is left out, where git would print a `Binary file <path> matches` line with no NUL; count mode,
+which prints no such line, still counts such a file.
 
 - `fixedString` (default `true`) → literal search (`-F`).
 - `fixedString: false` → Perl-compatible regex (`-P`), so `\s`, `\w`, `\d`, and bare quantifiers work the way callers
@@ -385,7 +428,7 @@ flowchart TD
     A[git_grep: cwd, pattern, opts] --> B[Resolve root]
     B --> C[Verify ref → SHA if provided]
     C --> D[Confine paths]
-    D --> E["git grep (-n | -c) -z --no-color [-i] (-F | -P)<br/>-e pattern [-m N] [ref] -- pathspecs"]
+    D --> E["git -c grep.column=false grep<br/>(-n -I | -c) -z --no-color [-i] (-F | -P)<br/>-e pattern [-m N] [ref] -- pathspecs"]
     E --> F{exit code}
     F -- 0 --> G[matches]
     F -- 1 --> H[no matches = success]
@@ -428,8 +471,11 @@ flowchart LR
 
 ### `git_branch_list`
 
-Lists local branches, and remotes when `includeRemote: true`. Uses `git for-each-ref` with a unit-separator (`\x1f`)
-format so each branch yields its refname, HEAD marker, object name, upstream, and subject parsed into `Branch` records.
+Lists local branches, and remotes when `includeRemote: true`. Uses `git for-each-ref` with a format that ends each
+field with NUL (`%00`), so each branch yields its refname, HEAD marker, object name, upstream, and subject parsed
+into `Branch` records (see [Security model (long version)](#security-model-long-version)). `upstream` is the
+repository's own config text (`branch.<name>.merge`, mapped through the remote's fetch refspec, or as it is when
+`branch.<name>.remote` is `.`), printed unchecked, so it can hold any text, newlines included.
 
 ```mermaid
 flowchart LR
@@ -449,7 +495,7 @@ and a human `relative_time`. Useful for recovering lost work or following recent
 ```mermaid
 flowchart LR
     A[git_reflog: cwd, maxCount] --> B[Resolve root]
-    B --> C["git reflog show --format=… --max-count N"]
+    B --> C["git reflog show -z --format=tformat:… --max-count N"]
     C --> D[ReflogParser → ReflogEntry list]
     D --> E[ResultEnvelope]
 ```
@@ -458,12 +504,13 @@ flowchart LR
 
 ### `git_stash_list`
 
-Lists stash entries with selector, subject, and timestamp via `%gd%x1f%gs%x1f%at`, parsed into `StashEntry` records.
+Lists stash entries with selector, subject, and timestamp via `-z --format=tformat:%gd%x00%gs%x00%at`, parsed into
+`StashEntry` records.
 
 ```mermaid
 flowchart LR
     A[git_stash_list: cwd] --> B[Resolve root]
-    B --> C["git stash list --format=%gd…%gs…%at"]
+    B --> C["git stash list -z --format=tformat:%gd…%gs…%at"]
     C --> D[StashListParser → StashEntry list]
     D --> E[ResultEnvelope]
 ```
@@ -493,6 +540,27 @@ flowchart TD
     E --> F[DiffParser: merge patch + counts]
     F --> G[DiffResult]
     G --> H[ResultEnvelope]
+```
+
+---
+
+### `git_version`
+
+Returns `{ version }`, the text after `git version ` that the server read from the git it runs, once, when it started:
+the same value as the server log's `git_version` line (see [Logging](#logging)). It takes no arguments (any argument
+is `InvalidArgument`), starts no git process, and reads no repository, so its envelope has no `repo_root`. When the
+startup call read no version, each call fails with the `error_code` that call logged: `GitNotInstalled` (no git on
+`PATH`, or it could not start), `GitTimeout` (`git version` did not exit within 5 seconds), or `GitCommandError`, the
+last with `git_exit_code` in `detail` when git exited (0 means git exited cleanly but printed no version line the
+server accepts). Restart the server after installing or changing git.
+
+```mermaid
+flowchart LR
+    A[git_version: no arguments] --> B{version read at startup?}
+    B -- yes --> C["payload { version }"]
+    B -- no --> D[GitNotInstalled, GitTimeout, or GitCommandError]
+    C --> E[ResultEnvelope]
+    D --> E
 ```
 
 ---
@@ -545,8 +613,33 @@ On failure, `results` is a well-formed empty list and `error` carries a structur
 | `RejectedArgument`  | An argument failed shape validation      |
 | `InvalidArgument`   | Argument names/types did not fit schema  |
 | `GitTimeout`        | The subprocess exceeded the 30 s timeout |
-| `GitCommandError`   | git exited non-zero for another reason   |
+| `GitCommandError`   | git failed, or its output was unreadable |
 | `PcreUnavailable`   | Regex requested but git lacks PCRE2      |
+
+`GitCommandError` covers these failures, and its message says which. When git exited with a code the tool does not
+accept (`git <subcommand> failed (exit N)`), the envelope's `detail` and the log's `tool_error` line carry
+`git_exit_code`, a `subprocess_exit` Warning holds the end of git's stderr, and the call counts in
+`git_command_errors_total`. When git exited 0 and the server could not read its output safely (output that is not
+whole NUL-framed records, a `git_blame` author pass that does not match the blamed commits or hit the output cap, a
+filter-driver listing over the cap or naming a driver the server cannot pin, a `git_show` metadata pass the cap cut
+before its author, a malformed object id, or a `git_diff` patch it cannot read safely around an unmerged path), the
+failure carries no `git_exit_code`, logs no `subprocess_exit` Warning, and does not count in
+`git_command_errors_total`; with `MCP_GITOPS_LOG_LEVEL=DEBUG`, the call's `subprocess_exit` Debug line still shows
+git's exit code and `truncated`. `git_version` fails with `GitCommandError` when the startup `git version` call
+exited non-zero or printed no version line the server accepts: it carries `git_exit_code` (0 in the second case),
+its Warning is the startup `git_version_unavailable` line (see [Logging](#logging)), and it does not count in
+`git_command_errors_total`. An unexpected error inside the server is `GitCommandError` too, with the message
+`unexpected error inside tool. see server logs`: its `tool_error` line carries the exception's type chain in
+`stderr_tail`, it has no `git_exit_code` and logs no `subprocess_exit` Warning, and it counts only in
+`tool_calls_total`, as `<tool>:error`.
+
+`NotAGitRepository` also covers a `cwd` whose repository's own `core.worktree` names a work tree in which git finds
+another repository, or none, and every `cwd` when the server runs a git older than 2.13.0, which has no
+`--absolute-git-dir` (see [Requirements](#requirements)); the message is then `the work tree git reports for cwd
+leads to another repository or to none` (see [Security model (long version)](#security-model-long-version)). It
+also covers a `cwd` whose `.git` file, `.git` link, or `commondir` file leads to a git directory that belongs to
+another checkout, and a linked worktree moved or copied by hand until `git worktree repair` runs; the message is then
+`the git directory git reads for cwd belongs to another checkout`.
 
 Client-facing error detail is data-free (exit code, parameter name). The scrubbed git stderr tail is logged
 server-side only, since it can echo user-controlled paths or refs.
@@ -598,12 +691,13 @@ flowchart TD
     F --> G[--end-of-options before positional refs<br/>omitted for git grep]
     G --> S["Pathspecs after --<br/>paths as :(literal)…, excludes as :(exclude)…,<br/>globs bare"]
     S --> H[ArgumentList execution<br/>no shell, no string join]
-    H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1<br/>GIT_NO_LAZY_FETCH=1<br/>GIT_ALLOW_PROTOCOL=none]
+    H --> I[Scrubbed environment<br/>allowlist + GIT_TERMINAL_PROMPT=0<br/>GIT_CONFIG_NOSYSTEM=1<br/>GIT_NO_LAZY_FETCH=1<br/>GIT_ALLOW_PROTOCOL=none<br/>GIT_NO_REPLACE_OBJECTS=1<br/>GIT_GRAFT_FILE=/nonexistent/…]
 ```
 
 - **One argv producer.** Tools declare a typed `GitIntent`; a single `GitCommandBuilder` is the only code that
   serializes it to argv. It prepends fixed `-c` neutralizers (disable hooks, pager, fsmonitor, credential helpers,
-  askpass, auto-gc, signature verification, rename following from config, the index refresh in `git diff`) and,
+  askpass, auto-gc, signature verification, rename following from config, the index refresh in `git diff`, the mailmap
+  in `git log`, replace refs, submodule recursion in `git grep`) and,
   before any positional ref, inserts `--end-of-options` so no user value can be read as an option (git grep excepted:
   its pattern is a glued `-e` token and its refs are pre-resolved SHAs). `log.showSignature=false` is there because
   verifying a signed commit runs the program `gpg.program`, `gpg.ssh.program`, or `gpg.x509.program` names, and a
@@ -617,9 +711,59 @@ flowchart TD
   `git show` print no diff for a root commit and keeps `git log` with `-S` or `--follow` from listing one.
   `i18n.logOutputEncoding=UTF-8` is there because git re-encodes each record `git log` and `git show` format, commit id
   included, into that key's encoding, or into `i18n.commitEncoding`'s when that key is not set, so a value such as
-  `UTF-16` leaves no readable commit id.
+  `UTF-16` leaves no readable commit id. `log.mailmap=false` is there because a repository's mailmap otherwise rewrites
+  the author `git log --author` matches, while `git_log` prints the recorded author; `git blame` has no such switch
+  (see [`git_blame`](#git_blame)). `core.useReplaceRefs=false` is there for git 2.19.0 to 2.41.x (see the Replace refs
+  and grafts ignored bullet below). `submodule.recurse=false` is there because a repository's `submodule.recurse=true`
+  makes `git grep` search each checked-out submodule's repository too, one the work-tree check below never looked at;
+  `git_grep` searches the superproject only, that setting of your own included.
 - **Refs are verified, not trusted.** Any ref is resolved to a SHA via `git rev-parse --verify --end-of-options <ref>`
   before it's used.
+- **The work tree is checked.** A repository's own config (`.git/config`, or a worktree's `config.worktree`) can set
+  `core.worktree`, which makes `git rev-parse --show-toplevel` report any directory, and every git process of a call
+  runs with `-C` at that directory, where git finds whatever repository holds it. So when the server first resolves
+  a `cwd` it runs `git rev-parse --absolute-git-dir` from `cwd` and from the top level, and fails the call with
+  `NotAGitRepository` when the two differ or git finds no repository at the top level. git prints that path as its
+  own real path, so a `cwd` reached through a symbolic link or a junction compares like its target. A submodule,
+  whose git directory under `.git/modules/` names its checkout through `core.worktree`, and a linked worktree pass,
+  since the `.git` file at their top level names the same git directory. git's environment carries no `GIT_DIR` or
+  `GIT_WORK_TREE`. A `.git` file (`gitdir: <path>`), a `.git` symbolic link or junction, or a `commondir` file can name
+  any git directory, another repository's included, and both discoveries then read the same thing, so the server also
+  runs `git rev-parse --path-format=absolute --git-common-dir` and checks that the git directory belongs to the
+  checkout. It accepts the checkout's own `.git` directory with no `commondir`; a linked worktree's directory under
+  the common directory's `worktrees/`, whose `gitdir` file must name the checkout's `.git` back (a file that is
+  missing, empty, a link, or over 4 KB names nothing); a git directory whose own config sets `core.worktree`, as an
+  absorbed submodule's does; and otherwise a git directory git would not treat as another checkout's, so none of its
+  path segments is `.git` and no `.git` sits beside it. Anything else fails the call with `NotAGitRepository`. A
+  linked worktree moved or copied by hand keeps the old backlink and fails the same way until you run
+  `git worktree repair` in it. What the check cannot see: a `.git` file naming another checkout's separate git
+  directory (`git init --separate-git-dir`, which names no checkout back) by its path, a git directory the folder
+  brings whose `objects`, `refs`, or `packed-refs` are links into another repository or whose
+  `objects/info/alternates` names another object store, an alias of `.git` (an 8.3 short name) in an earlier path
+  segment on Windows past the 260-character path limit, and a `cwd` that is itself a symbolic link, which every tool
+  follows. So in a folder you did not clone yourself, read its `.git`, and check that `cwd` is not a link, before you
+  trust what the tools report there.
+- **Records are framed by NUL.** `git_log`, the `git_show` metadata pass, `git_blame`'s author pass, `git_reflog`, and
+  `git_stash_list` print their fields with `%x00` between them and `-z`, which ends each record with NUL.
+  `git_branch_list` prints `%00` after each `git for-each-ref` field; that command has no `-z` and ends each ref with
+  a newline, which the server expects right after a ref's last NUL. `git_grep` prints a path and a line number each
+  ended by NUL, then the line and a newline (in count mode, a path ended by NUL, then the count and a newline); the
+  server reads the path to its NUL, the number to its NUL or newline, and the line to its newline, so a path holding a
+  newline cannot add or shift a match. git prints every such field (commit text, author
+  names, reflog messages, a branch's upstream) as text that stops at the first NUL, so a commit, an author name, a
+  reflog message, or a repository's own config cannot add, split, or shift a record, whatever bytes it holds
+  (newlines and the 0x1E and 0x1F bytes included); a field ends early at a NUL that re-encoding a commit's declared
+  encoding produces. Output that is not a whole number of records fails the call with `GitCommandError`.
+  Output cut by the 8 MB cap sets `truncated: true` and returns its last record cut short when the cut falls in free
+  text (the field at the cut keeps its first bytes, later fields are empty, so a later time reads as the Unix epoch),
+  so treat the last item of a truncated reply as partial. A last record the cap may have cut inside a field that names
+  something is left out, since git reads a name as a ref before an abbreviated id and a cut id passed back as `ref`
+  could name another ref: `git_log` and `git_reflog` leave out their last record unless a field after its hash, short
+  hash, and parents (reflog: selector) is non-empty, `git_show` fails with `GitCommandError` when its metadata pass was
+  cut that early, `git_grep` keeps a cut last match only when its path and line number arrived whole and leaves out a
+  cut last count, `git_stash_list` leaves out an entry cut inside its selector, `git_branch_list` leaves out its last
+  ref unless that ref's subject is non-empty, and `git_blame`'s author pass fails the call instead (see
+  [`git_blame`](#git_blame)).
 - **Paths are confined.** Each path is resolved under the repo root and rejected if it uses a UNC, device, or
   drive-relative prefix, an NTFS alternate data stream, or otherwise escapes the root. The result is a repo-relative
   POSIX path placed after `--` as a `:(literal)` pathspec, so wildcards in it are plain characters.
@@ -661,6 +805,23 @@ flowchart TD
   (patch, stat, or pickaxe output, or rename detection); other reads fail with git's missing-object error alone. On
   2.29.0 to 2.38.x, and on 2.45.0, `git_grep` with `ref` leaves out a file whose blob is missing and logs no Warning.
   In a partial clone you trust, run the same git command in your own shell once to fetch what it needs.
+- **Replace refs and grafts ignored.** A repository that arrives with its `.git` can carry replace refs
+  (`refs/replace/<id>`), which make git read another object's content under the original id, and a `.git/info/grafts`
+  file, whose lines give a commit other parents, so `git_show`, `git_log`, `git_diff`, `git_file_at_ref`, `git_grep`
+  with `ref`, and `git_blame` would report the substitute. Every git process gets `GIT_NO_REPLACE_OBJECTS=1` and
+  `GIT_GRAFT_FILE` set to a path that does not exist, so git reads objects as stored and no grafts; every git from
+  2.6.1 on reads both. On git 2.19.0 to 2.41.x a repository's `core.useReplaceRefs=true` turns replace refs back on
+  over the variable, so every call also passes `-c core.useReplaceRefs=false`. Replace refs and grafts you made
+  yourself no longer apply through the tools either. An object id still does not vouch for content in a repository
+  you did not clone yourself: current git (2.56.0 checked) does not re-hash the objects these reads parse, and it
+  takes a commit's parents from `.git/objects/info/commit-graph` without checking them against the commit, so a
+  `.git` can store other content under a known id with no replace ref. Run `git fsck` in your own shell before you
+  trust ids there. A `.git/shallow` file still applies: git gives each commit it lists no parents, which a shallow
+  clone needs, so a planted one can end the history the tools show at any commit it names (`git_log` stops there,
+  `git_show` lists that commit's whole tree as added, `git_blame` attributes older lines to it). It cannot change an
+  object's content. The server cannot tell such a file from a real shallow clone, so in a repository you did not
+  clone yourself, check for `.git/shallow` before you trust where its history starts; through the tools a shallow
+  boundary looks like a root commit (`parents` empty).
 - **Filter drivers pinned.** `git status`, a `git diff` against the working tree, and `git blame` without a revision
   hash worktree files, and hashing a file runs the `clean` or `process` command of the filter driver its `filter`
   attribute selects (from `.gitattributes` or `.git/info/attributes`). The driver is defined in config
@@ -732,6 +893,7 @@ Right after `server_start`, the server logs the version of the git it found: a `
 `git_version` field holds the text after `git version ` (for example `2.55.0`), or a `git_version_unavailable` Warning
 with `error_code` `GitNotInstalled`, `GitTimeout`, or `GitCommandError` when no git was found on `PATH` or it failed to
 start, takes more than 5 seconds, exits non-zero, or prints something else; `git_exit_code` is set whenever git exited.
+The [`git_version`](#git_version) tool returns the same value, or fails with the same `error_code` and `git_exit_code`.
 
 ---
 
@@ -746,14 +908,17 @@ TODO: Add instructions to build on Windows, macOS, and Linux.
 - **`git` on `PATH`**: required. It must sit in a directory your `PATH` names by an absolute path (`.` and other
   relative entries, and quoted ones, are skipped). The server looks for it once at startup, so restart the server
   after installing or moving git. This server runs your system `git` for every call; without it, tools fail with a
-  `GitNotInstalled` error. Any reasonably recent `git` works. The lazy-fetch block in the security model has two parts.
-  `GIT_NO_LAZY_FETCH=1` stops the fetch before it starts on git 2.45.1 or later, or 2.39.4, 2.40.2, 2.41.1, 2.42.2,
-  2.43.4, 2.44.1, or a later release in the same series. git 2.45.0 honors it only in part and an older git ignores it,
-  so there a tool call in a repository with a promisor remote can still start a fetch (a `git fetch` child from 2.29.0
-  on, inside git itself before that); `GIT_ALLOW_PROTOCOL=none` and `-c fetch.bundleURI=` stop that fetch before it
-  starts a transport program or downloads a bundle. Every git from 2.6.1 on reads `GIT_ALLOW_PROTOCOL`, and no git
-  before 2.17.0 fetches a missing object on demand. The server log's `git_version` line shows the version of the git
-  the server runs.
+  `GitNotInstalled` error. Every call that takes `cwd` needs git 2.31.0 or later: the work-tree check (see
+  [Security model (long version)](#security-model-long-version)) runs `git rev-parse --absolute-git-dir`, which git
+  before 2.13.0 does not have (every such call then fails with `NotAGitRepository`) and which prints a real path from
+  a subdirectory only from 2.31.0 on. The server does not check git's version at startup. The lazy-fetch block in
+  the security model has two parts. `GIT_NO_LAZY_FETCH=1` stops the fetch before it starts on git 2.45.1 or later,
+  or 2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1, or a later release in the same series. git 2.45.0 honors it only
+  in part and an older git ignores it, so there a tool call in a repository with a promisor remote can still start a
+  fetch (a `git fetch` child from 2.29.0 on, inside git itself before that); `GIT_ALLOW_PROTOCOL=none` and
+  `-c fetch.bundleURI=` stop that fetch before it starts a transport program or downloads a bundle. Every git from
+  2.6.1 on reads `GIT_ALLOW_PROTOCOL`, and no git before 2.17.0 fetches a missing object on demand. The server log's
+  `git_version` line shows the version of the git the server runs, and the `git_version` tool returns it.
 - **.NET runtime**: *not* needed for the released binaries. Each release ships a self-contained, single-file
   executable per platform ([Releases and verification](../../README.md#releases-and-verification)), so there's nothing
   extra to install to run it.
@@ -788,8 +953,8 @@ Add an entry to your MCP configuration (e.g. `.mcp.json` at your project root, o
 ### Verifying the connection
 
 After adding the server, restart Claude Code and run `/mcp` (or `claude mcp list`) to confirm `git-ops` is connected.
-The tools appear as `git_status`, `git_diff`, `git_log`, and so on. Each call needs an absolute `cwd` inside a git
-repository. Claude Code supplies the working directory automatically.
+The tools appear as `git_status`, `git_diff`, `git_log`, and so on. Each call except `git_version` needs an absolute
+`cwd` inside a git repository. Claude Code supplies the working directory automatically.
 
 > Quick note: This project follows the MCP protocol, so this tool should work with any AI agent.
 

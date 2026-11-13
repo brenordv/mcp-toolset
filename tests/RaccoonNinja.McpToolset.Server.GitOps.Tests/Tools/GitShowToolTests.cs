@@ -20,6 +20,15 @@ public sealed class GitShowToolTests : IDisposable
     private const string HeadTree = "HEAD^{tree}";
     private const string RegularFileMode = "100644";
     private const string ExecutableFileMode = "100755";
+    private const string ForgedSubject = "forged";
+    private const string ShiftingAuthorName = "Evil\u001fforged@example.com\u001f1000000000";
+    private const string MetadataPassSubcommand = "log";
+    private const int KeptBytesInsideTheShortHash = 45;
+    private const int KeptBytesInsideTheParents = 60;
+    private const int KeptBytesInsideTheSubject = 144;
+    private const int KeptHashBytes = 20;
+    private const string CutSubject = "sec";
+    private const string MetadataPassCutMessage = "the commit's metadata pass hit the output cap";
 
     private const string PatchShapedTagMessage =
         "diff --git a/fake.txt b/fake.txt\n" +
@@ -42,13 +51,7 @@ public sealed class GitShowToolTests : IDisposable
         _repo.Run("add", ".");
         _repo.Run("commit", "-m", SecondSubject);
 
-        var common = new ToolCommon(
-            new RepoRootResolver(TestGit.Executable),
-            new GitProcessRunner(NullLogger<GitProcessRunner>.Instance),
-            new SessionMetrics(),
-            NullLoggerFactory.Instance,
-            TestGit.Executable);
-        _tool = new GitShowTool(common, new RefVerifier(TestGit.Executable));
+        _tool = BuildTool(new GitProcessRunner(NullLogger<GitProcessRunner>.Instance));
     }
 
     public void Dispose() => _repo.Dispose();
@@ -223,4 +226,95 @@ public sealed class GitShowToolTests : IDisposable
         Assert.Equal(headHash, commit.Hash);
         Assert.Equal(SecondSubject, commit.Subject);
     }
+
+    [Fact]
+    public async Task Show_WithReplaceRefOnHeadCommit_ReturnsStoredCommit()
+    {
+        // Arrange
+        var headHash = _repo.ReplaceHeadCommit(ForgedSubject);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        var commit = Assert.IsType<Commit>(payload["commit"]);
+        Assert.Equal(headHash, commit.Hash);
+        Assert.Equal(SecondSubject, commit.Subject);
+    }
+
+    [Fact]
+    public async Task Show_AuthorNameHoldingFieldSeparators_ReportsUnshiftedFields()
+    {
+        // Arrange
+        var head = _repo.CommitWithAuthorName(ShiftingAuthorName);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        var commit = Assert.IsType<Commit>(payload["commit"]);
+        Assert.Equal(head, commit.Hash);
+        Assert.Equal(ShiftingAuthorName, commit.AuthorName);
+        Assert.Equal(TempGitRepo.SeparatorAuthorEmail, commit.AuthorEmail);
+    }
+
+    [Fact]
+    public async Task Show_MetadataPassCut_ReturnsTheCommitMarkedTruncated()
+    {
+        // Arrange
+        var head = _repo.Run("rev-parse", "HEAD");
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(MetadataPassSubcommand), KeptBytesInsideTheSubject));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.True(envelope.Truncated);
+        var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
+        var commit = Assert.IsType<Commit>(payload["commit"]);
+        Assert.Equal(head, commit.Hash);
+        Assert.Equal(CutSubject, commit.Subject);
+        Assert.NotEmpty(Assert.IsAssignableFrom<IReadOnlyList<FileDiff>>(payload["files"]));
+    }
+
+    [Theory]
+    [InlineData(KeptHashBytes)]
+    [InlineData(KeptBytesInsideTheShortHash)]
+    [InlineData(KeptBytesInsideTheParents)]
+    public async Task Show_MetadataPassCutInsideAnIdentifyingField_FailsWithGitCommandError(int keptBytes)
+    {
+        // Arrange
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(MetadataPassSubcommand), keptBytes));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
+        Assert.Equal(MetadataPassCutMessage, envelope.Error.Message);
+    }
+
+    #region Test Helpers
+
+    /// <summary>Build the tool under test over <paramref name="runner"/>, with the real root resolver and ref verifier.</summary>
+    /// <param name="runner">The runner every git process of the call goes through.</param>
+    /// <returns>The tool.</returns>
+    private static GitShowTool BuildTool(IGitProcessRunner runner)
+    {
+        var common = new ToolCommon(
+            new RepoRootResolver(TestGit.Executable),
+            runner,
+            new SessionMetrics(),
+            NullLoggerFactory.Instance,
+            TestGit.Executable);
+        return new GitShowTool(common, new RefVerifier(TestGit.Executable));
+    }
+
+    #endregion
 }

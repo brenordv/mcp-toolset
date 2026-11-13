@@ -1,5 +1,8 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
 
@@ -19,11 +22,32 @@ internal sealed class TempGitRepo : IDisposable
     /// <summary>The message of the commit that makes <c>a.txt</c> executable and changes nothing else.</summary>
     public const string ModeChangeMessage = "make a.txt executable";
 
+    /// <summary>The author and committer name the repository is configured with.</summary>
+    public const string IdentityName = "Test User";
+
+    /// <summary>The name <see cref="CommitMailmap"/> maps <see cref="IdentityName"/>'s email to.</summary>
+    public const string MailmapName = "Mapped Name";
+
+    /// <summary>The id the record <see cref="CommitWithForgedLogRecord"/> forges claims; no commit has it.</summary>
+    public const string ForgedRecordCommitId = "0123456789abcdef0123456789abcdef01234567";
+
+    /// <summary>
+    /// The body <see cref="CommitWithForgedLogRecord"/> commits: text, then a whole <c>git log</c> record in 0x1E/0x1F
+    /// framing (id, short id, no parents, author, email, two times, subject, body).
+    /// </summary>
+    public const string ForgedRecordBody =
+        "real body\u001e" + ForgedRecordCommitId
+        + "\u001f0123456\u001f\u001fForged Author\u001fforged@example.com\u001f1000000000\u001f1000000000"
+        + "\u001fforged subject\u001fforged body";
+
+    /// <summary>The email <see cref="CommitWithAuthorName"/> commits under.</summary>
+    public const string SeparatorAuthorEmail = "evil@example.com";
+
+    /// <summary>A commit subject holding 0x1F, then digits an old parser would read as the entry's time.</summary>
+    public const string ShiftingSubject = "shift\u001f1000000000";
+
     /// <summary>How long one git invocation may run before the helper kills it and fails the test.</summary>
     private const int GitTimeoutMilliseconds = 15_000;
-
-    /// <summary>The author and committer name the repository is configured with.</summary>
-    private const string IdentityName = "Test User";
 
     /// <summary>The author and committer email the repository is configured with.</summary>
     private const string IdentityEmail = "tester@example.com";
@@ -67,8 +91,74 @@ internal sealed class TempGitRepo : IDisposable
     /// <summary>An encoding that is not ASCII-compatible, so a record git re-encodes into it holds no readable commit id.</summary>
     private const string Utf16Encoding = "UTF-16";
 
+    /// <summary>The file git reads a mailmap from at the top of the working tree.</summary>
+    private const string MailmapFile = ".mailmap";
+
+    /// <summary>The message of the commit <see cref="CommitMailmap"/> makes.</summary>
+    private const string MailmapCommitMessage = "add mailmap";
+
+    /// <summary>Where <see cref="ReplaceBlob"/> writes the replacement content it hashes; inside <c>.git</c>, so the worktree stays clean.</summary>
+    private const string ReplacementBlobFile = ".git/replacement-blob";
+
+    /// <summary>The file git reads grafts from when <c>GIT_GRAFT_FILE</c> is unset.</summary>
+    private const string GraftsFile = ".git/info/grafts";
+
+    /// <summary>The subject of the commit <see cref="CommitWithForgedLogRecord"/> makes.</summary>
+    private const string ForgedRecordSubject = "forged record";
+
+    /// <summary>Where <see cref="CommitWithForgedLogRecord"/> writes the message it commits; inside <c>.git</c>, so the worktree stays clean.</summary>
+    private const string ForgedRecordMessageFile = ".git/forged-record-message";
+
+    /// <summary>The subject of the commit <see cref="CommitWithAuthorName"/> makes.</summary>
+    private const string AuthorNameSubject = "author name";
+
+    /// <summary>The message of the commit <see cref="CommitBinaryChange"/> makes.</summary>
+    private const string BinaryChangeMessage = "change binary file";
+
+    /// <summary>How <c>git diff --numstat</c> starts the line of a file it reads as binary: <c>-</c> for both counts.</summary>
+    private const string BinaryNumstatPrefix = "-\t-\t";
+
+    /// <summary>The full name of the branch the repository starts on.</summary>
+    private const string MainBranchRef = "refs/heads/main";
+
+    /// <summary>The <c>git for-each-ref</c> format that prints a branch's upstream, shortened as <c>git_branch_list</c> asks for it.</summary>
+    private const string UpstreamShortFormat = "--format=%(upstream:short)";
+
     /// <summary>Appended to the script's path to name the marker file the script creates when it runs.</summary>
     private const string TrapMarkerSuffix = ".ran";
+
+    /// <summary>Where <see cref="CommitTreeWithEntryName"/> writes the blob content it hashes; inside <c>.git</c>, so the worktree stays clean.</summary>
+    private const string EntryBlobFile = ".git/entry-blob";
+
+    /// <summary>Where <see cref="CommitTreeWithEntryName"/> writes the raw tree object it hashes.</summary>
+    private const string EntryTreeFile = ".git/entry-tree";
+
+    /// <summary>The tree-entry mode of a regular, non-executable file.</summary>
+    private const string RegularFileTreeMode = "100644";
+
+    /// <summary>The message of the commit <see cref="CommitTreeWithEntryName"/> makes.</summary>
+    private const string EntryCommitMessage = "tree with one crafted entry";
+
+    /// <summary>The key that turns on <c>git grep</c>'s column field by default.</summary>
+    private const string GrepColumnKey = "grep.column";
+
+    /// <summary>How many NULs a <c>git grep -n -z</c> match carries with a column field: after the path, the line number, and the column.</summary>
+    private const int GrepColumnNulCount = 3;
+
+    /// <summary>The message of the commit <see cref="CommitBinaryFileHolding"/> makes.</summary>
+    private const string BinaryMatchMessage = "add binary file";
+
+    /// <summary>What <c>git grep</c> prints before a binary file's name when it matches.</summary>
+    private const string BinaryLinePrefix = "Binary file ";
+
+    /// <summary>What <c>git grep</c> prints after a binary file's name when it matches.</summary>
+    private const string BinaryLineSuffix = " matches";
+
+    /// <summary>The key that sets a repository's work tree.</summary>
+    private const string WorkTreeKey = "core.worktree";
+
+    /// <summary>The name of the file or directory git discovers a repository by.</summary>
+    private const string GitFileName = ".git";
 
     /// <summary>
     /// The script a trap points git at: it creates its own path plus <see cref="TrapMarkerSuffix"/>, writes one line to
@@ -81,6 +171,9 @@ internal sealed class TempGitRepo : IDisposable
     /// time, so it no longer matches the time the index recorded and git hashes the file again.
     /// </summary>
     private static readonly TimeSpan StatDirtyShift = TimeSpan.FromMinutes(-10);
+
+    /// <summary>The bytes <see cref="CommitBinaryChange"/> writes: a NUL makes git read the file as binary.</summary>
+    private static readonly byte[] BinaryChangeContent = [0, 4, 5, 0, 6];
 
     public TempGitRepo()
     {
@@ -233,6 +326,188 @@ internal sealed class TempGitRepo : IDisposable
     }
 
     /// <summary>
+    /// Commit a <c>.mailmap</c> that maps <see cref="IdentityName"/>'s email to <see cref="MailmapName"/>, as a hostile
+    /// repository can, then check that <c>git log --author</c> without the server's pin no longer matches
+    /// <see cref="IdentityName"/>, so a test built on it never passes on a git that does not apply the mailmap.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or still matches the recorded name.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void CommitMailmap()
+    {
+        WriteFile(MailmapFile, $"{MailmapName} <{IdentityEmail}>\n");
+        Run("add", MailmapFile);
+        Run("commit", "-m", MailmapCommitMessage);
+        if (Run("log", "--format=%H", $"--author={IdentityName}").Length != 0)
+        {
+            throw new InvalidOperationException("git log still matches the recorded author with a .mailmap that renames it");
+        }
+    }
+
+    /// <summary>
+    /// Make the blob <paramref name="trackedPath"/> has at <c>HEAD</c> read as <paramref name="replacementContent"/>
+    /// through a replace ref, as a hostile repository's <c>.git</c> can carry one, then check that <c>git cat-file -p</c>
+    /// without the server's environment returns the replacement, so a test built on it never passes on a git that
+    /// ignores replace refs.
+    /// </summary>
+    /// <param name="trackedPath">A <c>/</c>-separated path committed at <c>HEAD</c>.</param>
+    /// <param name="replacementContent">The content the blob should read as.</param>
+    /// <returns>The replaced blob's id, the one <c>HEAD</c>'s tree records.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or does not return the replacement.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string ReplaceBlob(string trackedPath, string replacementContent)
+    {
+        var blob = Run("rev-parse", $"HEAD:{trackedPath}");
+        WriteFile(ReplacementBlobFile, replacementContent);
+        var replacement = Run("hash-object", "-w", ReplacementBlobFile);
+        Run("replace", blob, replacement);
+        if (Run("cat-file", "-p", blob) != replacementContent.TrimEnd('\n'))
+        {
+            throw new InvalidOperationException("git cat-file does not return the replacement blob through the replace ref");
+        }
+
+        return blob;
+    }
+
+    /// <summary>
+    /// Make <c>HEAD</c>'s commit read as a parentless commit whose message is <paramref name="forgedSubject"/>, through a
+    /// replace ref, then check that <c>git log</c> without the server's environment prints the forged subject.
+    /// </summary>
+    /// <param name="forgedSubject">The message of the replacement commit.</param>
+    /// <returns>The id of <c>HEAD</c>'s commit, the one the replace ref covers.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or does not show the replacement.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string ReplaceHeadCommit(string forgedSubject)
+    {
+        var head = Run("rev-parse", "HEAD");
+        var forged = Run("commit-tree", "HEAD^{tree}", "-m", forgedSubject);
+        Run("replace", head, forged);
+        if (Run("log", "--max-count=1", "--format=%s") != forgedSubject)
+        {
+            throw new InvalidOperationException("git log does not show the replacement commit through the replace ref");
+        }
+
+        return head;
+    }
+
+    /// <summary>
+    /// Write a <c>.git/info/grafts</c> line that gives <c>HEAD</c>'s commit no parents, as a hostile repository's
+    /// <c>.git</c> can carry one, then check that <c>git rev-list --count HEAD</c> without the server's environment counts
+    /// one commit. Call it once <c>HEAD</c> has a parent.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or still walks past <c>HEAD</c>.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void GraftHeadAsRoot()
+    {
+        WriteFile(GraftsFile, Run("rev-parse", "HEAD") + "\n");
+        if (Run("rev-list", "--count", "HEAD") != "1")
+        {
+            throw new InvalidOperationException("git rev-list still walks past HEAD with a graft that gives it no parents");
+        }
+    }
+
+    /// <summary>
+    /// Commit, with whatever is staged, a commit whose body is <see cref="ForgedRecordBody"/>, as a hostile repository's
+    /// history can carry one, then check that <c>git log</c> prints that body with its 0x1E and 0x1F bytes, so a test built
+    /// on it never passes on a git that drops them.
+    /// </summary>
+    /// <returns>The new commit's id.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or prints another body.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string CommitWithForgedLogRecord()
+    {
+        WriteFile(ForgedRecordMessageFile, $"{ForgedRecordSubject}\n\n{ForgedRecordBody}\n");
+        Run("commit", "--allow-empty", "-F", ForgedRecordMessageFile);
+        if (Run("log", "--max-count=1", "--format=%b") != ForgedRecordBody)
+        {
+            throw new InvalidOperationException("git log does not print the forged record's separator bytes in the body");
+        }
+
+        return Run("rev-parse", "HEAD");
+    }
+
+    /// <summary>
+    /// Commit, with whatever is staged, a commit authored as <paramref name="authorName"/> and
+    /// <see cref="SeparatorAuthorEmail"/>, then check that <c>git log</c> prints the name unchanged, so a test that passes
+    /// a name holding 0x1E or 0x1F never passes on a git that strips those bytes.
+    /// </summary>
+    /// <param name="authorName">The author name to record.</param>
+    /// <returns>The new commit's id.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or prints another name.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public string CommitWithAuthorName(string authorName)
+    {
+        Run("commit", "--allow-empty", "-m", AuthorNameSubject, $"--author={authorName} <{SeparatorAuthorEmail}>");
+        if (Run("log", "--max-count=1", "--format=%an") != authorName)
+        {
+            throw new InvalidOperationException("git log does not print the author name as committed");
+        }
+
+        return Run("rev-parse", "HEAD");
+    }
+
+    /// <summary>
+    /// Commit an empty commit whose subject is <paramref name="subject"/>, then check that the <c>HEAD</c> reflog records
+    /// <c>commit: </c> plus that subject unchanged, so a test that passes a subject holding 0x1F never passes on a git that
+    /// strips the byte.
+    /// </summary>
+    /// <param name="subject">The commit subject.</param>
+    /// <returns>The commit's author time, in seconds since the Unix epoch, as <c>git log</c> prints it.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or the reflog records another message.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public long CommitWithReflogSubject(string subject)
+    {
+        Run("commit", "--allow-empty", "-m", subject);
+        if (Run("reflog", "show", "--max-count=1", "--format=%gs") != $"commit: {subject}")
+        {
+            throw new InvalidOperationException("the HEAD reflog does not record the commit subject as committed");
+        }
+
+        return long.Parse(Run("log", "--max-count=1", "--format=%at"), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Overwrite <paramref name="trackedPath"/> with other bytes holding a NUL and commit it with whatever else is staged,
+    /// then check that <c>git diff --numstat HEAD~1 HEAD</c> prints git's binary mark (<c>-</c> for both counts) for it,
+    /// so a test built on it never passes on a git that reads the file as text.
+    /// </summary>
+    /// <param name="trackedPath">A <c>/</c>-separated path committed at <c>HEAD</c>.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or does not mark the file binary.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void CommitBinaryChange(string trackedPath)
+    {
+        WriteBytes(trackedPath, BinaryChangeContent);
+        Run("add", trackedPath);
+        Run("commit", "-m", BinaryChangeMessage);
+        if (!Run("diff", "--numstat", "HEAD~1", "HEAD", "--", trackedPath).StartsWith(BinaryNumstatPrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"git diff --numstat does not mark {trackedPath} binary");
+        }
+    }
+
+    /// <summary>
+    /// Make <c>main</c> track a branch of this repository, as a repository's own config can: <c>branch.main.remote</c>
+    /// is <c>.</c> and <c>branch.main.merge</c> is <paramref name="merge"/>. Then check that <c>git for-each-ref</c>
+    /// prints <paramref name="merge"/> unchanged as <c>main</c>'s <c>%(upstream:short)</c>, so a test that passes a
+    /// value holding a newline or 0x1F never passes on a git that checks or rewrites it.
+    /// </summary>
+    /// <param name="merge">The value; one git prints unshortened, so not starting with <c>refs/</c>.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when git fails or prints another upstream; the message carries what git printed, JSON-escaped.
+    /// </exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void ConfigureLocalUpstream(string merge)
+    {
+        Run("config", "branch.main.remote", ".");
+        Run("config", "branch.main.merge", merge);
+        var printed = Run("for-each-ref", UpstreamShortFormat, MainBranchRef);
+        if (printed != merge)
+        {
+            throw new InvalidOperationException(
+                $"git for-each-ref printed {JsonSerializer.Serialize(printed)} as main's upstream, not branch.main.merge unchanged");
+        }
+    }
+
+    /// <summary>
     /// Point the current branch at a new commit on top of <c>HEAD</c>, with the same tree, whose <c>gpgsig</c> header holds
     /// a PGP-armored block that is not a real signature. git treats any commit with that header as signed and hands the
     /// block to the verifier when it checks signatures, so no signing program is needed. SHA-1 repositories only; a
@@ -378,6 +653,125 @@ internal sealed class TempGitRepo : IDisposable
         return SubmoduleNewCommit;
     }
 
+    /// <summary>
+    /// Point <c>HEAD</c>'s branch at a new commit whose tree holds one file named <paramref name="entryName"/> holding
+    /// <paramref name="content"/>, as a hostile repository's history can: a tree entry's name may hold a newline on any
+    /// OS, so the tree is hashed as a raw object, not built from the worktree. Then check that <c>git ls-tree -z</c> lists
+    /// exactly that name, so a test built on it never passes on a git that rejects or rewrites it.
+    /// </summary>
+    /// <param name="entryName">The entry's name: no <c>/</c> and no NUL.</param>
+    /// <param name="content">The file's content.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or lists another name.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void CommitTreeWithEntryName(string entryName, string content)
+    {
+        WriteFile(EntryBlobFile, content);
+        var blob = Run("hash-object", "-w", EntryBlobFile);
+        WriteBytes(EntryTreeFile, [.. Encoding.UTF8.GetBytes($"{RegularFileTreeMode} {entryName}\0"), .. Convert.FromHexString(blob)]);
+        var tree = Run("hash-object", "-t", "tree", "-w", EntryTreeFile);
+        Run("update-ref", "HEAD", Run("commit-tree", tree, "-m", EntryCommitMessage));
+        if (Run("ls-tree", "-z", "--name-only", "HEAD") != entryName + "\0")
+        {
+            throw new InvalidOperationException("git ls-tree does not list the crafted entry name unchanged");
+        }
+    }
+
+    /// <summary>
+    /// Set <c>grep.column=true</c> in the repository's config, as a hostile repository or a user's own config can, then
+    /// check that <c>git grep -n -z</c> without the server's pin prints a column field (three NULs on the first match in
+    /// <paramref name="trackedPath"/>), so a test built on it never passes on a git that does not read the key.
+    /// </summary>
+    /// <param name="pattern">A fixed string that matches a line of <paramref name="trackedPath"/>.</param>
+    /// <param name="trackedPath">A <c>/</c>-separated path committed at <c>HEAD</c>.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or prints no column field.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void ConfigureGrepColumnOn(string pattern, string trackedPath)
+    {
+        Run("config", GrepColumnKey, "true");
+        var firstMatch = Run("grep", "-n", "-z", "--no-color", "-F", "-e", pattern, "--", trackedPath).Split('\n')[0];
+        if (firstMatch.Count(character => character == '\0') != GrepColumnNulCount)
+        {
+            throw new InvalidOperationException($"git grep -n -z prints no column field with {GrepColumnKey}=true");
+        }
+    }
+
+    /// <summary>
+    /// Commit <paramref name="path"/> as bytes git reads as binary (a NUL first) holding <paramref name="pattern"/> on a
+    /// line, then check that <c>git grep -n -z</c> without the server's <c>-I</c> prints git's binary match line for it, so
+    /// a test built on it never passes on a git that reads the file as text.
+    /// </summary>
+    /// <param name="path">A <c>/</c>-separated path that does not exist yet.</param>
+    /// <param name="pattern">A fixed string the file holds on a line of its own.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or prints no binary match line.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void CommitBinaryFileHolding(string path, string pattern)
+    {
+        WriteBytes(path, [0, .. Encoding.UTF8.GetBytes(pattern + "\n")]);
+        Run("add", path);
+        Run("commit", "-m", BinaryMatchMessage);
+        if (Run("grep", "-n", "-z", "--no-color", "-F", "-e", pattern, "--", path) != BinaryLinePrefix + path + BinaryLineSuffix)
+        {
+            throw new InvalidOperationException($"git grep does not print a binary match line for {path}");
+        }
+    }
+
+    /// <summary>
+    /// Set <c>core.worktree</c> to <paramref name="workTree"/> in the config of the repository at
+    /// <paramref name="repositoryPath"/>, as a repository that arrives with its <c>.git</c> can, then check that
+    /// <c>git rev-parse --show-toplevel</c> there reports that directory, so a test built on it never passes on a git that
+    /// ignores the key.
+    /// </summary>
+    /// <param name="repositoryPath"><c>.</c> for this repository, or a <c>/</c>-separated path of one inside it.</param>
+    /// <param name="workTree">The absolute directory to name.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or reports another top level.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void ConfigureWorkTree(string repositoryPath, string workTree)
+    {
+        Run("-C", repositoryPath, "config", WorkTreeKey, workTree);
+        if (Path.GetFullPath(Run("-C", repositoryPath, "rev-parse", "--show-toplevel")) != Path.GetFullPath(workTree))
+        {
+            throw new InvalidOperationException($"git rev-parse --show-toplevel does not report the directory {WorkTreeKey} names");
+        }
+    }
+
+    /// <summary>
+    /// Add the repository at <paramref name="sourceRepoPath"/> as a submodule at <paramref name="submodulePath"/> with
+    /// <c>git submodule add</c> and commit it. git keeps the submodule's git directory under <c>.git/modules/</c> and
+    /// points it back at the checkout with <c>core.worktree</c>; check that the submodule's config sets that key, so a test
+    /// built on it covers that layout. <c>protocol.file.allow=always</c> lets this one command clone from a local path.
+    /// </summary>
+    /// <param name="sourceRepoPath">The absolute path of a repository with at least one commit.</param>
+    /// <param name="submodulePath">A <c>/</c>-separated path that does not exist yet.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or the submodule's config sets no <c>core.worktree</c>.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void AddSubmoduleFrom(string sourceRepoPath, string submodulePath)
+    {
+        Run("-c", "protocol.file.allow=always", "submodule", "add", sourceRepoPath.Replace('\\', '/'), submodulePath);
+        Run("commit", "-m", SubmoduleAddMessage);
+        if (Run("-C", submodulePath, "config", WorkTreeKey).Length == 0)
+        {
+            throw new InvalidOperationException($"the submodule's git directory sets no {WorkTreeKey}");
+        }
+    }
+
+    /// <summary>
+    /// Add a linked worktree at <paramref name="worktreePath"/> on a new branch <paramref name="branch"/> with
+    /// <c>git worktree add</c>, then check that its top level holds a <c>.git</c> file, the layout under test.
+    /// Call it once <c>HEAD</c> has a commit.
+    /// </summary>
+    /// <param name="worktreePath">A <c>/</c>-separated path inside this repository that does not exist yet.</param>
+    /// <param name="branch">The new branch's name.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or leaves no <c>.git</c> file.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void AddLinkedWorktree(string worktreePath, string branch)
+    {
+        Run("worktree", "add", "-b", branch, worktreePath);
+        if (!File.Exists(Path.Combine(RepoPath, worktreePath.Replace('/', Path.DirectorySeparatorChar), GitFileName)))
+        {
+            throw new InvalidOperationException($"git worktree add left no {GitFileName} file in the new worktree");
+        }
+    }
+
     public void Dispose()
     {
         if (!Directory.Exists(RepoPath))
@@ -487,7 +881,7 @@ internal sealed class TempGitRepo : IDisposable
     /// macOS the temp directory sits under <c>/var</c>, a symlink to <c>/private/var</c>; on Windows and
     /// Linux temp directories this is usually a no-op.
     /// </summary>
-    private static string RealPath(string path)
+    internal static string RealPath(string path)
     {
         var full = Path.GetFullPath(path);
         var root = Path.GetPathRoot(full) ?? string.Empty;
