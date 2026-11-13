@@ -1,3 +1,18 @@
+## v3.6.0
+- Fixed: project inference started `git rev-parse --show-toplevel` with the server's own standard input, the pipe
+  the MCP client writes and the stdio transport reads. On Windows git did not exit until the client sent another
+  message, so under a client that sends nothing while it waits for a reply the probe hit its 3 s timeout, the
+  first call that resolved the default `project` took about 3 s, and the project fell back to the folder name for
+  the rest of the process. git now gets its own standard input, closed right after it starts. Behavior change: on
+  Windows under such a client the default `project` is `<repo>/<folder>` where it was the folder name; notes saved
+  under the folder name keep that project, so pass `project` explicitly (or call `vault_list` with no `project`)
+  to reach them. No log change.
+- Fixed: since v3.4.0 the log named only an exception's type chain, so a locked, a read-only, and a corrupt store
+  looked alike on a failed tool call's `internal_error` line. Log change: an event whose exception chain holds a
+  `SqliteException` among the eight entries `stderr_tail` lists now carries `sqlite_error_code`, SQLite's extended
+  result code as an integer (`sqlite_error_code & 255` is the primary code: 5 busy, 8 read-only, 11 corrupt, 14
+  cannot open), never SQLite's message; it rides `internal_error`, `server_start_failed`, and `server_stop_failed`.
+
 ## v3.5.0
 - Fixed: project inference took the first `git` (`git.exe` on Windows) it found in any `PATH` entry, relative ones
   included. A relative entry such as `.` or `bin` resolves against the server's working directory, the MCP client's

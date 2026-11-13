@@ -77,6 +77,10 @@ one deterministically:
    folder name,
 4. otherwise the call fails with `ambiguous_project` rather than guessing.
 
+Before v3.6.0, on Windows, a client that sent nothing while it waited for a reply got the bare folder name where
+`<repo>/<folder>` was due, because the git probe waited on the client's pipe until its 3 s timeout. Notes saved then
+keep that project; pass `project` explicitly to reach them.
+
 **Exception:** `vault_list` and the `summarize-vault` prompt treat an omitted `project` as "across ALL projects" and
 run no inference. That is load-bearing for cross-project namespaces (shared archives like `lessons`).
 
@@ -170,15 +174,19 @@ stale-`base_version` `conflict` for one, is never rewritten. Only argument names
 - **The git probe is hardened**: project inference may run `git rev-parse --show-toplevel` once per process (the
   derivation is computed on first use and cached), with the git binary taken from the first fully qualified `PATH`
   entry that holds it (`git.exe` on Windows, elsewhere a file with an execute bit; empty and relative entries, which
-  resolve against the working directory, are skipped), an allowlisted environment, no shell, asynchronously drained
-  pipes, and a kill-on-timeout guard. An absolute `PATH` entry that points inside the project is still trusted, as it
-  is in your own shell.
+  resolve against the working directory, are skipped), an allowlisted environment, no shell, its own standard input
+  closed at once (so git's standard input is never the MCP client's pipe), asynchronously drained output pipes, and a
+  kill-on-timeout guard. An absolute `PATH` entry that points inside the project is still trusted, as it is in your
+  own shell.
 - **Logs never contain content**: an allowlist formatter admits only validated identifiers and system data
   (project, name, versions, sizes, durations, error codes). Summaries, tags, content, diffs, headings, and queries
   are never logged; search terms appear only as hashes. A logged exception is recorded only as its type chain, never
-  its message or stack trace, which can carry note content or an absolute path; a startup failure's reason is printed
-  to stderr as `vault-mcp: fatal error: ...`. The host's lifetime category (`Microsoft.Hosting.Lifetime`) is not logged
-  below Warning, so its status lines, one of which names the working directory, are not logged.
+  its message or stack trace, which can carry note content or an absolute path, plus `sqlite_error_code` when the
+  chain holds a SQLite error: SQLite's extended result code as an integer, whose low 8 bits are the primary code (5
+  busy, 8 read-only, 11 corrupt, 14 cannot open; [Result and Error Codes](https://www.sqlite.org/rescode.html)); a
+  startup failure's reason is printed to stderr as `vault-mcp: fatal error: ...`. The host's lifetime category
+  (`Microsoft.Hosting.Lifetime`) is not logged below Warning, so its status lines, one of which names the working
+  directory, are not logged.
 
 > **Plaintext store caveat:** the vault stores content as plain text on disk. It is not a secret store; do not save
 > credentials or other secrets in it.

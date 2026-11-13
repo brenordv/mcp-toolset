@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using ModelContextProtocol;
 using RaccoonNinja.McpToolset.Server.FileVault.Errors;
 using RaccoonNinja.McpToolset.Server.FileVault.Logging;
@@ -11,6 +12,9 @@ namespace RaccoonNinja.McpToolset.Server.FileVault.Tests.Logging;
 public class AllowlistJsonFormatterTests
 {
     private const string LeakProbeSegment = "leak-probe";
+    private const int SqliteReadonly = 8;
+    private const int SqliteReadonlyDbMoved = 1032;
+    private const string SqliteMessage = "attempt to write a readonly database";
 
     [Fact]
     public void Format_AllowlistedProperties_PassThroughAndUnknownAreDropped()
@@ -140,6 +144,73 @@ public class AllowlistJsonFormatterTests
     }
 
     [Fact]
+    public void Format_SqliteExceptionAtTheLastListedEntry_WritesItsExtendedResultCode()
+    {
+        // Arrange
+        var leakedPath = Path.Combine(Path.GetTempPath(), LeakProbeSegment, "vault.db");
+        var exception = WrapInInvalidOperationExceptions(
+            new SqliteException($"{SqliteMessage}: {leakedPath}", SqliteReadonly, SqliteReadonlyDbMoved),
+            LogScrubbing.ExceptionChainMaxDepth - 1);
+
+        // Act
+        var line = FormatLine(Event(exception));
+
+        // Assert
+        using var document = JsonDocument.Parse(line);
+        Assert.Equal(SqliteReadonlyDbMoved, document.RootElement.GetProperty(LogFields.SqliteErrorCode).GetInt32());
+        Assert.DoesNotContain(LeakProbeSegment, line, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Format_SqliteExceptionPastTheTypeChainCap_OmitsSqliteErrorCode()
+    {
+        // Arrange
+        var exception = WrapInInvalidOperationExceptions(
+            new SqliteException(SqliteMessage, SqliteReadonly, SqliteReadonlyDbMoved),
+            LogScrubbing.ExceptionChainMaxDepth);
+
+        // Act
+        var line = FormatLine(Event(exception));
+
+        // Assert
+        using var document = JsonDocument.Parse(line);
+        Assert.False(document.RootElement.TryGetProperty(LogFields.SqliteErrorCode, out _));
+        Assert.EndsWith(" -> ...", document.RootElement.GetProperty(LogFields.StderrTail).GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Format_ExceptionChainWithoutSqliteException_OmitsSqliteErrorCode()
+    {
+        // Arrange
+        var exception = new IOException("io", new InvalidOperationException("inner"));
+
+        // Act
+        var line = FormatLine(Event(exception));
+
+        // Assert
+        using var document = JsonDocument.Parse(line);
+        Assert.False(document.RootElement.TryGetProperty(LogFields.SqliteErrorCode, out _));
+    }
+
+    [Fact]
+    public void Format_SqliteErrorCodeProperty_IsNotWrittenFromEventProperties()
+    {
+        // Arrange
+        const string forgedValue = "forged";
+        var logEvent = Event(
+            exception: null,
+            new LogEventProperty(LogFields.SqliteErrorCode, new ScalarValue(forgedValue)));
+
+        // Act
+        var line = FormatLine(logEvent);
+
+        // Assert
+        using var document = JsonDocument.Parse(line);
+        Assert.False(document.RootElement.TryGetProperty(LogFields.SqliteErrorCode, out _));
+        Assert.DoesNotContain(forgedValue, line, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Format_AnyEvent_EmitsOneLineOfValidJsonWithEnvelopeFields()
     {
         // Arrange
@@ -166,6 +237,17 @@ public class AllowlistJsonFormatterTests
             exception: exception,
             messageTemplate: new MessageTemplateParser().Parse("hello vault log"),
             properties: properties);
+
+    /// <summary>Wrap <paramref name="inner"/> in <paramref name="count"/> <see cref="InvalidOperationException"/>s.</summary>
+    private static Exception WrapInInvalidOperationExceptions(Exception inner, int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            inner = new InvalidOperationException("wrapper", inner);
+        }
+
+        return inner;
+    }
 
     /// <summary>Run the formatter and return the single emitted line.</summary>
     private static string FormatLine(LogEvent logEvent)

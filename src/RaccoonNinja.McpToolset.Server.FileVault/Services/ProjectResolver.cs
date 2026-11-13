@@ -198,8 +198,8 @@ public sealed class ProjectResolver(VaultConfig config, string cwd)
     /// Best-effort <c>git rev-parse --show-toplevel</c> run from <paramref name="cwd"/>. Returns
     /// <c>null</c> if git is not installed, the cwd is not inside a work tree, or the command
     /// fails or times out; every such case falls back to the directory name, so git is a bonus
-    /// signal, never a hard dependency. The child runs with the hardened allowlist environment
-    /// and a kill-on-timeout guard.
+    /// signal, never a hard dependency. The child runs with the hardened allowlist environment,
+    /// its own standard input (closed at once), and a kill-on-timeout guard.
     /// </summary>
     private static string GitTopLevel(string cwd)
     {
@@ -214,27 +214,15 @@ public sealed class ProjectResolver(VaultConfig config, string cwd)
         try
         {
             using var process = new Process();
-            process.StartInfo = new ProcessStartInfo
-            {
-                FileName = gitPath,
-                WorkingDirectory = cwd,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            process.StartInfo.ArgumentList.Add("rev-parse");
-            process.StartInfo.ArgumentList.Add("--show-toplevel");
-            process.StartInfo.Environment.Clear();
-            foreach (var (key, value) in EnvironmentBuilder.Build())
-            {
-                process.StartInfo.Environment[key] = value;
-            }
+            process.StartInfo = BuildGitStartInfo(gitPath, cwd);
 
             if (!process.Start())
             {
                 return null;
             }
+
+            // git gets an empty standard input that is already at its end.
+            process.StandardInput.Close();
 
             // Both pipes are drained asynchronously: a synchronous stdout read would defeat the
             // timeout when git wedges, and an undrained stderr pipe can deadlock a chatty child.
@@ -260,5 +248,36 @@ public sealed class ProjectResolver(VaultConfig config, string cwd)
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Build the start info for <c>git rev-parse --show-toplevel</c> in <paramref name="cwd"/>: no shell, no window,
+    /// the allowlisted environment from <see cref="EnvironmentBuilder.Build"/>, and all three standard streams
+    /// redirected to pipes of the child's own.
+    /// </summary>
+    /// <param name="gitPath">The git executable's absolute path.</param>
+    /// <param name="cwd">The directory git runs in.</param>
+    /// <returns>The start info.</returns>
+    internal static ProcessStartInfo BuildGitStartInfo(string gitPath, string cwd)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = gitPath,
+            WorkingDirectory = cwd,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        startInfo.ArgumentList.Add("rev-parse");
+        startInfo.ArgumentList.Add("--show-toplevel");
+        startInfo.Environment.Clear();
+        foreach (var (key, value) in EnvironmentBuilder.Build())
+        {
+            startInfo.Environment[key] = value;
+        }
+
+        return startInfo;
     }
 }

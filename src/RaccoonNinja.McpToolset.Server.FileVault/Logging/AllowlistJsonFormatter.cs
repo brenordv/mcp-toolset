@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Serilog.Events;
 using Serilog.Formatting;
 
@@ -39,7 +40,7 @@ public sealed class AllowlistJsonFormatter : ITextFormatter
                     continue;
                 }
 
-                if (key is LogFields.Service or LogFields.Message or LogFields.Ts or LogFields.Level)
+                if (key is LogFields.Service or LogFields.Message or LogFields.Ts or LogFields.Level or LogFields.SqliteErrorCode)
                 {
                     continue;
                 }
@@ -50,10 +51,14 @@ public sealed class AllowlistJsonFormatter : ITextFormatter
 
             if (logEvent.Exception is not null)
             {
-                // Only the type chain is written, for every exception. A vault or MCP exception's message is client-facing
-                // and can embed note content (a conflict carries the diff), and any other exception's message or stack trace
-                // can carry an absolute path.
+                // Only the type chain is written, plus SQLite's integer result code when the chain holds a SqliteException.
+                // A vault or MCP exception's message is client-facing and can embed note content (a conflict carries the
+                // diff), and any other exception's message or stack trace can carry an absolute path.
                 writer.WriteString(LogFields.StderrTail, LogScrubbing.ExceptionTypeChain(logEvent.Exception));
+                if (FirstSqliteException(logEvent.Exception) is { } sqliteException)
+                {
+                    writer.WriteNumber(LogFields.SqliteErrorCode, sqliteException.SqliteExtendedErrorCode);
+                }
             }
 
             writer.WriteEndObject();
@@ -62,6 +67,26 @@ public sealed class AllowlistJsonFormatter : ITextFormatter
         buffer.Position = 0;
         var line = new StreamReader(buffer).ReadToEnd();
         output.WriteLine(line);
+    }
+
+    /// <summary>
+    /// The first <see cref="SqliteException"/> among the exceptions <see cref="LogScrubbing.ExceptionTypeChain"/>
+    /// lists, outer to inner, or <c>null</c> when there is none.
+    /// </summary>
+    private static SqliteException FirstSqliteException(Exception exception)
+    {
+        var current = exception;
+        for (var depth = 0; current is not null && depth < LogScrubbing.ExceptionChainMaxDepth; depth++)
+        {
+            if (current is SqliteException found)
+            {
+                return found;
+            }
+
+            current = current.InnerException;
+        }
+
+        return null;
     }
 
     private static void WriteValue(Utf8JsonWriter writer, LogEventPropertyValue value)
