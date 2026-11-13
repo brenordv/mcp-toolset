@@ -22,14 +22,27 @@ public sealed class ToolCommonTests : IDisposable
     private const string InnerPathLikeText = "<repo-root>/secret.txt";
     private const string TypeChain = "System.InvalidOperationException -> System.IO.IOException";
     private const string StackFrameMarker = " at ";
+    private const string LogFileName = "out.log";
 
-    private readonly string _logPath = Path.Combine(Path.GetTempPath(), $"mcp-gitops-toolcommon-{Guid.NewGuid():N}.log");
+    private readonly string _logRoot;
+    private readonly string _logPath;
+
+    public ToolCommonTests()
+    {
+        _logRoot = Path.Combine(Path.GetTempPath(), "gitops-toolcommon-" + Guid.NewGuid().ToString("N"));
+        _logPath = Path.Combine(_logRoot, LogFileName);
+        Directory.CreateDirectory(_logRoot);
+    }
 
     public void Dispose()
     {
-        if (File.Exists(_logPath))
+        try
         {
-            File.Delete(_logPath);
+            Directory.Delete(_logRoot, recursive: true);
+        }
+        catch (IOException)
+        {
+            // Best-effort temp cleanup.
         }
     }
 
