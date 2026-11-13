@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using ModelContextProtocol;
+using RaccoonNinja.McpToolset.Common.Mcp.Logging;
 using RaccoonNinja.McpToolset.Server.FileVault.Errors;
 using RaccoonNinja.McpToolset.Server.FileVault.Logging;
 using Serilog.Events;
@@ -150,7 +151,7 @@ public class AllowlistJsonFormatterTests
         var leakedPath = Path.Combine(Path.GetTempPath(), LeakProbeSegment, "vault.db");
         var exception = WrapInInvalidOperationExceptions(
             new SqliteException($"{SqliteMessage}: {leakedPath}", SqliteReadonly, SqliteReadonlyDbMoved),
-            LogScrubbing.ExceptionChainMaxDepth - 1);
+            ExceptionTypeChain.MaxDepth - 1);
 
         // Act
         var line = FormatLine(Event(exception));
@@ -167,7 +168,7 @@ public class AllowlistJsonFormatterTests
         // Arrange
         var exception = WrapInInvalidOperationExceptions(
             new SqliteException(SqliteMessage, SqliteReadonly, SqliteReadonlyDbMoved),
-            LogScrubbing.ExceptionChainMaxDepth);
+            ExceptionTypeChain.MaxDepth);
 
         // Act
         var line = FormatLine(Event(exception));

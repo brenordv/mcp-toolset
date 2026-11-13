@@ -1,24 +1,24 @@
-using RaccoonNinja.McpToolset.Server.SkillStats.Logging;
+using RaccoonNinja.McpToolset.Common.Mcp.Logging;
 
-namespace RaccoonNinja.McpToolset.Server.SkillStats.Tests.Logging;
+namespace RaccoonNinja.McpToolset.Common.Mcp.Tests.Logging;
 
-public sealed class LogScrubbingTests
+public sealed class ExceptionTypeChainTests
 {
     private const string ProbeMessage = "x";
 
     [Fact]
-    public void ExceptionTypeChain_ChainDeeperThanCap_StopsWithEllipsis()
+    public void Render_ChainDeeperThanCap_StopsWithEllipsis()
     {
         // Arrange
-        var exception = NestedChain(LogScrubbing.ExceptionChainMaxDepth + 2);
+        var exception = NestedChain(ExceptionTypeChain.MaxDepth + 2);
 
         // Act
-        var chain = LogScrubbing.ExceptionTypeChain(exception);
+        var chain = ExceptionTypeChain.Render(exception);
 
         // Assert
         var expected = string.Join(
             " -> ",
-            Enumerable.Repeat("System.InvalidOperationException", LogScrubbing.ExceptionChainMaxDepth)) + " -> ...";
+            Enumerable.Repeat("System.InvalidOperationException", ExceptionTypeChain.MaxDepth)) + " -> ...";
         Assert.Equal(expected, chain);
     }
 

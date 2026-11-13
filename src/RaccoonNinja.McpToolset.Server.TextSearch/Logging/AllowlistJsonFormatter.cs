@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using RaccoonNinja.McpToolset.Common.Mcp.Logging;
 using Serilog.Events;
 using Serilog.Formatting;
 
@@ -55,7 +56,7 @@ public sealed class AllowlistJsonFormatter : ITextFormatter
             {
                 // Only the type chain is written. The message and stack trace of an exception the host or the SDK
                 // attached can carry an absolute path, and nothing here can tell which ones do.
-                writer.WriteString(LogFields.ExceptionTail, LogScrubbing.ExceptionTypeChain(logEvent.Exception));
+                writer.WriteString(LogFields.ExceptionTail, ExceptionTypeChain.Render(logEvent.Exception));
             }
 
             writer.WriteEndObject();

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using RaccoonNinja.McpToolset.Common.Mcp.Logging;
 using Serilog.Events;
 using Serilog.Formatting;
 
@@ -54,7 +55,7 @@ public sealed class AllowlistJsonFormatter : ITextFormatter
                 // Only the type chain is written, plus SQLite's integer result code when the chain holds a SqliteException.
                 // A vault or MCP exception's message is client-facing and can embed note content (a conflict carries the
                 // diff), and any other exception's message or stack trace can carry an absolute path.
-                writer.WriteString(LogFields.StderrTail, LogScrubbing.ExceptionTypeChain(logEvent.Exception));
+                writer.WriteString(LogFields.StderrTail, ExceptionTypeChain.Render(logEvent.Exception));
                 if (FirstSqliteException(logEvent.Exception) is { } sqliteException)
                 {
                     writer.WriteNumber(LogFields.SqliteErrorCode, sqliteException.SqliteExtendedErrorCode);
@@ -70,13 +71,13 @@ public sealed class AllowlistJsonFormatter : ITextFormatter
     }
 
     /// <summary>
-    /// The first <see cref="SqliteException"/> among the exceptions <see cref="LogScrubbing.ExceptionTypeChain"/>
+    /// The first <see cref="SqliteException"/> among the exceptions <see cref="ExceptionTypeChain.Render"/>
     /// lists, outer to inner, or <c>null</c> when there is none.
     /// </summary>
     private static SqliteException FirstSqliteException(Exception exception)
     {
         var current = exception;
-        for (var depth = 0; current is not null && depth < LogScrubbing.ExceptionChainMaxDepth; depth++)
+        for (var depth = 0; current is not null && depth < ExceptionTypeChain.MaxDepth; depth++)
         {
             if (current is SqliteException found)
             {
