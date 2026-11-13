@@ -13,7 +13,11 @@ public sealed class GitReflogToolTests : IDisposable
     private const string TrackedFile = "a.txt";
     private const string SignedSubject = "signed";
     private const string ReflogSubcommand = "reflog";
-    private const int KeptEntryBytes = 45;
+    private const int KeptBytesInsideTheHash = 20;
+    private const int KeptBytesInsideTheShortHash = 45;
+    private const int KeptBytesInsideTheSelector = 53;
+    private const int KeptBytesInsideTheSubject = 64;
+    private const string CutSubject = "commit";
 
     private readonly TempGitRepo _repo;
     private readonly GitReflogTool _tool;
@@ -63,12 +67,30 @@ public sealed class GitReflogToolTests : IDisposable
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(authorTime), entry.When);
     }
 
+    [Theory]
+    [InlineData(KeptBytesInsideTheHash)]
+    [InlineData(KeptBytesInsideTheShortHash)]
+    [InlineData(KeptBytesInsideTheSelector)]
+    public async Task Reflog_OutputCutInsideAnIdentifyingField_LeavesTheEntryOut(int keptBytes)
+    {
+        // Arrange
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(ReflogSubcommand), keptBytes));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.True(envelope.Truncated);
+        Assert.Empty(envelope.Results);
+    }
+
     [Fact]
-    public async Task Reflog_OutputCut_ReturnsTheCutEntryMarkedTruncated()
+    public async Task Reflog_OutputCutInsideTheSubject_ReturnsTheCutEntryMarkedTruncated()
     {
         // Arrange
         var head = _repo.Run("rev-parse", "HEAD");
-        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(ReflogSubcommand), KeptEntryBytes));
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(ReflogSubcommand), KeptBytesInsideTheSubject));
 
         // Act
         var envelope = await tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
@@ -78,6 +100,7 @@ public sealed class GitReflogToolTests : IDisposable
         Assert.True(envelope.Truncated);
         var entry = Assert.IsType<ReflogEntry>(Assert.Single(envelope.Results));
         Assert.Equal(head, entry.Hash);
+        Assert.Equal(CutSubject, entry.Subject);
     }
 
     #region Test Helpers

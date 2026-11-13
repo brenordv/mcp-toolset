@@ -16,13 +16,19 @@ public static class ReflogParser
 
     private const int FieldCount = 5;
 
+    /// <summary>How many leading fields name something: the hash, the short hash, and the selector.</summary>
+    private const int IdentifyingFieldCount = 3;
+
     /// <summary>Parse the output of a <c>git reflog show</c> run with <see cref="FormatFlags"/>.</summary>
     /// <param name="raw">Raw stdout bytes from <c>git reflog</c>.</param>
-    /// <param name="truncated">Whether the output hit the output cap; a cut last entry comes back with its missing fields empty.</param>
+    /// <param name="truncated">
+    /// Whether the output hit the output cap; a cut last entry comes back with its missing fields empty, or is left out
+    /// when the cut may fall inside its hash, short hash, or selector.
+    /// </param>
     /// <returns>The parsed entries, or an empty list when there is nothing to parse.</returns>
     /// <exception cref="GitCommandException">The output was not cut and is not a whole number of entries.</exception>
     public static IReadOnlyList<ReflogEntry> Parse(byte[] raw, bool truncated)
-        => [.. NulRecords.Split(raw, FieldCount, truncated).Select(ToEntry)];
+        => [.. NulRecords.LeaveOutCutIdentifiers(NulRecords.Split(raw, FieldCount, truncated), IdentifyingFieldCount, truncated).Select(ToEntry)];
 
     /// <summary>Build a <see cref="ReflogEntry"/> from one entry's fields.</summary>
     /// <param name="fields">The entry's fields, in <see cref="FormatFlags"/> order.</param>

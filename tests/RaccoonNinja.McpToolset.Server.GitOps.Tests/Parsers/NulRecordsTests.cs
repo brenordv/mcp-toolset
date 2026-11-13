@@ -7,6 +7,7 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Parsers;
 public sealed class NulRecordsTests
 {
     private const int FieldCount = 2;
+    private const int IdentifyingFieldCount = 2;
     private const string NotWholeRecordsMessage = "git printed output that is not a whole number of NUL-framed records";
 
     [Fact]
@@ -170,6 +171,56 @@ public sealed class NulRecordsTests
         Assert.Equal(2, records.Count);
         Assert.Equal(["a", "b"], records[0]);
         Assert.Equal(["c", ""], records[1]);
+    }
+
+    [Fact]
+    public void LeaveOutCutIdentifiers_TruncatedWithNoLaterFieldStarted_LeavesTheLastRecordOut()
+    {
+        // Arrange
+        string[][] records = [["a", "b", "c"], ["d", "e", ""]];
+
+        // Act
+        var result = NulRecords.LeaveOutCutIdentifiers(records, IdentifyingFieldCount, truncated: true);
+
+        // Assert
+        var record = Assert.Single(result);
+        Assert.Equal(["a", "b", "c"], record);
+    }
+
+    [Fact]
+    public void LeaveOutCutIdentifiers_TruncatedWithALaterFieldStarted_KeepsEveryRecord()
+    {
+        // Arrange
+        string[][] records = [["a", "b", "c"], ["d", "e", "f"]];
+
+        // Act
+        var result = NulRecords.LeaveOutCutIdentifiers(records, IdentifyingFieldCount, truncated: true);
+
+        // Assert
+        Assert.Equal(2, result.Count);
+    }
+
+    [Fact]
+    public void LeaveOutCutIdentifiers_NotTruncated_KeepsEveryRecord()
+    {
+        // Arrange
+        string[][] records = [["a", "", ""]];
+
+        // Act
+        var result = NulRecords.LeaveOutCutIdentifiers(records, IdentifyingFieldCount, truncated: false);
+
+        // Assert
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public void LeaveOutCutIdentifiers_NoRecords_ReturnsNoRecords()
+    {
+        // Act
+        var result = NulRecords.LeaveOutCutIdentifiers([], IdentifyingFieldCount, truncated: true);
+
+        // Assert
+        Assert.Empty(result);
     }
 
     [Fact]

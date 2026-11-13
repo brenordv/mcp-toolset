@@ -14,7 +14,8 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 /// </summary>
 internal static class NulRecords
 {
-    private const string NotWholeRecordsMessage = "git printed output that is not a whole number of NUL-framed records";
+    /// <summary>The message a call fails with when git's output is not whole records.</summary>
+    internal const string NotWholeRecordsMessage = "git printed output that is not a whole number of NUL-framed records";
 
     /// <summary>Split <paramref name="raw"/> into records of <paramref name="fieldCount"/> fields.</summary>
     /// <param name="raw">git's standard output; <c>null</c> or empty reads as no records.</param>
@@ -66,6 +67,26 @@ internal static class NulRecords
         }
 
         return Frame(fields, fieldCount, truncated);
+    }
+
+    /// <summary>
+    /// Return <paramref name="records"/> without its last record when <paramref name="truncated"/> is <c>true</c> and every
+    /// field of that record after its first <paramref name="identifyingFieldCount"/> is empty. Those leading fields name
+    /// something (an object id, a selector): a non-empty later field shows the output reached past them, so they are whole,
+    /// while a record the cap cut inside one of them can carry a cut value, and git reads a name as a ref before it reads it
+    /// as an abbreviated object id, so a cut id passed back as a ref could name another ref. A whole last record whose
+    /// later fields are all empty is left out of a cut output too.
+    /// </summary>
+    /// <param name="records">Records as <see cref="Split"/> returns them, a cut last record padded with empty fields.</param>
+    /// <param name="identifyingFieldCount">How many leading fields of a record name something.</param>
+    /// <param name="truncated">Whether the output hit the output cap.</param>
+    /// <returns>The records, without a last record that may carry a cut identifying field.</returns>
+    public static IReadOnlyList<string[]> LeaveOutCutIdentifiers(IReadOnlyList<string[]> records, int identifyingFieldCount, bool truncated)
+    {
+        var cutBeforeLaterFields = truncated
+            && records.Count > 0
+            && records[^1].Skip(identifyingFieldCount).All(field => field.Length == 0);
+        return cutBeforeLaterFields ? [.. records.Take(records.Count - 1)] : records;
     }
 
     /// <summary>Group NUL-separated <paramref name="fields"/> into records of <paramref name="fieldCount"/>.</summary>

@@ -1,4 +1,5 @@
 using System.Text;
+using RaccoonNinja.McpToolset.Server.GitOps.Errors.GitCheckExceptions;
 using RaccoonNinja.McpToolset.Server.GitOps.Models;
 using RaccoonNinja.McpToolset.Server.GitOps.Parsers;
 
@@ -6,6 +7,8 @@ namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Parsers;
 
 public class OtherParsersTests
 {
+    private const string NotWholeRecordsMessage = "git printed output that is not a whole number of NUL-framed records";
+
     //  is the Unit Separator. We avoid the variable-width \x escape because
     // C# greedily consumes up to 4 hex digits, which can swallow neighbouring
     // characters when the next char is also a hex digit.
@@ -234,10 +237,10 @@ public class OtherParsersTests
     public void Grep_ParsesPathLineAndContent()
     {
         // Arrange
-        var bytes = Encoding.UTF8.GetBytes("alpha.txt\09\0the alpha line");
+        var bytes = Encoding.UTF8.GetBytes("alpha.txt\09\0the alpha line\n");
 
         // Act
-        var matches = GrepParser.Parse(bytes, null);
+        var matches = GrepParser.Parse(bytes, null, truncated: false);
 
         // Assert
         var match = Assert.Single(matches);
@@ -250,10 +253,10 @@ public class OtherParsersTests
     public void Grep_StripsRefPrefixFromPathWhenRefSupplied()
     {
         // Arrange
-        var bytes = Encoding.UTF8.GetBytes("HEAD:alpha.txt\03\0content");
+        var bytes = Encoding.UTF8.GetBytes("HEAD:alpha.txt\03\0content\n");
 
         // Act
-        var matches = GrepParser.Parse(bytes, "HEAD");
+        var matches = GrepParser.Parse(bytes, "HEAD", truncated: false);
 
         // Assert
         var match = Assert.Single(matches);
@@ -268,7 +271,7 @@ public class OtherParsersTests
         var bytes = Encoding.UTF8.GetBytes("a.cs\03\nb/c.cs\01\n");
 
         // Act
-        var counts = GrepParser.ParseCounts(bytes, null);
+        var counts = GrepParser.ParseCounts(bytes, null, truncated: false);
 
         // Assert
         Assert.Collection(
@@ -284,7 +287,7 @@ public class OtherParsersTests
         var bytes = Encoding.UTF8.GetBytes("abc123:dir/x.cs\02\n");
 
         // Act
-        var counts = GrepParser.ParseCounts(bytes, "abc123");
+        var counts = GrepParser.ParseCounts(bytes, "abc123", truncated: false);
 
         // Assert
         var count = Assert.Single(counts);
@@ -293,36 +296,36 @@ public class OtherParsersTests
     }
 
     [Fact]
-    public void ParseCounts_RecordWithoutNul_IsSkipped()
+    public void ParseCounts_RecordWithoutNul_Throws()
     {
         // Arrange
         var bytes = Encoding.UTF8.GetBytes("a.cs:4\n");
 
         // Act
-        var counts = GrepParser.ParseCounts(bytes, null);
+        var act = () => GrepParser.ParseCounts(bytes, null, truncated: false);
 
         // Assert
-        Assert.Empty(counts);
+        Assert.Equal(NotWholeRecordsMessage, Assert.Throws<GitCommandException>(act).Message);
     }
 
     [Fact]
-    public void ParseCounts_MalformedCount_SkipsRecord()
+    public void ParseCounts_MalformedCount_Throws()
     {
         // Arrange
         var bytes = Encoding.UTF8.GetBytes("a.cs\0x\n");
 
         // Act
-        var counts = GrepParser.ParseCounts(bytes, null);
+        var act = () => GrepParser.ParseCounts(bytes, null, truncated: false);
 
         // Assert
-        Assert.Empty(counts);
+        Assert.Equal(NotWholeRecordsMessage, Assert.Throws<GitCommandException>(act).Message);
     }
 
     [Fact]
     public void ParseCounts_Empty_ReturnsEmpty()
     {
         // Act
-        var counts = GrepParser.ParseCounts([], null);
+        var counts = GrepParser.ParseCounts([], null, truncated: false);
 
         // Assert
         Assert.Empty(counts);

@@ -23,6 +23,9 @@ public static class LogParser
         "body" // %b
     ];
 
+    /// <summary>How many leading fields name something: the hash, the short hash, and the parents.</summary>
+    private const int IdentifyingFieldCount = 3;
+
     /// <summary>
     /// The git pretty-format spec corresponding to <see cref="LogFieldOrder"/>, its fields separated by NUL (<c>%x00</c>).
     /// It carries no <c>%G</c> placeholder: those verify the commit's signature by running the program <c>gpg.program</c>
@@ -38,11 +41,14 @@ public static class LogParser
 
     /// <summary>Parse the output of a <c>git log</c> run with <see cref="FormatFlags"/>.</summary>
     /// <param name="raw">git's standard output.</param>
-    /// <param name="truncated">Whether the output hit the output cap; a cut last record comes back with its missing fields empty.</param>
+    /// <param name="truncated">
+    /// Whether the output hit the output cap; a cut last record comes back with its missing fields empty, or is left out
+    /// when the cut may fall inside its hash, short hash, or parents.
+    /// </param>
     /// <returns>The commits, in git's order.</returns>
     /// <exception cref="GitCommandException">The output was not cut and is not a whole number of records.</exception>
     public static IReadOnlyList<Commit> Parse(byte[] raw, bool truncated)
-        => [.. NulRecords.Split(raw, LogFieldOrder.Length, truncated).Select(ToCommit)];
+        => [.. NulRecords.LeaveOutCutIdentifiers(NulRecords.Split(raw, LogFieldOrder.Length, truncated), IdentifyingFieldCount, truncated).Select(ToCommit)];
 
     /// <summary>Build a <see cref="Commit"/> from one record's fields, in <see cref="LogFieldOrder"/>.</summary>
     /// <param name="fields">The record's fields.</param>

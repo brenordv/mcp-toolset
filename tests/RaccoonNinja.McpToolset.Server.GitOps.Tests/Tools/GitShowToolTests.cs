@@ -23,9 +23,12 @@ public sealed class GitShowToolTests : IDisposable
     private const string ForgedSubject = "forged";
     private const string ShiftingAuthorName = "Evil\u001fforged@example.com\u001f1000000000";
     private const string MetadataPassSubcommand = "log";
-    private const int KeptMetadataBytes = 45;
+    private const int KeptBytesInsideTheShortHash = 45;
+    private const int KeptBytesInsideTheParents = 60;
+    private const int KeptBytesInsideTheSubject = 144;
     private const int KeptHashBytes = 20;
-    private const string MalformedHashMessage = "log returned a malformed commit hash";
+    private const string CutSubject = "sec";
+    private const string MetadataPassCutMessage = "the commit's metadata pass hit the output cap";
 
     private const string PatchShapedTagMessage =
         "diff --git a/fake.txt b/fake.txt\n" +
@@ -264,7 +267,7 @@ public sealed class GitShowToolTests : IDisposable
     {
         // Arrange
         var head = _repo.Run("rev-parse", "HEAD");
-        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(MetadataPassSubcommand), KeptMetadataBytes));
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(MetadataPassSubcommand), KeptBytesInsideTheSubject));
 
         // Act
         var envelope = await tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
@@ -273,15 +276,20 @@ public sealed class GitShowToolTests : IDisposable
         Assert.Null(envelope.Error);
         Assert.True(envelope.Truncated);
         var payload = Assert.IsAssignableFrom<IDictionary<string, object>>(envelope.Results[0]);
-        Assert.Equal(head, Assert.IsType<Commit>(payload["commit"]).Hash);
+        var commit = Assert.IsType<Commit>(payload["commit"]);
+        Assert.Equal(head, commit.Hash);
+        Assert.Equal(CutSubject, commit.Subject);
         Assert.NotEmpty(Assert.IsAssignableFrom<IReadOnlyList<FileDiff>>(payload["files"]));
     }
 
-    [Fact]
-    public async Task Show_MetadataPassCutInsideTheHash_FailsWithGitCommandError()
+    [Theory]
+    [InlineData(KeptHashBytes)]
+    [InlineData(KeptBytesInsideTheShortHash)]
+    [InlineData(KeptBytesInsideTheParents)]
+    public async Task Show_MetadataPassCutInsideAnIdentifyingField_FailsWithGitCommandError(int keptBytes)
     {
         // Arrange
-        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(MetadataPassSubcommand), KeptHashBytes));
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(MetadataPassSubcommand), keptBytes));
 
         // Act
         var envelope = await tool.InvokeAsync(_repo.RepoPath, @ref: "HEAD", cancellationToken: TestContext.Current.CancellationToken);
@@ -289,7 +297,7 @@ public sealed class GitShowToolTests : IDisposable
         // Assert
         Assert.NotNull(envelope.Error);
         Assert.Equal(ErrorCodes.GitCommandError, envelope.Error.Code);
-        Assert.Equal(MalformedHashMessage, envelope.Error.Message);
+        Assert.Equal(MetadataPassCutMessage, envelope.Error.Message);
     }
 
     #region Test Helpers

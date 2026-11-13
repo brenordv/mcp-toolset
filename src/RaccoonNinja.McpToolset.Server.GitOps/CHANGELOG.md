@@ -1,3 +1,46 @@
+## v2.27.0
+- Fixed: `git_grep` split `git grep -z` output on newlines before reading the NUL after each path, while `-z` prints a
+  path unquoted, so a tracked path holding a newline (a tree entry can hold one on any OS, which `ref` reaches) made the
+  text after the newline read as a match or count for another path, and a repository's `grep.column=true` put a column
+  field into `content`. `git_grep` now reads each match as the path up to its NUL, the line number up to its NUL, and
+  the line up to its newline, and each count as the path up to its NUL and the count up to its newline, passes
+  `-c grep.column=false`, and passes `-I` in line mode. Behavior change: such a path comes back whole with no forged
+  match or count; output that is not whole records fails the call with `GitCommandError`; a truncated reply keeps its
+  last match cut short only when the match's path and line number arrived whole, and leaves out a cut last count.
+  Line mode left a binary file's match out before and still does; count mode still counts it.
+- Fixed: the repository root came from `git rev-parse --show-toplevel` alone, and a repository's own `core.worktree`
+  makes that any directory, so every call with `cwd` in such a repository ran git in the directory it named, another of
+  the user's repositories included. The server now also runs `git rev-parse --absolute-git-dir` from `cwd` and from
+  the top level, and fails the call with `NotAGitRepository` when the two differ or git finds no repository at the top
+  level. Behavior change: such a `cwd` fails every tool; `repo_root` is unchanged for plain repositories, submodules
+  (from the checkout or from the git directory under `.git/modules/`), linked worktrees, and a `cwd` reached through a
+  symbolic link or a junction. Resolving a new `cwd` runs three `git rev-parse` processes instead of one. Behavior
+  change: every call that takes `cwd` needs git 2.31.0 or later, the first release whose `--absolute-git-dir` prints a
+  real path from a subdirectory; with a git before 2.13.0, which has no such option, each such call fails with
+  `NotAGitRepository`.
+- Fixed: a `git_log` or `git_reflog` record the 8 MB cap cut inside its hash, short hash, or parents (reflog: selector)
+  came back with that field cut short, and git reads a short hex string as a branch or tag name before an abbreviated
+  id. Behavior change: a truncated reply leaves out its last record unless a field after those is non-empty, and
+  `git_show` fails with `GitCommandError` (`the commit's metadata pass hit the output cap`) when its metadata pass was
+  cut that early, where it returned the commit with a cut short id, or failed with
+  `log returned a malformed commit hash`.
+- Docs: the README's Error codes table says `GitCommandError` also covers output the server cannot read safely after
+  git exited 0, with no `git_exit_code`, lists those cases and `git_version`'s, and says which carry `git_exit_code`;
+  its Requirements name the 2.31.0 floor.
+- Log change: every `git grep` `argv_built` debug line shows `-c grep.column=false` (`argv_len` 2 higher), and line
+  mode's shows `-I` (1 more). A refused `cwd` logs only the existing `tool_error` Error line, with `error_code`
+  `NotAGitRepository` and the fixed message `the work tree git reports for cwd leads to another repository or to
+  none`. `git_grep` output that is not whole records logs `tool_error` with `GitCommandError` and
+  `git printed output that is not a whole number of NUL-framed records`, where both modes skipped such a record with
+  no log line, and count mode logged a `count_parse_empty` Warning only when it skipped every record. A line-mode grep
+  whose only matches are in files git treats as binary now exits 1, so its `subprocess_exit` Debug line shows
+  `git_exit_code` 1 where it showed 0 (the results stay empty). A refused `cwd` is not cached, so each repeat call
+  runs the three `git rev-parse` processes again and logs another `tool_error`. A cut `git_show` metadata pass logs
+  `the commit's metadata pass hit the output cap`, where a cut inside the hash logged
+  `log returned a malformed commit hash` and a cut inside the short hash or parents logged nothing. None of these
+  carries a `git_exit_code` or counts in `git_command_errors_total`; each counts as `<tool>:error` in
+  `tool_calls_total`.
+
 ## v2.26.0
 - Fixed: `git_branch_list` framed `git for-each-ref` output with the byte 0x1F between fields and a newline after each
   ref. git keeps 0x1F in a tip commit's subject, so such a subject was cut at that byte. A branch's upstream is the

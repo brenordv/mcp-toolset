@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 
 namespace RaccoonNinja.McpToolset.Server.GitOps.Tests.Fixtures;
@@ -125,6 +126,39 @@ internal sealed class TempGitRepo : IDisposable
 
     /// <summary>Appended to the script's path to name the marker file the script creates when it runs.</summary>
     private const string TrapMarkerSuffix = ".ran";
+
+    /// <summary>Where <see cref="CommitTreeWithEntryName"/> writes the blob content it hashes; inside <c>.git</c>, so the worktree stays clean.</summary>
+    private const string EntryBlobFile = ".git/entry-blob";
+
+    /// <summary>Where <see cref="CommitTreeWithEntryName"/> writes the raw tree object it hashes.</summary>
+    private const string EntryTreeFile = ".git/entry-tree";
+
+    /// <summary>The tree-entry mode of a regular, non-executable file.</summary>
+    private const string RegularFileTreeMode = "100644";
+
+    /// <summary>The message of the commit <see cref="CommitTreeWithEntryName"/> makes.</summary>
+    private const string EntryCommitMessage = "tree with one crafted entry";
+
+    /// <summary>The key that turns on <c>git grep</c>'s column field by default.</summary>
+    private const string GrepColumnKey = "grep.column";
+
+    /// <summary>How many NULs a <c>git grep -n -z</c> match carries with a column field: after the path, the line number, and the column.</summary>
+    private const int GrepColumnNulCount = 3;
+
+    /// <summary>The message of the commit <see cref="CommitBinaryFileHolding"/> makes.</summary>
+    private const string BinaryMatchMessage = "add binary file";
+
+    /// <summary>What <c>git grep</c> prints before a binary file's name when it matches.</summary>
+    private const string BinaryLinePrefix = "Binary file ";
+
+    /// <summary>What <c>git grep</c> prints after a binary file's name when it matches.</summary>
+    private const string BinaryLineSuffix = " matches";
+
+    /// <summary>The key that sets a repository's work tree.</summary>
+    private const string WorkTreeKey = "core.worktree";
+
+    /// <summary>The name of the file or directory git discovers a repository by.</summary>
+    private const string GitFileName = ".git";
 
     /// <summary>
     /// The script a trap points git at: it creates its own path plus <see cref="TrapMarkerSuffix"/>, writes one line to
@@ -619,6 +653,125 @@ internal sealed class TempGitRepo : IDisposable
         return SubmoduleNewCommit;
     }
 
+    /// <summary>
+    /// Point <c>HEAD</c>'s branch at a new commit whose tree holds one file named <paramref name="entryName"/> holding
+    /// <paramref name="content"/>, as a hostile repository's history can: a tree entry's name may hold a newline on any
+    /// OS, so the tree is hashed as a raw object, not built from the worktree. Then check that <c>git ls-tree -z</c> lists
+    /// exactly that name, so a test built on it never passes on a git that rejects or rewrites it.
+    /// </summary>
+    /// <param name="entryName">The entry's name: no <c>/</c> and no NUL.</param>
+    /// <param name="content">The file's content.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or lists another name.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void CommitTreeWithEntryName(string entryName, string content)
+    {
+        WriteFile(EntryBlobFile, content);
+        var blob = Run("hash-object", "-w", EntryBlobFile);
+        WriteBytes(EntryTreeFile, [.. Encoding.UTF8.GetBytes($"{RegularFileTreeMode} {entryName}\0"), .. Convert.FromHexString(blob)]);
+        var tree = Run("hash-object", "-t", "tree", "-w", EntryTreeFile);
+        Run("update-ref", "HEAD", Run("commit-tree", tree, "-m", EntryCommitMessage));
+        if (Run("ls-tree", "-z", "--name-only", "HEAD") != entryName + "\0")
+        {
+            throw new InvalidOperationException("git ls-tree does not list the crafted entry name unchanged");
+        }
+    }
+
+    /// <summary>
+    /// Set <c>grep.column=true</c> in the repository's config, as a hostile repository or a user's own config can, then
+    /// check that <c>git grep -n -z</c> without the server's pin prints a column field (three NULs on the first match in
+    /// <paramref name="trackedPath"/>), so a test built on it never passes on a git that does not read the key.
+    /// </summary>
+    /// <param name="pattern">A fixed string that matches a line of <paramref name="trackedPath"/>.</param>
+    /// <param name="trackedPath">A <c>/</c>-separated path committed at <c>HEAD</c>.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or prints no column field.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void ConfigureGrepColumnOn(string pattern, string trackedPath)
+    {
+        Run("config", GrepColumnKey, "true");
+        var firstMatch = Run("grep", "-n", "-z", "--no-color", "-F", "-e", pattern, "--", trackedPath).Split('\n')[0];
+        if (firstMatch.Count(character => character == '\0') != GrepColumnNulCount)
+        {
+            throw new InvalidOperationException($"git grep -n -z prints no column field with {GrepColumnKey}=true");
+        }
+    }
+
+    /// <summary>
+    /// Commit <paramref name="path"/> as bytes git reads as binary (a NUL first) holding <paramref name="pattern"/> on a
+    /// line, then check that <c>git grep -n -z</c> without the server's <c>-I</c> prints git's binary match line for it, so
+    /// a test built on it never passes on a git that reads the file as text.
+    /// </summary>
+    /// <param name="path">A <c>/</c>-separated path that does not exist yet.</param>
+    /// <param name="pattern">A fixed string the file holds on a line of its own.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or prints no binary match line.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void CommitBinaryFileHolding(string path, string pattern)
+    {
+        WriteBytes(path, [0, .. Encoding.UTF8.GetBytes(pattern + "\n")]);
+        Run("add", path);
+        Run("commit", "-m", BinaryMatchMessage);
+        if (Run("grep", "-n", "-z", "--no-color", "-F", "-e", pattern, "--", path) != BinaryLinePrefix + path + BinaryLineSuffix)
+        {
+            throw new InvalidOperationException($"git grep does not print a binary match line for {path}");
+        }
+    }
+
+    /// <summary>
+    /// Set <c>core.worktree</c> to <paramref name="workTree"/> in the config of the repository at
+    /// <paramref name="repositoryPath"/>, as a repository that arrives with its <c>.git</c> can, then check that
+    /// <c>git rev-parse --show-toplevel</c> there reports that directory, so a test built on it never passes on a git that
+    /// ignores the key.
+    /// </summary>
+    /// <param name="repositoryPath"><c>.</c> for this repository, or a <c>/</c>-separated path of one inside it.</param>
+    /// <param name="workTree">The absolute directory to name.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or reports another top level.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void ConfigureWorkTree(string repositoryPath, string workTree)
+    {
+        Run("-C", repositoryPath, "config", WorkTreeKey, workTree);
+        if (Path.GetFullPath(Run("-C", repositoryPath, "rev-parse", "--show-toplevel")) != Path.GetFullPath(workTree))
+        {
+            throw new InvalidOperationException($"git rev-parse --show-toplevel does not report the directory {WorkTreeKey} names");
+        }
+    }
+
+    /// <summary>
+    /// Add the repository at <paramref name="sourceRepoPath"/> as a submodule at <paramref name="submodulePath"/> with
+    /// <c>git submodule add</c> and commit it. git keeps the submodule's git directory under <c>.git/modules/</c> and
+    /// points it back at the checkout with <c>core.worktree</c>; check that the submodule's config sets that key, so a test
+    /// built on it covers that layout. <c>protocol.file.allow=always</c> lets this one command clone from a local path.
+    /// </summary>
+    /// <param name="sourceRepoPath">The absolute path of a repository with at least one commit.</param>
+    /// <param name="submodulePath">A <c>/</c>-separated path that does not exist yet.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or the submodule's config sets no <c>core.worktree</c>.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void AddSubmoduleFrom(string sourceRepoPath, string submodulePath)
+    {
+        Run("-c", "protocol.file.allow=always", "submodule", "add", sourceRepoPath.Replace('\\', '/'), submodulePath);
+        Run("commit", "-m", SubmoduleAddMessage);
+        if (Run("-C", submodulePath, "config", WorkTreeKey).Length == 0)
+        {
+            throw new InvalidOperationException($"the submodule's git directory sets no {WorkTreeKey}");
+        }
+    }
+
+    /// <summary>
+    /// Add a linked worktree at <paramref name="worktreePath"/> on a new branch <paramref name="branch"/> with
+    /// <c>git worktree add</c>, then check that its top level holds a <c>.git</c> file, the layout under test.
+    /// Call it once <c>HEAD</c> has a commit.
+    /// </summary>
+    /// <param name="worktreePath">A <c>/</c>-separated path inside this repository that does not exist yet.</param>
+    /// <param name="branch">The new branch's name.</param>
+    /// <exception cref="InvalidOperationException">Thrown when git fails or leaves no <c>.git</c> file.</exception>
+    /// <exception cref="TimeoutException">Thrown when git does not exit within the timeout.</exception>
+    public void AddLinkedWorktree(string worktreePath, string branch)
+    {
+        Run("worktree", "add", "-b", branch, worktreePath);
+        if (!File.Exists(Path.Combine(RepoPath, worktreePath.Replace('/', Path.DirectorySeparatorChar), GitFileName)))
+        {
+            throw new InvalidOperationException($"git worktree add left no {GitFileName} file in the new worktree");
+        }
+    }
+
     public void Dispose()
     {
         if (!Directory.Exists(RepoPath))
@@ -728,7 +881,7 @@ internal sealed class TempGitRepo : IDisposable
     /// macOS the temp directory sits under <c>/var</c>, a symlink to <c>/private/var</c>; on Windows and
     /// Linux temp directories this is usually a no-op.
     /// </summary>
-    private static string RealPath(string path)
+    internal static string RealPath(string path)
     {
         var full = Path.GetFullPath(path);
         var root = Path.GetPathRoot(full) ?? string.Empty;

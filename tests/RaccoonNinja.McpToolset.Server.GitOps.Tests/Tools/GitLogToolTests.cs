@@ -26,7 +26,12 @@ public sealed class GitLogToolTests : IDisposable
     private const string RenameSubject = "rename beta";
     private const string ForgedAuthorPrefix = "Evil";
     private const string LogSubcommand = "log";
-    private const int KeptRecordBytes = 45;
+    private const string TargetSubject = "target repository commit";
+    private const int KeptBytesInsideTheHash = 20;
+    private const int KeptBytesInsideTheShortHash = 45;
+    private const int KeptBytesInsideTheParents = 60;
+    private const int KeptBytesInsideTheSubject = 145;
+    private const string CutSubject = "plai";
 
     private readonly TempGitRepo _repo;
     private readonly GitLogTool _tool;
@@ -339,12 +344,30 @@ public sealed class GitLogToolTests : IDisposable
         Assert.Equal(name, commit.AuthorName);
     }
 
+    [Theory]
+    [InlineData(KeptBytesInsideTheHash)]
+    [InlineData(KeptBytesInsideTheShortHash)]
+    [InlineData(KeptBytesInsideTheParents)]
+    public async Task Log_OutputCutInsideAnIdentifyingField_LeavesTheCommitOut(int keptBytes)
+    {
+        // Arrange
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(LogSubcommand), keptBytes));
+
+        // Act
+        var envelope = await tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(envelope.Error);
+        Assert.True(envelope.Truncated);
+        Assert.Empty(envelope.Results);
+    }
+
     [Fact]
-    public async Task Log_OutputCut_ReturnsTheCutCommitMarkedTruncated()
+    public async Task Log_OutputCutInsideTheSubject_ReturnsTheCutCommitMarkedTruncated()
     {
         // Arrange
         var head = _repo.Run("rev-parse", "HEAD");
-        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(LogSubcommand), KeptRecordBytes));
+        var tool = BuildTool(new OutputCuttingRunner(argv => argv.Contains(LogSubcommand), KeptBytesInsideTheSubject));
 
         // Act
         var envelope = await tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
@@ -354,6 +377,25 @@ public sealed class GitLogToolTests : IDisposable
         Assert.True(envelope.Truncated);
         var commit = Assert.IsType<Commit>(Assert.Single(envelope.Results));
         Assert.Equal(head, commit.Hash);
+        Assert.Equal(CutSubject, commit.Subject);
+    }
+
+    [Fact]
+    public async Task Log_CoreWorktreeNamingAnotherRepository_FailsWithNotAGitRepository()
+    {
+        // Arrange
+        using var target = new TempGitRepo();
+        target.Run("commit", "--allow-empty", "-m", TargetSubject);
+        _repo.ConfigureWorkTree(".", target.RepoPath);
+
+        // Act
+        var envelope = await _tool.InvokeAsync(_repo.RepoPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(envelope.Error);
+        Assert.Equal(ErrorCodes.NotAGitRepository, envelope.Error.Code);
+        Assert.Empty(envelope.Results);
+        Assert.Null(envelope.RepoRoot);
     }
 
     #region Test Helpers

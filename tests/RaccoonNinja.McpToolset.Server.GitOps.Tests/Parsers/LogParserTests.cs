@@ -43,7 +43,7 @@ public class LogParserTests
     }
 
     [Fact]
-    public void Parse_TruncatedOutput_PadsTheCutRecord()
+    public void Parse_TruncatedInsideTheShortHash_LeavesTheCutRecordOut()
     {
         // Arrange
         const string output = FirstRecord + $"def456{Nul}de";
@@ -52,10 +52,23 @@ public class LogParserTests
         var result = LogParser.Parse(Encoding.UTF8.GetBytes(output), truncated: true);
 
         // Assert
+        var commit = Assert.Single(result);
+        Assert.Equal("abc123", commit.Hash);
+    }
+
+    [Fact]
+    public void Parse_TruncatedInsideTheSubject_PadsTheCutRecord()
+    {
+        // Arrange
+        const string output = FirstRecord + $"def456{Nul}def{Nul}abc123{Nul}Bob{Nul}bob@example.com{Nul}1700000100{Nul}1700000200{Nul}subj";
+
+        // Act
+        var result = LogParser.Parse(Encoding.UTF8.GetBytes(output), truncated: true);
+
+        // Assert
         Assert.Equal(2, result.Count);
         Assert.Equal("def456", result[1].Hash);
-        Assert.Equal("de", result[1].ShortHash);
-        Assert.Equal(string.Empty, result[1].Subject);
+        Assert.Equal("subj", result[1].Subject);
         Assert.Null(result[1].Body);
     }
 
